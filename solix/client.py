@@ -16,7 +16,7 @@ class SolixClient:
             websession=session,
             email=os.getenv("ANKER_EMAIL"),
             password=os.getenv("ANKER_PASSWORD"),
-            country=os.getenv("ANKER_COUNTRY", "DE"),
+            countryId=os.getenv("ANKER_COUNTRY", "DE"),
         )
 
     async def get_status(self):
