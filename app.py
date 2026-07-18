@@ -11,6 +11,7 @@ app = FastAPI(
 )
 
 client = SolixClient()
+auth = SolixAuth()
 
 @app.on_event("startup")
 async def startup():
@@ -70,3 +71,6 @@ def refresh():
         "timestamp": datetime.utcnow().isoformat()
     }
     
+@app.get("/api/auth")
+def auth_status():
+    return auth.info()
