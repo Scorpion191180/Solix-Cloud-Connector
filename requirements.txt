@@ -1,4 +1,3 @@
 fastapi
 uvicorn[standard]
-anker-solix-api
 python-dotenv
