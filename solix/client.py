@@ -1,28 +1,25 @@
-from datetime import datetime
-from .models import SystemStatus
+import os
+
+from anker_solix_api.api import AnkerSolixApi
+from aiohttp import ClientSession
 
 
 class SolixClient:
 
     def __init__(self):
-        self.connected = False
+        self.api = None
 
     async def connect(self):
-        # Hier kommt später der Login zur Anker Cloud
-        self.connected = True
+        session = ClientSession()
+
+        self.api = AnkerSolixApi(
+            session=session,
+            email=os.getenv("ANKER_EMAIL"),
+            password=os.getenv("ANKER_PASSWORD"),
+            country=os.getenv("ANKER_COUNTRY", "DE"),
+        )
 
     async def get_status(self):
-
-        return SystemStatus(
-            online=self.connected,
-            timestamp=datetime.utcnow(),
-
-            battery=0,
-            pv=0,
-            load=0,
-            grid=0,
-            today=0,
-
-            system="Solarbank 4 Pro",
-            expansion_batteries=2
-        )
+        return {
+            "connected": self.api is not None
+        }
