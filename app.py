@@ -1,7 +1,7 @@
 from solix.auth import SolixAuth
 from solix.client import SolixClient
 import asyncio
-import anker_solix_api
+from anker_solix_api.api import AnkerSolixApi
 from fastapi import FastAPI
 from datetime import datetime
 
