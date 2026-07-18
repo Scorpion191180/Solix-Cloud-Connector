@@ -1,3 +1,6 @@
+from solix.client import SolixClient
+import asyncio
+
 from fastapi import FastAPI
 from datetime import datetime
 
@@ -5,6 +8,12 @@ app = FastAPI(
     title="Solix Cloud Connector",
     version="1.1.0"
 )
+
+client = SolixClient()
+
+@app.on_event("startup")
+async def startup():
+    await client.connect()
 
 # Demo-Daten
 system_data = {
