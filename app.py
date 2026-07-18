@@ -1,26 +1,65 @@
 from fastapi import FastAPI
+from datetime import datetime
 
-app = FastAPI(title="Solix Cloud Connector")
+app = FastAPI(
+    title="Solix Cloud Connector",
+    version="1.1.0"
+)
+
+# Demo-Daten
+system_data = {
+    "online": True,
+    "battery": 0,
+    "pv": 0,
+    "load": 0,
+    "grid": 0,
+    "today": 0,
+    "system": "Solarbank 4 Pro",
+    "expansion_batteries": 2
+}
 
 
 @app.get("/")
-async def root():
-    return {"message": "Solix Cloud Connector läuft"}
+def root():
+    return {
+        "name": "Solix Cloud Connector",
+        "version": "1.1.0",
+        "status": "running"
+    }
 
 
 @app.get("/health")
-async def health():
+def health():
     return {
-        "status": "ok"
+        "status": "ok",
+        "timestamp": datetime.utcnow().isoformat()
     }
 
 
 @app.get("/api/status")
-async def status():
+def status():
     return {
-        "online": True,
-        "source": "demo",
-        "battery": 0,
-        "pv": 0,
-        "grid": 0
+        **system_data,
+        "timestamp": datetime.utcnow().isoformat()
     }
+
+
+@app.get("/api/info")
+def info():
+    return {
+        "system": "Anker Solarbank 4 Pro",
+        "battery_modules": 2,
+        "capacity_kwh": 10.376,
+        "reserve_percent": 5,
+        "refresh_seconds": 30
+    }
+
+
+@app.post("/api/refresh")
+def refresh():
+    return {
+        "success": True,
+        "message": "Refresh requested",
+        "timestamp": datetime.utcnow().isoformat()
+    }
+    
