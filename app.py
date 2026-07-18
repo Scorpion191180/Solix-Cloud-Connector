@@ -46,11 +46,8 @@ def health():
 
 
 @app.get("/api/status")
-def status():
-    return {
-        **system_data,
-        "timestamp": datetime.utcnow().isoformat()
-    }
+async def status():
+    return await client.get_status()
 
 
 @app.get("/api/info")
