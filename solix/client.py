@@ -13,7 +13,7 @@ class SolixClient:
         session = ClientSession()
 
         self.api = AnkerSolixApi(
-            session=session,
+            websession=session,
             email=os.getenv("ANKER_EMAIL"),
             password=os.getenv("ANKER_PASSWORD"),
             country=os.getenv("ANKER_COUNTRY", "DE"),
