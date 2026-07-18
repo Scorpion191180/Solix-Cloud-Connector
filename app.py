@@ -5,9 +5,8 @@ from anker_solix_api.api import AnkerSolixApi
 from fastapi import FastAPI
 from datetime import datetime
 from inspect import signature
-from anker_solix_api.api import AnkerSolixApi
 
-print(signature(AnkerSolixApi))
+print(dir(AnkerSolixApi))
 
 app = FastAPI(
     title="Solix Cloud Connector",
