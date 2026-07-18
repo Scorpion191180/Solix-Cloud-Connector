@@ -1,3 +1,4 @@
+from solix.auth import SolixAuth
 from solix.client import SolixClient
 import asyncio
 
