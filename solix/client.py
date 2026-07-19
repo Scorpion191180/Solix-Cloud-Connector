@@ -43,7 +43,7 @@ class SolixClient:
     return self.api.sites
 
 
-async def get_devices(self):
+    async def get_devices(self):
     if self.api is None:
         await self.connect()
 
