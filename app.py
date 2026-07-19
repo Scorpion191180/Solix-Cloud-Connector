@@ -32,4 +32,12 @@ async def device():
 
 @app.get("/api/live")
 async def live():
-    return await client.get_live()
+    try:
+        return await client.get_live()
+    except Exception as e:
+        import traceback
+
+        return {
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
