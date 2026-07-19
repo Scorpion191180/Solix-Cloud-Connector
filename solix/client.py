@@ -47,7 +47,7 @@ class SolixClient:
 
         return self.api.devices
 
-        async def get_live(self):
+    async def get_live(self):
         if self.api is None:
             await self.connect()
 
@@ -69,11 +69,10 @@ class SolixClient:
 
         return {
             "status": solarbank.get("status_desc"),
-
             "battery_percent": to_int(solarbank.get("battery_soc")),
             "battery_energy_wh": to_int(solarbank.get("battery_energy")),
 
-            # Vorläufig fest auf deine Anlage angepasst
+            # Vorläufig auf deine Anlage angepasst
             "battery_capacity_wh": 10400,
 
             "battery_power": to_int(solarbank.get("bat_charge_power")),
