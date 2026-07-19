@@ -1,25 +1,36 @@
 import os
+import aiohttp
 
 from anker_solix_api.api import AnkerSolixApi
-from aiohttp import ClientSession
 
 
 class SolixClient:
-
     def __init__(self):
         self.api = None
 
     async def connect(self):
-        session = ClientSession()
+        session = aiohttp.ClientSession()
 
         self.api = AnkerSolixApi(
-            websession=session,
             email=os.getenv("ANKER_EMAIL"),
             password=os.getenv("ANKER_PASSWORD"),
-            countryId=os.getenv("ANKER_COUNTRY", "DE"),
+            countryId=os.getenv("ANKER_COUNTRY"),
+            websession=session,
         )
 
+        # Daten aus der Cloud laden
+        await self.api.update_sites()
+        await self.api.update_site_details()
+        await self.api.update_device_details()
+        await self.api.update_device_energy()
+
+        return self.api
+
     async def get_status(self):
+        if self.api is None:
+            await self.connect()
+
         return {
-            "connected": self.api is not None
+            "sites": self.api.sites,
+            "devices": self.api.devices,
         }
