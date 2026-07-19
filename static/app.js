@@ -1,58 +1,111 @@
+let lastRefresh = new Date();
+
+function setBatteryColor(percent) {
+
+    const battery = document.getElementById("battery-fill");
+
+    if (percent < 20) {
+        battery.style.background = "linear-gradient(90deg,#ef4444,#dc2626)";
+    }
+    else if (percent < 60) {
+        battery.style.background = "linear-gradient(90deg,#facc15,#f59e0b)";
+    }
+    else {
+        battery.style.background = "linear-gradient(90deg,#22c55e,#16a34a)";
+    }
+
+    battery.style.width = percent + "%";
+}
+
+function setPVBar(id, watt) {
+
+    const maxPower = 500;
+
+    let percent = (watt / maxPower) * 100;
+
+    if (percent > 100)
+        percent = 100;
+
+    document.getElementById(id).style.width = percent + "%";
+}
+
+function updateLastRefresh() {
+
+    const seconds =
+        Math.floor((new Date() - lastRefresh) / 1000);
+
+    document.getElementById("lastUpdate").innerText =
+        "vor " + seconds + " Sek.";
+}
+
 async function updateDashboard() {
 
     try {
 
-        const response = await fetch("/api/live");
-        const data = await response.json();
+        const response =
+            await fetch("/api/live");
 
-        document.getElementById("pv").textContent =
-            `${data.pv_total ?? 0} W`;
+        const data =
+            await response.json();
 
-        document.getElementById("battery").textContent =
-            `${data.battery_percent ?? 0} %`;
+        lastRefresh = new Date();
 
-        document.getElementById("battery-fill").style.width =
-            `${data.battery_percent ?? 0}%`;
+        document.getElementById("pv").innerText =
+            data.pv_total + " W";
 
-        document.getElementById("batteryPower").textContent =
-            `${data.battery_power ?? 0} W`;
+        document.getElementById("battery").innerText =
+            data.battery_percent + " %";
 
-        document.getElementById("house").textContent =
-            `${data.home_load ?? 0} W`;
+        document.getElementById("batteryWh").innerText =
+            data.battery_energy_wh + " Wh";
 
-        document.getElementById("grid").textContent =
-            `${data.grid_power ?? 0} W`;
+        document.getElementById("batteryPower").innerText =
+            data.battery_power + " W";
 
-        document.getElementById("wifi").textContent =
-            `${data.wifi_signal ?? 0} %`;
+        document.getElementById("house").innerText =
+            data.home_load + " W";
 
-        document.getElementById("flowPV").textContent =
-            `${data.pv_total ?? 0} W`;
+        document.getElementById("grid").innerText =
+            data.grid_power + " W";
 
-        document.getElementById("flowBattery").textContent =
-            `${data.battery_percent ?? 0} %`;
+        document.getElementById("wifi").innerText =
+            data.wifi_signal + " %";
 
-        document.getElementById("flowHouse").textContent =
-            `${data.home_load ?? 0} W`;
+        document.getElementById("flowPV").innerText =
+            data.pv_total + " W";
 
-        document.getElementById("flowGrid").textContent =
-            `${data.grid_power ?? 0} W`;
+        document.getElementById("flowBattery").innerText =
+            data.battery_percent + " %";
 
-        document.getElementById("pv1").textContent =
-            `${data.pv1 ?? 0} W`;
+        document.getElementById("flowHouse").innerText =
+            data.home_load + " W";
 
-        document.getElementById("pv2").textContent =
-            `${data.pv2 ?? 0} W`;
+        document.getElementById("flowGrid").innerText =
+            data.grid_power + " W";
 
-        document.getElementById("pv3").textContent =
-            `${data.pv3 ?? 0} W`;
+        document.getElementById("pv1").innerText =
+            data.pv1 + " W";
 
-        document.getElementById("pv4").textContent =
-            `${data.pv4 ?? 0} W`;
+        document.getElementById("pv2").innerText =
+            data.pv2 + " W";
 
-    } catch (err) {
+        document.getElementById("pv3").innerText =
+            data.pv3 + " W";
 
-        console.error(err);
+        document.getElementById("pv4").innerText =
+            data.pv4 + " W";
+
+        setBatteryColor(data.battery_percent);
+
+        setPVBar("pv1bar", data.pv1);
+        setPVBar("pv2bar", data.pv2);
+        setPVBar("pv3bar", data.pv3);
+        setPVBar("pv4bar", data.pv4);
+
+    }
+    catch (e) {
+
+        console.log(e);
 
     }
 
@@ -61,3 +114,5 @@ async function updateDashboard() {
 updateDashboard();
 
 setInterval(updateDashboard, 5000);
+
+setInterval(updateLastRefresh, 1000);
