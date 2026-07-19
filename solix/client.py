@@ -27,10 +27,24 @@ class SolixClient:
         return self.api
 
     async def get_status(self):
-        if self.api is None:
-            await self.connect()
+    if self.api is None:
+        await self.connect()
 
-        return {
-            "sites": self.api.sites,
-            "devices": self.api.devices,
-        }
+    return {
+        "sites": self.api.sites,
+        "devices": self.api.devices,
+    }
+
+
+    async def get_site(self):
+    if self.api is None:
+        await self.connect()
+
+    return self.api.sites
+
+
+async def get_devices(self):
+    if self.api is None:
+        await self.connect()
+
+    return self.api.devices
