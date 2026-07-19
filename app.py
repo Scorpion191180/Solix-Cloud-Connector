@@ -29,3 +29,7 @@ async def site():
 @app.get("/api/device")
 async def device():
     return await client.get_devices()
+
+@app.get("/api/live")
+async def live():
+    return await client.get_live()
