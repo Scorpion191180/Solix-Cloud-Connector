@@ -1,1 +1,128 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>☀️ Solix Control</title>
 
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="container">
+
+    <h1>☀️ Solix Control</h1>
+
+    <div class="subtitle">
+        Live-Daten deiner Anker Solarbank
+    </div>
+
+    <div class="grid">
+
+        <div class="card">
+            <div class="label">☀️ PV-Leistung</div>
+            <div class="value" id="pv">-- W</div>
+        </div>
+
+        <div class="card">
+            <div class="label">🔋 Akku</div>
+
+            <div class="battery">
+                <div class="battery-fill" id="battery-fill"></div>
+            </div>
+
+            <div class="value" id="battery">-- %</div>
+        </div>
+
+        <div class="card">
+            <div class="label">⚡ Akku Leistung</div>
+            <div class="value" id="batteryPower">-- W</div>
+        </div>
+
+        <div class="card">
+            <div class="label">🏠 Hausverbrauch</div>
+            <div class="value" id="house">-- W</div>
+        </div>
+
+        <div class="card">
+            <div class="label">🌐 Netz</div>
+            <div class="value" id="grid">-- W</div>
+        </div>
+
+        <div class="card">
+            <div class="label">📶 WLAN</div>
+            <div class="value" id="wifi">-- %</div>
+        </div>
+
+    </div>
+
+    <div class="flow-card">
+
+        <h2>Energiefluss</h2>
+
+        <div class="flow">
+
+            <div class="flow-item">
+                ☀️
+                <span id="flowPV">-- W</span>
+            </div>
+
+            <div class="arrow">⬇️</div>
+
+            <div class="flow-item">
+                🔋
+                <span id="flowBattery">-- %</span>
+            </div>
+
+            <div class="arrow">⬇️</div>
+
+            <div class="flow-row">
+
+                <div class="flow-item">
+                    🏠
+                    <span id="flowHouse">-- W</span>
+                </div>
+
+                <div class="flow-item">
+                    🌐
+                    <span id="flowGrid">-- W</span>
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <div class="card">
+
+        <h2>PV-Eingänge</h2>
+
+        <div class="pv-row">
+            <span>PV1</span>
+            <span id="pv1">-- W</span>
+        </div>
+
+        <div class="pv-row">
+            <span>PV2</span>
+            <span id="pv2">-- W</span>
+        </div>
+
+        <div class="pv-row">
+            <span>PV3</span>
+            <span id="pv3">-- W</span>
+        </div>
+
+        <div class="pv-row">
+            <span>PV4</span>
+            <span id="pv4">-- W</span>
+        </div>
+
+    </div>
+
+</div>
+
+<script src="/static/app.js"></script>
+
+</body>
+</html>
