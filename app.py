@@ -13,4 +13,11 @@ async def root():
 
 @app.get("/api/status")
 async def status():
-    return await client.get_status()
+    data = await client.get_status()
+
+    return {
+        "site_count": len(data["sites"]),
+        "device_count": len(data["devices"]),
+        "sites": list(data["sites"].keys()),
+        "devices": list(data["devices"].keys()),
+    }
