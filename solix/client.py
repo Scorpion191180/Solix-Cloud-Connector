@@ -18,13 +18,24 @@ class SolixClient:
             websession=session,
         )
 
-        # Daten aus der Cloud laden
+        # Erste Daten laden
         await self.api.update_sites()
         await self.api.update_site_details()
         await self.api.update_device_details()
         await self.api.update_device_energy()
 
         return self.api
+
+    async def refresh(self):
+        """Aktuelle Daten aus der Anker Cloud laden."""
+        if self.api is None:
+            await self.connect()
+            return
+
+        await self.api.update_sites()
+        await self.api.update_site_details()
+        await self.api.update_device_details()
+        await self.api.update_device_energy()
 
     async def get_status(self):
         if self.api is None:
@@ -36,20 +47,15 @@ class SolixClient:
         }
 
     async def get_site(self):
-        if self.api is None:
-            await self.connect()
-
+        await self.refresh()
         return self.api.sites
 
     async def get_devices(self):
-        if self.api is None:
-            await self.connect()
-
+        await self.refresh()
         return self.api.devices
 
     async def get_live(self):
-        if self.api is None:
-            await self.connect()
+        await self.refresh()
 
         # Erste Solarbank suchen
         solarbank = None
