@@ -21,3 +21,11 @@ async def status():
         "sites": list(data["sites"].keys()),
         "devices": list(data["devices"].keys()),
     }
+@app.get("/api/site")
+async def site():
+    return await client.get_site()
+
+
+@app.get("/api/device")
+async def device():
+    return await client.get_devices()
