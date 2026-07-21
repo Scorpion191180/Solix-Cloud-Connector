@@ -8,3 +8,4 @@ paho-mqtt
 python-dotenv
 git+https://github.com/thomluther/anker-solix-api.git
 Jinja2
+audiconnectpy
