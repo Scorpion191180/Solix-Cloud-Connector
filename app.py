@@ -3,11 +3,13 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from audi.client import AudiClient
 from solix.client import SolixClient
 
 app = FastAPI()
 
 client = SolixClient()
+audi_client = AudiClient()
 
 # Templates und statische Dateien
 templates = Jinja2Templates(directory="templates")
@@ -46,3 +48,9 @@ async def device():
 @app.get("/api/live")
 async def live():
     return await client.get_live()
+
+
+@app.get("/api/audi")
+async def audi():
+    """Read-only Audi Connect data, cached for 15 minutes."""
+    return await audi_client.get_live()
