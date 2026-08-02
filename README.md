@@ -22,7 +22,10 @@ der Anker Smart Plug über die von `anker-solix-api` unterstützte MQTT-Methode.
 
 ## Ladeautomatik
 
-Die App prüft standardmäßig alle 15 Minuten:
+Die App bewertet die Ladebedingungen standardmäßig jede Minute. Audi Connect
+wird dabei weiterhin höchstens alle 15 Minuten aus der Cloud aktualisiert
+(vier Cloud-Abfragen pro Stunde); die übrigen Minuten wird der geschützte
+Audi-Cache zusammen mit den aktuellen Solix-Daten ausgewertet:
 
 - Audi-Ladestecker verbunden und Solix-Akku **über 30 %**: Smart Plug an.
 - Solix-Akku **unter 10 %**: Smart Plug aus.
@@ -68,7 +71,7 @@ AUTOMATION_ENABLED=true
 AUTOMATION_DRY_RUN=true
 AUTOMATION_ON_SOC=30
 AUTOMATION_OFF_SOC=10
-AUTOMATION_INTERVAL_SECONDS=900
+AUTOMATION_INTERVAL_SECONDS=60
 SMARTPLUG_MANUAL_CONTROL=true
 SMARTPLUG_CONTROL_TOKEN=langer-zufaelliger-test-code
 ```
