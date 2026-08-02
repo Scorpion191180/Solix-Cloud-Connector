@@ -1,4 +1,5 @@
-let lastRefresh = new Date();
+let lastRefresh = null;
+let refreshIntervalSeconds = 30;
 let dashboardBusy = false;
 let automationBusy = false;
 
@@ -54,11 +55,23 @@ function setPVBar(id, watt) {
 
 function updateLastRefresh() {
 
+    if (!lastRefresh) {
+        document.getElementById("lastUpdate").innerText = "verbinde...";
+        return;
+    }
+
     const seconds =
-        Math.floor((new Date() - lastRefresh) / 1000);
+        Math.max(0, Math.floor((new Date() - lastRefresh) / 1000));
 
     document.getElementById("lastUpdate").innerText =
-        "vor " + seconds + " Sek.";
+        "Cloud vor " + seconds + " Sek.";
+
+    document.getElementById("tickerCloudTime").innerText =
+        lastRefresh.toLocaleTimeString("de-DE") + " · " + seconds + " Sek. alt";
+
+    const delayed = seconds > refreshIntervalSeconds + 20;
+    document.getElementById("liveState").innerText = delayed ? "VERZÖGERT" : "LIVE";
+    document.querySelector(".status").classList.toggle("delayed", delayed);
 }
 
 async function updateDashboard() {
@@ -71,7 +84,7 @@ async function updateDashboard() {
     try {
 
         const response =
-            await fetch("/api/live");
+            await fetch("/api/live", { cache: "no-store" });
 
         if (!response.ok)
             throw new Error("Solix API: HTTP " + response.status);
@@ -79,7 +92,9 @@ async function updateDashboard() {
         const data =
             await response.json();
 
-        lastRefresh = new Date();
+        const cloudTime = data.last_update ? new Date(data.last_update) : new Date();
+        lastRefresh = Number.isNaN(cloudTime.getTime()) ? new Date() : cloudTime;
+        refreshIntervalSeconds = data.refresh_interval_seconds || 30;
 
         document.getElementById("pv").innerText =
             data.pv_total + " W";
@@ -88,7 +103,7 @@ async function updateDashboard() {
             data.battery_percent + " %";
 
         document.getElementById("batteryWh").innerText =
-            data.battery_energy_wh + " Wh";
+            data.battery_energy_wh + " Wh / " + data.battery_capacity_wh + " Wh";
 
         document.getElementById("batteryPower").innerText =
             data.battery_power + " W";
@@ -126,6 +141,22 @@ async function updateDashboard() {
         document.getElementById("pv4").innerText =
             data.pv4 + " W";
 
+        document.getElementById("tickerBattery").innerText =
+            data.battery_percent + " %";
+
+        document.getElementById("tickerPV").innerText =
+            data.pv_total + " W";
+
+        document.getElementById("tickerHouse").innerText =
+            data.home_load + " W";
+
+        document.getElementById("tickerSource").innerText =
+            data.solarbank_model === "AE103" ?
+            "Solarbank 4 (AE103)" : "Solarbank " + (data.solarbank_model || "unbekannt");
+
+        document.querySelector(".status").classList.remove("error");
+        updateLastRefresh();
+
         setBatteryColor(data.battery_percent);
 
         setPVBar("pv1bar", data.pv1);
@@ -136,6 +167,8 @@ async function updateDashboard() {
     }
     catch (e) {
 
+        document.getElementById("liveState").innerText = "FEHLER";
+        document.querySelector(".status").classList.add("error");
         console.log(e);
 
     }
@@ -224,7 +257,7 @@ async function updateAutomation() {
 updateDashboard();
 updateAutomation();
 
-setInterval(updateDashboard, 15000);
+setInterval(updateDashboard, 5000);
 
 setInterval(updateAutomation, 30000);
 
