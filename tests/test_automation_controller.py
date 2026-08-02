@@ -42,9 +42,10 @@ class FakeSolixClient:
 
 
 class ChargingAutomationTests(unittest.IsolatedAsyncioTestCase):
-    def make_controller(self, solix, audi, enabled="true"):
+    def make_controller(self, solix, audi, enabled="true", dry_run="false"):
         settings = {
             "AUTOMATION_ENABLED": enabled,
+            "AUTOMATION_DRY_RUN": dry_run,
             "AUTOMATION_ON_SOC": "30",
             "AUTOMATION_OFF_SOC": "10",
             "AUTOMATION_INTERVAL_SECONDS": "900",
@@ -99,6 +100,19 @@ class ChargingAutomationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(solix.commands, [])
         self.assertEqual(status["reason"], "automation_disabled")
+
+    async def test_dry_run_reports_action_without_sending_command(self):
+        solix = FakeSolixClient(31, state=False)
+        controller = self.make_controller(
+            solix, FakeAudiClient(True), dry_run="true"
+        )
+
+        status = await controller.evaluate()
+
+        self.assertEqual(solix.commands, [])
+        self.assertTrue(status["dry_run"])
+        self.assertEqual(status["last_action"], "would_turn_on")
+        self.assertIs(status["smartplug"]["state"], False)
 
 
 if __name__ == "__main__":

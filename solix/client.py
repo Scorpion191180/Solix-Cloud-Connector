@@ -64,7 +64,9 @@ class SolixClient:
         await self.api.update_sites()
         await self.api.update_site_details()
         await self.api.update_device_details()
-        await self.api.update_device_energy()
+        # The dashboard only uses current device values. Energy-history
+        # requests are comparatively expensive and caused Anker's
+        # energy_analysis endpoint to throttle a single live refresh.
         self._last_refresh = time.monotonic()
 
     async def connect(self) -> AnkerSolixApi:

@@ -18,6 +18,8 @@ services:
         value: "60"
       - key: AUTOMATION_ENABLED
         value: "false"
+      - key: AUTOMATION_DRY_RUN
+        value: "true"
       - key: AUTOMATION_ON_SOC
         value: "30"
       - key: AUTOMATION_OFF_SOC

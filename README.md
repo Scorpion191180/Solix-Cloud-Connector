@@ -40,6 +40,11 @@ Wallbox-Plugs gesetzt werden. Seriennummern und Tokens werden von den neuen
 Automatikstatus. Das Dashboard zeigt Audi-Stecker, Solix-Ladestand,
 Smart-Plug-Zustand und den Grund der letzten Entscheidung.
 
+Vor der echten Freigabe läuft die Steuerung mit `AUTOMATION_DRY_RUN=true` im
+Testbetrieb. Dabei werden Audi, Solix und Smart Plug vollständig geprüft und
+die beabsichtigte Schaltaktion angezeigt, aber es wird kein MQTT-Schaltbefehl
+gesendet.
+
 ## Render-Konfiguration
 
 Unter **Environment** des Render-Web-Service setzen:
@@ -51,6 +56,7 @@ AUDI_API_LEVEL=1
 AUDI_CACHE_SECONDS=900
 SOLIX_CACHE_SECONDS=60
 AUTOMATION_ENABLED=true
+AUTOMATION_DRY_RUN=true
 AUTOMATION_ON_SOC=30
 AUTOMATION_OFF_SOC=10
 AUTOMATION_INTERVAL_SECONDS=900
@@ -80,8 +86,10 @@ Audi-Abfragen aber nie unter 900 Sekunden gesetzt. Nach dem Render-Deploy lässt
 sich die Verbindung über `https://<dein-service>.onrender.com/api/audi` prüfen.
 
 `AUTOMATION_ENABLED` ist in `render.yaml` absichtlich standardmäßig `false`.
-Die Automatik darf erst nach erfolgreichem Audi-, Solix- und MQTT-Test auf
-`true` gesetzt werden.
+Für den ersten gemeinsamen Test wird `AUTOMATION_ENABLED=true` zusammen mit
+`AUTOMATION_DRY_RUN=true` gesetzt. Erst wenn Audi-Stecker, Solix-Ladestand und
+Smart-Plug-Zustand korrekt angezeigt werden, darf `AUTOMATION_DRY_RUN=false`
+gesetzt werden.
 
 > **Render Free:** Kostenlose Web-Services werden nach 15 Minuten ohne
 > eingehenden Traffic angehalten. Während dieser Zeit kann die
