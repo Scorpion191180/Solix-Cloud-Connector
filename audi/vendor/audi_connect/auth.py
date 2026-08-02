@@ -64,6 +64,12 @@ class AudiAuth:
     def xclient_id(self) -> Optional[str]:
         return self._state.xclient_id if self._state else None
 
+    @property
+    def refresh_token(self) -> Optional[str]:
+        if self._state is None:
+            return None
+        return self._state.bearer_token.get("refresh_token")
+
     def _set_state(self, state: OAuthState) -> None:
         """Adopt a new OAuth state and propagate to api and endpoints."""
         self._state = state
@@ -174,6 +180,40 @@ class AudiAuth:
         _LOGGER.info("Login successful!")
         return await self.client.get_vehicle_list()
 
+    async def request_device_code(self) -> dict:
+        """Start the browser-based Audi device authorization flow."""
+        return await self._oauth.request_device_code()
+
+    async def poll_device_token(
+        self, device_code: str
+    ) -> tuple[str, Optional[list[dict]]]:
+        """Poll once for device approval and adopt the session on success."""
+        status, tokens = await self._oauth.poll_device_token(device_code)
+        if status != "ok" or tokens is None:
+            return status, None
+
+        self._set_state(OAuthState.from_dict(tokens))
+        self._build_delegates()
+        self._save_tokens()
+        return status, await self.client.get_vehicle_list()
+
+    async def login_with_refresh_token(self, refresh_token: str) -> list[dict]:
+        """Create a session from a refresh token issued by device login."""
+        if self._try_restore_tokens():
+            try:
+                return await self.client.get_vehicle_list()
+            except Exception as exc:
+                _LOGGER.info("Cached Audi tokens are invalid: %s", exc)
+                self._token_store.clear()
+                self._client = None
+                self._actions = None
+
+        tokens = await self._oauth.login_with_refresh_token(refresh_token)
+        self._set_state(OAuthState.from_dict(tokens))
+        self._build_delegates()
+        self._save_tokens()
+        return await self.client.get_vehicle_list()
+
     async def refresh_tokens(self, elapsed_sec: int) -> bool:
         """Refresh all tokens if they are about to expire.
 
@@ -184,27 +224,20 @@ class AudiAuth:
         Returns True if a refresh actually happened, False if the
         existing tokens are still valid enough not to need refreshing.
         """
-        if self._state is None or self._state.mbb_oauth_token is None:
+        if self._state is None:
             return False
-        if "refresh_token" not in self._state.mbb_oauth_token:
+        refresh_token = self._state.bearer_token.get("refresh_token")
+        if not refresh_token:
             return False
-        if "expires_in" not in self._state.mbb_oauth_token:
+        if "expires_in" not in self._state.bearer_token:
             return False
-        if (elapsed_sec + 5 * 60) < self._state.mbb_oauth_token["expires_in"]:
+        if (elapsed_sec + 5 * 60) < self._state.bearer_token["expires_in"]:
             return False
 
         try:
             _LOGGER.info("Refreshing tokens...")
-            refreshed = await self._oauth.refresh_tokens(
-                mbb_oauth_token=self._state.mbb_oauth_token,
-                bearer_token=self._state.bearer_token,
-                client_id=self._state.client_id,
-                token_endpoint=self._state.token_endpoint,
-                authorization_server_base_url=self._state.authorization_server_base_url,
-                mbb_oauth_base_url=self._state.mbb_oauth_base_url,
-                xclient_id=self._state.xclient_id,
-            )
-            self._set_state(self._state.with_refresh(refreshed))
+            tokens = await self._oauth.login_with_refresh_token(refresh_token)
+            self._set_state(OAuthState.from_dict(tokens))
             self._build_delegates()
             self._save_tokens()
             _LOGGER.info("Token refresh successful!")

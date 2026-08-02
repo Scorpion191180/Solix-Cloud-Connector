@@ -7,19 +7,19 @@ from audi.client import AudiClient, MIN_CACHE_SECONDS
 
 
 class AudiClientTests(unittest.IsolatedAsyncioTestCase):
-    async def test_missing_credentials_are_non_fatal(self):
+    async def test_missing_authorization_is_non_fatal(self):
         with patch.dict(os.environ, {}, clear=True):
             client = AudiClient()
             result = await client.get_live()
 
         self.assertFalse(result["configured"])
         self.assertFalse(result["available"])
-        self.assertIn("AUDI_EMAIL", result["error"])
+        self.assertIn("AUDI_REFRESH_TOKEN", result["error"])
 
     async def test_success_is_served_from_cache(self):
         with patch.dict(
             os.environ,
-            {"AUDI_EMAIL": "driver@example.com", "AUDI_PASSWORD": "secret"},
+            {"AUDI_REFRESH_TOKEN": "refresh-token"},
             clear=True,
         ):
             client = AudiClient()
@@ -47,7 +47,7 @@ class AudiClientTests(unittest.IsolatedAsyncioTestCase):
     async def test_failed_refresh_returns_stale_success(self):
         with patch.dict(
             os.environ,
-            {"AUDI_EMAIL": "driver@example.com", "AUDI_PASSWORD": "secret"},
+            {"AUDI_REFRESH_TOKEN": "refresh-token"},
             clear=True,
         ):
             client = AudiClient()
@@ -68,7 +68,7 @@ class AudiClientTests(unittest.IsolatedAsyncioTestCase):
     def test_vehicle_status_is_normalised_and_vin_is_masked(self):
         with patch.dict(
             os.environ,
-            {"AUDI_EMAIL": "driver@example.com", "AUDI_PASSWORD": "secret"},
+            {"AUDI_REFRESH_TOKEN": "refresh-token"},
             clear=True,
         ):
             client = AudiClient()
@@ -146,8 +146,7 @@ class AudiClientTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(
             os.environ,
             {
-                "AUDI_EMAIL": "driver@example.com",
-                "AUDI_PASSWORD": "secret",
+                "AUDI_REFRESH_TOKEN": "refresh-token",
                 "AUDI_CACHE_SECONDS": "1",
             },
             clear=True,

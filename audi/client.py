@@ -30,15 +30,14 @@ def _integer_setting(name: str, default: int, minimum: int) -> int:
 class AudiClient:
     """Small read-only adapter around the vendored myAudi client.
 
-    Audi Connect is deliberately optional: missing credentials or an Audi
+    Audi Connect is deliberately optional: missing authorization or an Audi
     cloud error are returned as API data and never prevent the Solix app from
     starting. Successful vehicle data is cached to protect the account from
     Audi's strict request limits.
     """
 
     def __init__(self) -> None:
-        self._email = os.getenv("AUDI_EMAIL", "").strip()
-        self._password = os.getenv("AUDI_PASSWORD", "")
+        self._refresh_token = os.getenv("AUDI_REFRESH_TOKEN", "").strip()
         self._country = os.getenv("AUDI_COUNTRY", "DE").strip().upper() or "DE"
         self._spin = os.getenv("AUDI_SPIN", "").strip() or None
         self._vin = os.getenv("AUDI_VIN", "").strip().upper()
@@ -61,7 +60,7 @@ class AudiClient:
 
     @property
     def configured(self) -> bool:
-        return bool(self._email and self._password)
+        return bool(self._refresh_token)
 
     def _empty_payload(self) -> dict[str, Any]:
         return {
@@ -231,7 +230,7 @@ class AudiClient:
             api_level=self._api_level,
             token_store=TokenStore(filepath=self._token_file),
         )
-        vehicles = await self._auth.login(self._email, self._password)
+        vehicles = await self._auth.login_with_refresh_token(self._refresh_token)
         if self._vin:
             self._vehicle_info = next(
                 (
@@ -304,8 +303,8 @@ class AudiClient:
         name = type(exc).__name__
         if name in {"AuthenticationError", "TokenRefreshError"}:
             return (
-                "Audi-Anmeldung fehlgeschlagen. Zugangsdaten und offene "
-                "Bestätigungen in der myAudi-App prüfen."
+                "Audi-Autorisierung ist abgelaufen oder wurde abgelehnt. "
+                "Die Gerätefreigabe muss erneut durchgeführt werden."
             )
         if isinstance(exc, asyncio.TimeoutError) or name == "RequestTimeoutError":
             return "Zeitüberschreitung beim Abruf von Audi Connect"
@@ -319,7 +318,7 @@ class AudiClient:
         """Return Audi data and fetch from the cloud at most once per cache TTL."""
         if not self.configured:
             payload = self._empty_payload()
-            payload["error"] = "AUDI_EMAIL oder AUDI_PASSWORD ist nicht gesetzt"
+            payload["error"] = "AUDI_REFRESH_TOKEN ist nicht gesetzt"
             return payload
 
         cached = self._cached_payload()

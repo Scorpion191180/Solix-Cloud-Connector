@@ -9,7 +9,7 @@ import logging
 from datetime import datetime, timezone
 from hashlib import sha256
 from urllib.parse import urlparse, parse_qs, urlencode
-from typing import Optional
+from typing import Any, Optional
 
 import hmac
 from bs4 import BeautifulSoup
@@ -19,6 +19,8 @@ from .endpoints import cariad_url
 from .exceptions import AuthenticationError, CountryNotSupportedError
 
 _LOGGER = logging.getLogger(__name__)
+
+DEVICE_CODE_SCOPE = "openid mbb profile badge cars dealers vin"
 
 
 class AudiOAuth:
@@ -31,6 +33,7 @@ class AudiOAuth:
     def __init__(self, api: AudiAPI, country: str):
         self._api = api
         self._country = country or "DE"
+        self._device_context: dict[str, str] | None = None
 
     # --- HTML form helpers ---
 
@@ -266,8 +269,178 @@ class AudiOAuth:
         )
         bearer_token_json = json.loads(bearer_token_rsptxt)
 
-        # Step 10: Get AZS (Audi) token
-        _LOGGER.debug("Step 10: Getting Audi AZS token...")
+        return await self._finalize_session(
+            bearer_token_json,
+            {
+                "client_id": client_id,
+                "token_endpoint": token_endpoint,
+                "authorization_server_base_url": authorization_server_base_url,
+                "mbb_oauth_base_url": mbb_oauth_base_url,
+                "language": language,
+            },
+        )
+
+    async def _discover_endpoints(self) -> dict[str, str]:
+        """Resolve the dynamic Audi/OIDC endpoints used by device login."""
+        self._api.use_token(None)
+        self._api.set_xclient_id(None)
+
+        markets_json = await self._api.request(
+            "GET",
+            "https://content.app.my.audi.com/service/mobileapp/configurations/markets",
+            None,
+        )
+        specifications = markets_json["countries"]["countrySpecifications"]
+        if self._country.upper() not in specifications:
+            raise CountryNotSupportedError(
+                f"Country '{self._country}' not found in Audi markets"
+            )
+        language = specifications[self._country.upper()]["defaultLanguage"]
+
+        marketcfg_url = (
+            "https://content.app.my.audi.com/service/mobileapp/configurations/"
+            f"market/{self._country}/{language}?v=4.23.1"
+        )
+        marketcfg_json = await self._api.request("GET", marketcfg_url, None)
+        openidcfg_url = marketcfg_json.get(
+            "idkLoginServiceConfigurationURLProduction",
+            self._get_cariad_url("/auth/v1/idk/oidc/openid-configuration"),
+        )
+        openidcfg_json = await self._api.request("GET", openidcfg_url, None)
+
+        return {
+            "client_id": marketcfg_json.get(
+                "idkClientIDAndroidLive",
+                "09b6cbec-cd19-4589-82fd-363dfa8c24da@apps_vw-dilab_com",
+            ),
+            "token_endpoint": openidcfg_json.get(
+                "token_endpoint",
+                self._get_cariad_url("/auth/v1/idk/oidc/token"),
+            ),
+            "device_authorization_endpoint": openidcfg_json.get(
+                "device_authorization_endpoint",
+                "https://identity.vwgroup.io/oidc/v1/device_authorization",
+            ),
+            "authorization_server_base_url": marketcfg_json.get(
+                "myAudiAuthorizationServerProxyServiceURLProduction",
+                self._get_cariad_url("/login/v1/audi"),
+            ),
+            "mbb_oauth_base_url": marketcfg_json.get(
+                "mbbOAuthBaseURLLive",
+                "https://mbboauth-1d.prd.ece.vwg-connect.com/mbbcoauth",
+            ),
+            "language": language,
+        }
+
+    async def request_device_code(self) -> dict[str, Any]:
+        """Start Audi's RFC 8628 device authorization grant."""
+        self._device_context = await self._discover_endpoints()
+        headers = {
+            "Accept": "application/json",
+            "Accept-Charset": "utf-8",
+            "X-App-Version": AudiAPI.HDR_XAPP_VERSION,
+            "X-App-Name": "myAudi",
+            "User-Agent": AudiAPI.HDR_USER_AGENT,
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+        encoded = urlencode(
+            {
+                "client_id": self._device_context["client_id"],
+                "scope": DEVICE_CODE_SCOPE,
+            },
+            encoding="utf-8",
+        ).replace("+", "%20")
+        _, response_text = await self._api.request(
+            "POST",
+            self._device_context["device_authorization_endpoint"],
+            encoded,
+            headers=headers,
+            allow_redirects=False,
+            rsp_wtxt=True,
+        )
+        result = json.loads(response_text)
+        if "device_code" not in result:
+            error = result.get("error_description") or result.get("error") or "unknown"
+            raise AuthenticationError(f"Device authorization failed: {error}")
+        return result
+
+    async def poll_device_token(
+        self, device_code: str
+    ) -> tuple[str, dict[str, Any] | None]:
+        """Poll once for device approval and finalize the Audi session on success."""
+        if self._device_context is None:
+            raise AuthenticationError("Device authorization was not started")
+
+        headers = {
+            "Accept": "application/json",
+            "Accept-Charset": "utf-8",
+            "User-Agent": AudiAPI.HDR_USER_AGENT,
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+        encoded = urlencode(
+            {
+                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                "client_id": self._device_context["client_id"],
+                "device_code": device_code,
+            },
+            encoding="utf-8",
+        ).replace("+", "%20")
+        _, response_text = await self._api.request(
+            "POST",
+            self._device_context["token_endpoint"],
+            encoded,
+            headers=headers,
+            allow_redirects=False,
+            rsp_wtxt=True,
+        )
+        result = json.loads(response_text)
+        if "access_token" in result:
+            return "ok", await self._finalize_session(result, self._device_context)
+
+        status = {
+            "authorization_pending": "authorization_pending",
+            "slow_down": "slow_down",
+            "expired_token": "expired",
+            "access_denied": "denied",
+        }.get(result.get("error"), "error")
+        return status, None
+
+    async def login_with_refresh_token(self, refresh_token: str) -> dict[str, Any]:
+        """Create a new Audi session from a device-grant refresh token."""
+        context = await self._discover_endpoints()
+        headers = {
+            "Accept": "application/json",
+            "Accept-Charset": "utf-8",
+            "User-Agent": AudiAPI.HDR_USER_AGENT,
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+        encoded = urlencode(
+            {
+                "client_id": context["client_id"],
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "response_type": "token id_token",
+            },
+            encoding="utf-8",
+        ).replace("+", "%20")
+        _, response_text = await self._api.request(
+            "POST",
+            context["token_endpoint"],
+            encoded,
+            headers=headers,
+            allow_redirects=False,
+            rsp_wtxt=True,
+        )
+        result = json.loads(response_text)
+        if "access_token" not in result:
+            error = result.get("error_description") or result.get("error") or "unknown"
+            raise AuthenticationError(f"Audi refresh token rejected: {error}")
+        return await self._finalize_session(result, context)
+
+    async def _finalize_session(
+        self, bearer_token: dict[str, Any], context: dict[str, str]
+    ) -> dict[str, Any]:
+        """Derive AZS and MBB tokens from an approved IDK bearer token."""
         headers = {
             "Accept": "application/json",
             "Accept-Charset": "utf-8",
@@ -276,45 +449,49 @@ class AudiOAuth:
             "User-Agent": AudiAPI.HDR_USER_AGENT,
             "Content-Type": "application/json; charset=utf-8",
         }
-        asz_req_data = {
-            "token": bearer_token_json["access_token"],
-            "grant_type": "id_token",
-            "stage": "live",
-            "config": "myaudi",
-        }
-        _, azs_token_rsptxt = await self._api.request(
-            "POST", authorization_server_base_url + "/token",
-            json.dumps(asz_req_data), headers=headers,
-            allow_redirects=False, rsp_wtxt=True,
+        _, response_text = await self._api.request(
+            "POST",
+            context["authorization_server_base_url"] + "/token",
+            json.dumps(
+                {
+                    "token": bearer_token["access_token"],
+                    "grant_type": "id_token",
+                    "stage": "live",
+                    "config": "myaudi",
+                }
+            ),
+            headers=headers,
+            allow_redirects=False,
+            rsp_wtxt=True,
         )
-        audi_token = json.loads(azs_token_rsptxt)
+        audi_token = json.loads(response_text)
 
-        # Step 11: Register MBB OAuth client
-        _LOGGER.debug("Step 11: Registering MBB OAuth client...")
         headers = {
             "Accept": "application/json",
             "Accept-Charset": "utf-8",
             "User-Agent": AudiAPI.HDR_USER_AGENT,
             "Content-Type": "application/json; charset=utf-8",
         }
-        mbboauth_reg_data = {
-            "client_name": "SM-A405FN",  # Emulates Samsung Galaxy A40 (from Android APK)
-            "platform": "google",
-            "client_brand": "Audi",
-            "appName": "myAudi",
-            "appVersion": AudiAPI.HDR_XAPP_VERSION,
-            "appId": "de.myaudi.mobile.assistant",
-        }
-        mbboauth_client_reg_rsp, mbboauth_client_reg_rsptxt = await self._api.request(
-            "POST", mbb_oauth_base_url + "/mobile/register/v1",
-            json.dumps(mbboauth_reg_data), headers=headers,
-            allow_redirects=False, rsp_wtxt=True,
+        registration_response, response_text = await self._api.request(
+            "POST",
+            context["mbb_oauth_base_url"] + "/mobile/register/v1",
+            json.dumps(
+                {
+                    "client_name": "SM-A405FN",
+                    "platform": "google",
+                    "client_brand": "Audi",
+                    "appName": "myAudi",
+                    "appVersion": AudiAPI.HDR_XAPP_VERSION,
+                    "appId": "de.myaudi.mobile.assistant",
+                }
+            ),
+            headers=headers,
+            allow_redirects=False,
+            rsp_wtxt=True,
         )
-        mbboauth_client_reg_json = json.loads(mbboauth_client_reg_rsptxt)
-        xclient_id = mbboauth_client_reg_json["client_id"]
+        xclient_id = json.loads(response_text)["client_id"]
+        self._api.set_xclient_id(xclient_id)
 
-        # Step 12: Get MBB OAuth token
-        _LOGGER.debug("Step 12: Getting MBB OAuth token...")
         headers = {
             "Accept": "application/json",
             "Accept-Charset": "utf-8",
@@ -322,51 +499,59 @@ class AudiOAuth:
             "Content-Type": "application/x-www-form-urlencoded",
             "X-Client-ID": xclient_id,
         }
-        mbboauth_auth_data = {
-            "grant_type": "id_token",
-            "token": bearer_token_json["id_token"],
-            "scope": "sc2:fal",
-        }
-        encoded_mbboauth_auth_data = urlencode(
-            mbboauth_auth_data, encoding="utf-8"
+        encoded = urlencode(
+            {
+                "grant_type": "id_token",
+                "token": bearer_token["id_token"],
+                "scope": "sc2:fal",
+            },
+            encoding="utf-8",
         ).replace("+", "%20")
-        _, mbboauth_auth_rsptxt = await self._api.request(
-            "POST", mbb_oauth_base_url + "/mobile/oauth2/v1/token",
-            encoded_mbboauth_auth_data, headers=headers,
-            allow_redirects=False, rsp_wtxt=True,
-        )
-        mbboauth_auth_json = json.loads(mbboauth_auth_rsptxt)
-        mbb_oauth_token = mbboauth_auth_json
-
-        # Step 13: Refresh MBB token immediately (like the app does)
-        _LOGGER.debug("Step 13: Refreshing MBB token...")
-        mbboauth_refresh_data = {
-            "grant_type": "refresh_token",
-            "token": mbboauth_auth_json["refresh_token"],
-            "scope": "sc2:fal",
-        }
-        encoded_mbboauth_refresh_data = urlencode(
-            mbboauth_refresh_data, encoding="utf-8"
-        ).replace("+", "%20")
-        _, mbboauth_refresh_rsptxt = await self._api.request(
-            "POST", mbb_oauth_base_url + "/mobile/oauth2/v1/token",
-            encoded_mbboauth_refresh_data, headers=headers,
-            allow_redirects=False, cookies=mbboauth_client_reg_rsp.cookies,
+        _, response_text = await self._api.request(
+            "POST",
+            context["mbb_oauth_base_url"] + "/mobile/oauth2/v1/token",
+            encoded,
+            headers=headers,
+            allow_redirects=False,
             rsp_wtxt=True,
         )
-        vw_token = json.loads(mbboauth_refresh_rsptxt)
+        mbb_oauth_token = json.loads(response_text)
+
+        if "refresh_token" in mbb_oauth_token:
+            encoded = urlencode(
+                {
+                    "grant_type": "refresh_token",
+                    "token": mbb_oauth_token["refresh_token"],
+                    "scope": "sc2:fal",
+                },
+                encoding="utf-8",
+            ).replace("+", "%20")
+            _, response_text = await self._api.request(
+                "POST",
+                context["mbb_oauth_base_url"] + "/mobile/oauth2/v1/token",
+                encoded,
+                headers=headers,
+                allow_redirects=False,
+                cookies=registration_response.cookies,
+                rsp_wtxt=True,
+            )
+            vw_token = json.loads(response_text)
+        else:
+            vw_token = mbb_oauth_token
 
         return {
-            "bearer_token": bearer_token_json,
+            "bearer_token": bearer_token,
             "audi_token": audi_token,
             "vw_token": vw_token,
             "mbb_oauth_token": mbb_oauth_token,
             "xclient_id": xclient_id,
-            "client_id": client_id,
-            "token_endpoint": token_endpoint,
-            "authorization_server_base_url": authorization_server_base_url,
-            "mbb_oauth_base_url": mbb_oauth_base_url,
-            "language": language,
+            "client_id": context["client_id"],
+            "token_endpoint": context["token_endpoint"],
+            "authorization_server_base_url": context[
+                "authorization_server_base_url"
+            ],
+            "mbb_oauth_base_url": context["mbb_oauth_base_url"],
+            "language": context["language"],
         }
 
     async def refresh_tokens(
