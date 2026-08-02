@@ -18,6 +18,8 @@ services:
         value: "30"
       - key: SOLIX_SOLARBANK_PN
         value: "AE103"
+      - key: SOLIX_BATTERY_CAPACITY_WH
+        value: "10400"
       - key: AUTOMATION_ENABLED
         value: "false"
       - key: AUTOMATION_DRY_RUN

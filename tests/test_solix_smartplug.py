@@ -129,7 +129,13 @@ class SolixSmartPlugTests(unittest.IsolatedAsyncioTestCase):
                 "sub_package_num": 2,
             },
         }
-        with patch.dict(os.environ, {"SOLIX_SOLARBANK_PN": "AE103"}):
+        with patch.dict(
+            os.environ,
+            {
+                "SOLIX_SOLARBANK_PN": "AE103",
+                "SOLIX_BATTERY_CAPACITY_WH": "10400",
+            },
+        ):
             client = self.make_client(devices)
         client._last_refresh_at = datetime.now(timezone.utc)
 
@@ -137,7 +143,9 @@ class SolixSmartPlugTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["solarbank_model"], "AE103")
         self.assertEqual(result["battery_percent"], 18)
-        self.assertEqual(result["battery_capacity_wh"], 15072)
+        self.assertEqual(result["battery_energy_wh"], 1872)
+        self.assertEqual(result["battery_capacity_wh"], 10400)
+        self.assertEqual(result["battery_capacity_source"], "configured")
         self.assertEqual(result["solarbank_count"], 2)
         self.assertEqual(result["selection"], "configured_model")
         self.assertNotIn("MAIN-SECRET", str(result))
