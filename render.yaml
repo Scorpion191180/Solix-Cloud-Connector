@@ -29,7 +29,7 @@ services:
       - key: AUTOMATION_OFF_SOC
         value: "10"
       - key: AUTOMATION_INTERVAL_SECONDS
-        value: "900"
+        value: "60"
       - key: SMARTPLUG_MANUAL_CONTROL
         value: "false"
       - key: SMARTPLUG_CONTROL_TOKEN

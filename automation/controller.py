@@ -11,8 +11,8 @@ from typing import Any
 from .policy import AutomationDecision, decide_smartplug_state
 
 
-DEFAULT_INTERVAL_SECONDS = 15 * 60
-MIN_INTERVAL_SECONDS = 15 * 60
+DEFAULT_INTERVAL_SECONDS = 60
+MIN_INTERVAL_SECONDS = 60
 
 _LOGGER = logging.getLogger(__name__)
 

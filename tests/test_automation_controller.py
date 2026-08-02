@@ -114,6 +114,21 @@ class ChargingAutomationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status["last_action"], "would_turn_on")
         self.assertIs(status["smartplug"]["state"], False)
 
+    def test_automation_interval_has_one_minute_safety_floor(self):
+        with patch.dict(
+            os.environ,
+            {
+                "AUTOMATION_ENABLED": "false",
+                "AUTOMATION_INTERVAL_SECONDS": "1",
+            },
+            clear=False,
+        ):
+            controller = ChargingAutomation(
+                FakeSolixClient(25), FakeAudiClient(True)
+            )
+
+        self.assertEqual(controller.status()["interval_seconds"], 60)
+
 
 if __name__ == "__main__":
     unittest.main()
