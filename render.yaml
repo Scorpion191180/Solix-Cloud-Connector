@@ -6,9 +6,7 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: AUDI_EMAIL
-        sync: false
-      - key: AUDI_PASSWORD
+      - key: AUDI_REFRESH_TOKEN
         sync: false
       - key: AUDI_COUNTRY
         value: DE
