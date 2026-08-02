@@ -40,6 +40,13 @@ Wallbox-Plugs gesetzt werden. Seriennummern und Tokens werden von den neuen
 Automatikstatus. Das Dashboard zeigt Audi-Stecker, Solix-Ladestand,
 Smart-Plug-Zustand und den Grund der letzten Entscheidung.
 
+Das Dashboard zeigt zusätzlich Audi-Akkustand und elektrische Reichweite. Ein
+manueller Ein-/Ausschalter ist nur verfügbar, wenn er auf dem Server aktiviert
+und mit einem geheimen Test-Code geschützt wurde. Einschalten ist ausschließlich
+bei verbundenem Audi-Ladestecker und mindestens 10 % Solix-Ladestand möglich;
+Ausschalten bleibt immer möglich. Der manuelle Test ändert den Dry-Run-Modus der
+Automatik nicht.
+
 Vor der echten Freigabe läuft die Steuerung mit `AUTOMATION_DRY_RUN=true` im
 Testbetrieb. Dabei werden Audi, Solix und Smart Plug vollständig geprüft und
 die beabsichtigte Schaltaktion angezeigt, aber es wird kein MQTT-Schaltbefehl
@@ -62,6 +69,8 @@ AUTOMATION_DRY_RUN=true
 AUTOMATION_ON_SOC=30
 AUTOMATION_OFF_SOC=10
 AUTOMATION_INTERVAL_SECONDS=900
+SMARTPLUG_MANUAL_CONTROL=true
+SMARTPLUG_CONTROL_TOKEN=langer-zufaelliger-test-code
 ```
 
 Optional:

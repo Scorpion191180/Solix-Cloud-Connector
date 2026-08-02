@@ -1,9 +1,12 @@
 from contextlib import asynccontextmanager
+import hmac
+import os
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 
 from audi.client import AudiClient
 from automation.controller import ChargingAutomation
@@ -12,6 +15,29 @@ from solix.client import SolixClient
 client = SolixClient()
 audi_client = AudiClient()
 charging_automation = ChargingAutomation(client, audi_client)
+
+
+class ManualSmartPlugCommand(BaseModel):
+    enabled: bool
+
+
+def _manual_control_configured() -> bool:
+    enabled = os.getenv("SMARTPLUG_MANUAL_CONTROL", "false").strip().lower()
+    token = os.getenv("SMARTPLUG_CONTROL_TOKEN", "").strip()
+    return enabled in {"1", "true", "yes", "on"} and bool(token)
+
+
+def _authorize_manual_control(provided_token: str | None) -> None:
+    expected_token = os.getenv("SMARTPLUG_CONTROL_TOKEN", "").strip()
+    if not _manual_control_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Manuelle Smart-Plug-Steuerung ist nicht eingerichtet",
+        )
+    if not provided_token or not hmac.compare_digest(
+        provided_token.encode("utf-8"), expected_token.encode("utf-8")
+    ):
+        raise HTTPException(status_code=401, detail="Test-Code ist nicht korrekt")
 
 
 @asynccontextmanager
@@ -73,4 +99,54 @@ async def audi():
 @app.get("/api/automation")
 async def automation():
     """Return the safe public status of the background charging controller."""
-    return charging_automation.status()
+    status = charging_automation.status()
+    status["manual_control_available"] = _manual_control_configured()
+    return status
+
+
+@app.post("/api/smartplug/manual")
+async def manual_smartplug(
+    command: ManualSmartPlugCommand,
+    x_control_token: str | None = Header(default=None),
+):
+    """Run an authenticated manual test without disabling automation dry-run."""
+    _authorize_manual_control(x_control_token)
+
+    if command.enabled:
+        audi_data = await audi_client.get_live()
+        if (
+            audi_data.get("available") is not True
+            or audi_data.get("plug_connected") is not True
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Einschalten ist nur bei verbundenem Audi-Ladestecker möglich",
+            )
+
+        solix_data = await client.get_live()
+        battery_percent = solix_data.get("battery_percent")
+        if (
+            isinstance(battery_percent, bool)
+            or not isinstance(battery_percent, (int, float))
+            or battery_percent < 10
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Einschalten ist unter 10 % Solix-Ladestand gesperrt",
+            )
+
+    try:
+        result = await client.set_smartplug_power(command.enabled)
+    except Exception as exc:
+        charging_automation.record_manual_error(exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Smart Plug konnte nicht geschaltet werden; Details stehen im Render-Log",
+        ) from exc
+
+    charging_automation.record_manual_result(result, command.enabled)
+    return {
+        "ok": True,
+        "requested_state": command.enabled,
+        "smartplug": result,
+    }

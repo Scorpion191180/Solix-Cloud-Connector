@@ -40,6 +40,7 @@
 <span class="live-ticker-label">LIVE-TICKER</span>
 <div class="live-ticker-values">
 <span>🔋 Akku <strong id="tickerBattery">--</strong></span>
+<span>🚗 Audi <strong id="tickerAudiBattery">--</strong></span>
 <span>☀️ PV <strong id="tickerPV">--</strong></span>
 <span>🏠 Haus <strong id="tickerHouse">--</strong></span>
 <span>📡 <strong id="tickerSource">Quelle wird geprüft</strong></span>
@@ -224,6 +225,15 @@ Signalstärke
 <div class="automation-item">
 <span class="automation-icon">🔋</span>
 <div>
+<span class="automation-label">Audi-Ladestand</span>
+<strong id="audiBattery">--</strong>
+<span class="automation-detail" id="audiRange">Audi wird geladen …</span>
+</div>
+</div>
+
+<div class="automation-item">
+<span class="automation-icon">🔆</span>
+<div>
 <span class="automation-label">Solix-Ladestand</span>
 <strong id="automationSoc">--</strong>
 </div>
@@ -247,6 +257,31 @@ Signalstärke
 <p class="automation-reason" id="automationReason" aria-live="polite">
 Automatikstatus wird geladen …
 </p>
+
+<div class="manual-control" id="manualControl">
+<div class="manual-control-copy">
+<strong>Manueller Smart-Plug-Test</strong>
+<span>Der Audi-Stecker muss verbunden sein; Einschalten ist unter 10 % Solix-Akku gesperrt.</span>
+</div>
+<div class="manual-code">
+<label for="controlToken">Test-Code</label>
+<input
+    id="controlToken"
+    type="password"
+    autocomplete="off"
+    spellcheck="false"
+    placeholder="Test-Code eingeben"
+    disabled
+>
+</div>
+<div class="manual-buttons">
+<button type="button" class="manual-button on" id="smartPlugOn" disabled>Einschalten</button>
+<button type="button" class="manual-button off" id="smartPlugOff" disabled>Ausschalten</button>
+</div>
+<p class="manual-status" id="manualControlStatus" aria-live="polite">
+Noch kein manueller Befehl gesendet.
+</p>
+</div>
 
 </section>
 

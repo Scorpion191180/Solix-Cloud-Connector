@@ -241,7 +241,7 @@ header p{
 
 .automation-grid{
     display:grid;
-    grid-template-columns:repeat(3,1fr);
+    grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
     gap:14px;
     margin-top:22px;
 }
@@ -274,6 +274,13 @@ header p{
     white-space:nowrap;
 }
 
+.automation-detail{
+    display:block;
+    margin-top:3px;
+    color:var(--sub);
+    font-size:11px;
+}
+
 .automation-rule{
     display:flex;
     flex-wrap:wrap;
@@ -291,6 +298,74 @@ header p{
     margin:16px 0 0;
     color:#cbd5e1;
     font-size:14px;
+}
+
+.manual-control{
+    display:grid;
+    grid-template-columns:minmax(220px,1fr) minmax(180px,.7fr) auto;
+    align-items:end;
+    gap:12px;
+    margin-top:18px;
+    padding:16px;
+    border:1px solid rgba(96,165,250,.25);
+    border-radius:16px;
+    background:rgba(15,23,42,.55);
+}
+
+.manual-control-copy strong,
+.manual-control-copy span{
+    display:block;
+}
+
+.manual-control-copy span,
+.manual-control label,
+.manual-status{
+    color:var(--sub);
+    font-size:12px;
+}
+
+.manual-control-copy span{
+    margin-top:5px;
+    line-height:1.4;
+}
+
+.manual-code label{
+    display:block;
+    margin-bottom:6px;
+}
+
+.manual-control input{
+    width:100%;
+    min-height:42px;
+    padding:10px 12px;
+    color:var(--text);
+    border:1px solid #475569;
+    border-radius:10px;
+    background:#0f172a;
+}
+
+.manual-buttons{
+    display:flex;
+    gap:8px;
+}
+
+.manual-button{
+    min-height:42px;
+    padding:10px 14px;
+    color:white;
+    border:0;
+    border-radius:10px;
+    font-weight:700;
+    cursor:pointer;
+}
+
+.manual-button.on{background:#15803d;}
+.manual-button.off{background:#b91c1c;}
+.manual-button:disabled{opacity:.45;cursor:not-allowed;}
+
+.manual-status{
+    grid-column:1/-1;
+    margin:0;
 }
 
 .flow{
@@ -401,6 +476,14 @@ header{
 
 .automation-grid{
     grid-template-columns:1fr;
+}
+
+.manual-control{
+    grid-template-columns:1fr;
+}
+
+.manual-status{
+    grid-column:auto;
 }
 
 }
