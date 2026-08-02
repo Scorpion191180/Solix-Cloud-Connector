@@ -30,3 +30,7 @@ services:
         value: "10"
       - key: AUTOMATION_INTERVAL_SECONDS
         value: "900"
+      - key: SMARTPLUG_MANUAL_CONTROL
+        value: "false"
+      - key: SMARTPLUG_CONTROL_TOKEN
+        sync: false

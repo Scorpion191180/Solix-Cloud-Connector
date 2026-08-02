@@ -2,6 +2,8 @@ let lastRefresh = null;
 let refreshIntervalSeconds = 30;
 let dashboardBusy = false;
 let automationBusy = false;
+let audiBusy = false;
+let manualControlBusy = false;
 
 const automationReasons = {
     automation_disabled: "Die Ladeautomatik ist deaktiviert.",
@@ -14,7 +16,8 @@ const automationReasons = {
     cable_not_connected: "Ladestecker nicht verbunden: Smart Plug wurde sicher ausgeschaltet.",
     cable_not_connected_plug_already_off: "Ladestecker nicht verbunden: Smart Plug bleibt ausgeschaltet.",
     solix_soc_unknown: "Solix-Ladestand unbekannt: Smart Plug wurde sicher ausgeschaltet.",
-    solix_soc_unknown_plug_already_off: "Solix-Ladestand unbekannt: Smart Plug bleibt ausgeschaltet."
+    solix_soc_unknown_plug_already_off: "Solix-Ladestand unbekannt: Smart Plug bleibt ausgeschaltet.",
+    manual_control: "Der Smart Plug wurde zuletzt manuell getestet."
 };
 
 const automationDryRunReasons = {
@@ -232,6 +235,15 @@ async function updateAutomation() {
             smartPlug.state === false ? "Ausgeschaltet" :
             smartPlug.available ? "Bereit" : "Nicht gefunden";
 
+        const manualAvailable = data.manual_control_available === true;
+        document.getElementById("controlToken").disabled = !manualAvailable;
+        document.getElementById("smartPlugOn").disabled = !manualAvailable;
+        document.getElementById("smartPlugOff").disabled = !manualAvailable;
+        if (!manualAvailable) {
+            document.getElementById("manualControlStatus").innerText =
+                "Manueller Test ist auf dem Server nicht freigeschaltet.";
+        }
+
         document.getElementById("automationReason").innerText =
             data.error ||
             (data.dry_run && automationDryRunReasons[data.reason]) ||
@@ -257,11 +269,102 @@ async function updateAutomation() {
 
 }
 
+async function updateAudi() {
+
+    if (audiBusy)
+        return;
+
+    audiBusy = true;
+
+    try {
+        const response = await fetch("/api/audi", { cache: "no-store" });
+        if (!response.ok)
+            throw new Error("Audi API: HTTP " + response.status);
+
+        const data = await response.json();
+        if (!data.available)
+            throw new Error(data.error || "Audi-Daten sind nicht verfügbar");
+
+        const battery = data.battery_percent == null ? "--" : data.battery_percent + " %";
+        document.getElementById("audiBattery").innerText = battery;
+        document.getElementById("tickerAudiBattery").innerText = battery;
+        document.getElementById("audiRange").innerText =
+            data.electric_range_km == null ? "Reichweite unbekannt" :
+            data.electric_range_km + " km elektrisch";
+    }
+    catch (e) {
+        document.getElementById("audiBattery").innerText = "nicht verfügbar";
+        document.getElementById("tickerAudiBattery").innerText = "--";
+        document.getElementById("audiRange").innerText = "Audi-Verbindung prüfen";
+        console.log(e);
+    }
+    finally {
+        audiBusy = false;
+    }
+}
+
+async function setManualSmartPlug(enabled) {
+
+    if (manualControlBusy)
+        return;
+
+    const token = document.getElementById("controlToken").value.trim();
+    const status = document.getElementById("manualControlStatus");
+    if (!token) {
+        status.innerText = "Bitte zuerst den Test-Code eingeben.";
+        return;
+    }
+
+    const action = enabled ? "einschalten" : "ausschalten";
+    if (!window.confirm("Smart Plug jetzt wirklich " + action + "?"))
+        return;
+
+    manualControlBusy = true;
+    document.getElementById("smartPlugOn").disabled = true;
+    document.getElementById("smartPlugOff").disabled = true;
+    status.innerText = "Befehl wird gesendet …";
+
+    try {
+        const response = await fetch("/api/smartplug/manual", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-Control-Token": token
+            },
+            body: JSON.stringify({ enabled })
+        });
+        const data = await response.json();
+        if (!response.ok)
+            throw new Error(data.detail || "Smart Plug konnte nicht geschaltet werden");
+
+        document.getElementById("smartPlug").innerText =
+            enabled ? "Eingeschaltet" : "Ausgeschaltet";
+        status.innerText = enabled ?
+            "Smart Plug wurde manuell eingeschaltet." :
+            "Smart Plug wurde manuell ausgeschaltet.";
+        await updateAutomation();
+    }
+    catch (e) {
+        status.innerText = e.message;
+    }
+    finally {
+        manualControlBusy = false;
+        document.getElementById("smartPlugOn").disabled = false;
+        document.getElementById("smartPlugOff").disabled = false;
+    }
+}
+
 updateDashboard();
 updateAutomation();
+updateAudi();
+
+document.getElementById("smartPlugOn").addEventListener("click", () => setManualSmartPlug(true));
+document.getElementById("smartPlugOff").addEventListener("click", () => setManualSmartPlug(false));
 
 setInterval(updateDashboard, 5000);
 
 setInterval(updateAutomation, 30000);
+
+setInterval(updateAudi, 30000);
 
 setInterval(updateLastRefresh, 1000);

@@ -216,3 +216,22 @@ class ChargingAutomation:
             "solix_battery_percent": self._last_battery_percent,
             "smartplug": dict(self._smartplug),
         }
+
+    def record_manual_result(
+        self, result: dict[str, Any], enabled: bool
+    ) -> None:
+        """Reflect an authenticated manual command in the public status."""
+        self._last_commanded_state = enabled
+        self._last_action = "manually_turned_on" if enabled else "manually_turned_off"
+        self._last_reason = "manual_control"
+        self._last_error = None
+        self._smartplug = dict(result)
+
+    def record_manual_error(self, exc: Exception) -> None:
+        self._last_action = "error"
+        self._last_reason = "manual_control"
+        self._last_error = self._public_error(exc)
+        _LOGGER.error(
+            "Manual smart plug command failed",
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
