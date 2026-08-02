@@ -190,6 +190,56 @@ Signalstärke
 </section>
 
 
+<section class="automation-card">
+
+<div class="automation-header">
+<div>
+<div class="eyebrow">LADEAUTOMATIK</div>
+<h2>Audi über Solarbank laden</h2>
+</div>
+<span class="automation-badge pending" id="automationStatus">wird geprüft</span>
+</div>
+
+<div class="automation-grid">
+
+<div class="automation-item">
+<span class="automation-icon">🚗</span>
+<div>
+<span class="automation-label">Audi-Ladestecker</span>
+<strong id="audiPlug">unbekannt</strong>
+</div>
+</div>
+
+<div class="automation-item">
+<span class="automation-icon">🔋</span>
+<div>
+<span class="automation-label">Solix-Ladestand</span>
+<strong id="automationSoc">--</strong>
+</div>
+</div>
+
+<div class="automation-item">
+<span class="automation-icon">🔌</span>
+<div>
+<span class="automation-label">Smart Plug</span>
+<strong id="smartPlug">unbekannt</strong>
+</div>
+</div>
+
+</div>
+
+<div class="automation-rule">
+<span><b>EIN</b> bei Stecker verbunden und Akku &gt; 30 %</span>
+<span><b>AUS</b> bei Akku &lt; 10 % oder getrenntem Stecker</span>
+</div>
+
+<p class="automation-reason" id="automationReason" aria-live="polite">
+Automatikstatus wird geladen …
+</p>
+
+</section>
+
+
 <section class="card">
 
 <h2>PV-Eingänge</h2>

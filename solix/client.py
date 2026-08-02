@@ -1,73 +1,117 @@
-import os
-import aiohttp
+"""Cached Solix Cloud access plus guarded A17X8 smart-plug control."""
 
+from __future__ import annotations
+
+import asyncio
+import os
+import ssl
+import time
+from typing import Any
+
+import aiohttp
+import certifi
 from anker_solix_api.api import AnkerSolixApi
 
 
+DEFAULT_CACHE_SECONDS = 60
+MIN_CACHE_SECONDS = 30
+
+
+def _integer_setting(name: str, default: int, minimum: int, maximum: int) -> int:
+    try:
+        return min(maximum, max(minimum, int(os.getenv(name, str(default)))))
+    except ValueError:
+        return default
+
+
 class SolixClient:
-    def __init__(self):
-        self.api = None
+    def __init__(self) -> None:
+        self.api: AnkerSolixApi | None = None
+        self._session: aiohttp.ClientSession | None = None
+        self._lock = asyncio.Lock()
+        self._last_refresh = 0.0
+        self._cache_seconds = _integer_setting(
+            "SOLIX_CACHE_SECONDS", DEFAULT_CACHE_SECONDS, MIN_CACHE_SECONDS, 3600
+        )
+        self._smartplug_sn = os.getenv("SOLIX_SMARTPLUG_SN", "").strip().upper()
+        self._smartplug_command_timeout = _integer_setting(
+            "SMARTPLUG_COMMAND_TIMEOUT_SECONDS", 45, 10, 90
+        )
+        self._last_smartplug_state: bool | None = None
 
-    async def connect(self):
-        session = aiohttp.ClientSession()
+    async def _ensure_api_locked(self) -> None:
+        if self.api is not None:
+            return
 
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
+        self._session = aiohttp.ClientSession(
+            connector=aiohttp.TCPConnector(ssl=ssl_context)
+        )
         self.api = AnkerSolixApi(
             email=os.getenv("ANKER_EMAIL"),
             password=os.getenv("ANKER_PASSWORD"),
             countryId=os.getenv("ANKER_COUNTRY"),
-            websession=session,
+            websession=self._session,
         )
 
-        # Erste Daten laden
-        await self.api.update_sites()
-        await self.api.update_site_details()
-        await self.api.update_device_details()
-        await self.api.update_device_energy()
-
-        return self.api
-
-    async def refresh(self):
-        """Aktuelle Daten aus der Anker Cloud laden."""
-        if self.api is None:
-            await self.connect()
+    async def _refresh_locked(self, force: bool = False) -> None:
+        cache_age = time.monotonic() - self._last_refresh
+        if self.api is not None and not force and cache_age < self._cache_seconds:
             return
 
+        await self._ensure_api_locked()
+        assert self.api is not None
         await self.api.update_sites()
         await self.api.update_site_details()
         await self.api.update_device_details()
         await self.api.update_device_energy()
+        self._last_refresh = time.monotonic()
 
-    async def get_status(self):
-        if self.api is None:
-            await self.connect()
+    async def connect(self) -> AnkerSolixApi:
+        async with self._lock:
+            await self._refresh_locked(force=True)
+            assert self.api is not None
+            return self.api
 
+    async def refresh(self, force: bool = False) -> None:
+        """Refresh at most once per cache window across concurrent callers."""
+        async with self._lock:
+            await self._refresh_locked(force=force)
+
+    async def get_status(self) -> dict[str, Any]:
+        await self.refresh()
+        assert self.api is not None
         return {
             "sites": self.api.sites,
             "devices": self.api.devices,
         }
 
-    async def get_site(self):
+    async def get_site(self) -> dict[str, Any]:
         await self.refresh()
+        assert self.api is not None
         return self.api.sites
 
-    async def get_devices(self):
+    async def get_devices(self) -> dict[str, Any]:
         await self.refresh()
+        assert self.api is not None
         return self.api.devices
 
-    async def get_live(self):
+    async def get_live(self) -> dict[str, Any]:
         await self.refresh()
+        assert self.api is not None
 
-        # Erste Solarbank suchen
-        solarbank = None
-        for device in self.api.devices.values():
-            if device.get("type") == "solarbank":
-                solarbank = device
-                break
-
+        solarbank = next(
+            (
+                device
+                for device in self.api.devices.values()
+                if device.get("type") == "solarbank"
+            ),
+            None,
+        )
         if solarbank is None:
             return {"error": "Keine Solarbank gefunden"}
 
-        def to_int(value):
+        def to_int(value: Any) -> int:
             try:
                 return int(value)
             except (TypeError, ValueError):
@@ -77,27 +121,130 @@ class SolixClient:
             "status": solarbank.get("status_desc"),
             "battery_percent": to_int(solarbank.get("battery_soc")),
             "battery_energy_wh": to_int(solarbank.get("battery_energy")),
-
-            # Vorläufig auf deine Anlage angepasst
+            # Vorläufig auf die vorhandene Anlage angepasst.
             "battery_capacity_wh": 10400,
-
             "battery_power": to_int(solarbank.get("bat_charge_power")),
-
-            "pv_total": (
-                to_int(solarbank.get("solar_power_1"))
-                + to_int(solarbank.get("solar_power_2"))
-                + to_int(solarbank.get("solar_power_3"))
-                + to_int(solarbank.get("solar_power_4"))
+            "pv_total": sum(
+                to_int(solarbank.get(f"solar_power_{number}"))
+                for number in range(1, 5)
             ),
-
             "pv1": to_int(solarbank.get("solar_power_1")),
             "pv2": to_int(solarbank.get("solar_power_2")),
             "pv3": to_int(solarbank.get("solar_power_3")),
             "pv4": to_int(solarbank.get("solar_power_4")),
-
             "home_load": to_int(solarbank.get("to_home_load")),
             "grid_power": to_int(solarbank.get("grid_to_battery_power")),
-
             "firmware": solarbank.get("sw_version"),
             "wifi_signal": to_int(solarbank.get("wifi_signal")),
         }
+
+    def _select_smartplug_locked(self) -> tuple[str, dict[str, Any]]:
+        assert self.api is not None
+        plugs = [
+            (serial, device)
+            for serial, device in self.api.devices.items()
+            if device.get("type") == "smartplug"
+        ]
+
+        if self._smartplug_sn:
+            selected = next(
+                (
+                    (serial, device)
+                    for serial, device in plugs
+                    if serial.upper() == self._smartplug_sn
+                ),
+                None,
+            )
+            if selected is None:
+                raise RuntimeError("SOLIX_SMARTPLUG_SN wurde im Anker-Konto nicht gefunden")
+            return selected
+
+        if not plugs:
+            raise RuntimeError("Kein Anker SOLIX Smart Plug gefunden")
+        if len(plugs) > 1:
+            raise RuntimeError(
+                "Mehrere Smart Plugs gefunden; SOLIX_SMARTPLUG_SN muss gesetzt werden"
+            )
+        return plugs[0]
+
+    @staticmethod
+    def _as_switch_state(value: Any) -> bool | None:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int | float):
+            return bool(value)
+        text = str(value or "").strip().lower()
+        if text in {"1", "on", "true", "enabled"}:
+            return True
+        if text in {"0", "off", "false", "disabled"}:
+            return False
+        return None
+
+    def _smartplug_status_locked(
+        self, device: dict[str, Any], state: bool | None = None
+    ) -> dict[str, Any]:
+        if state is None:
+            mqtt_data = device.get("mqtt_data") or {}
+            for source in (mqtt_data, device):
+                for key in (
+                    "ac_output_switch",
+                    "ac_output_power_switch",
+                    "switch",
+                ):
+                    if key in source:
+                        state = self._as_switch_state(source.get(key))
+                        if state is not None:
+                            break
+                if state is not None:
+                    break
+        if state is None:
+            state = self._last_smartplug_state
+
+        return {
+            "available": True,
+            "name": device.get("alias_name")
+            or device.get("device_name")
+            or "Anker SOLIX Smart Plug",
+            "model": device.get("device_pn"),
+            "state": state,
+        }
+
+    async def get_smartplug_status(self) -> dict[str, Any]:
+        await self.refresh()
+        async with self._lock:
+            _, device = self._select_smartplug_locked()
+            return self._smartplug_status_locked(device)
+
+    async def set_smartplug_power(self, enabled: bool) -> dict[str, Any]:
+        """Switch the selected Anker A17X8 via its supported MQTT command."""
+        await self.refresh()
+        async with self._lock:
+            from anker_solix_api.mqtt_factory import SolixMqttDeviceFactory
+
+            assert self.api is not None
+            serial, device = self._select_smartplug_locked()
+            mqtt_device = SolixMqttDeviceFactory(
+                api_instance=self.api, device_sn=serial
+            ).create_device()
+            if mqtt_device is None or not hasattr(mqtt_device, "set_ac_output"):
+                raise RuntimeError("Smart Plug unterstützt keine MQTT-Steuerung")
+
+            result = await asyncio.wait_for(
+                mqtt_device.set_ac_output(enabled=enabled),
+                timeout=self._smartplug_command_timeout,
+            )
+            if result is None:
+                raise RuntimeError("Smart-Plug-Befehl wurde nicht bestätigt")
+
+            self._last_smartplug_state = enabled
+            device.setdefault("mqtt_data", {})["ac_output_switch"] = int(enabled)
+            return self._smartplug_status_locked(device, state=enabled)
+
+    async def close(self) -> None:
+        async with self._lock:
+            if self.api is not None:
+                self.api.stopMqttSession()
+            if self._session is not None and not self._session.closed:
+                await self._session.close()
+            self._session = None
+            self.api = None

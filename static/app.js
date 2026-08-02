@@ -1,4 +1,20 @@
 let lastRefresh = new Date();
+let dashboardBusy = false;
+let automationBusy = false;
+
+const automationReasons = {
+    automation_disabled: "Die Ladeautomatik ist deaktiviert.",
+    waiting_for_first_evaluation: "Die erste Prüfung läuft.",
+    above_on_threshold: "Akku über 30 % und Ladestecker verbunden: Smart Plug wurde eingeschaltet.",
+    above_on_threshold_plug_already_on: "Akku über 30 %: Smart Plug ist bereits eingeschaltet.",
+    below_off_threshold: "Akku unter 10 %: Smart Plug wurde ausgeschaltet.",
+    below_off_threshold_plug_already_off: "Akku unter 10 %: Smart Plug ist bereits ausgeschaltet.",
+    within_hysteresis_band: "Akku zwischen 10 % und 30 %: aktueller Zustand bleibt bestehen.",
+    cable_not_connected: "Ladestecker nicht verbunden: Smart Plug wurde sicher ausgeschaltet.",
+    cable_not_connected_plug_already_off: "Ladestecker nicht verbunden: Smart Plug bleibt ausgeschaltet.",
+    solix_soc_unknown: "Solix-Ladestand unbekannt: Smart Plug wurde sicher ausgeschaltet.",
+    solix_soc_unknown_plug_already_off: "Solix-Ladestand unbekannt: Smart Plug bleibt ausgeschaltet."
+};
 
 function setBatteryColor(percent) {
 
@@ -40,10 +56,18 @@ function updateLastRefresh() {
 
 async function updateDashboard() {
 
+    if (dashboardBusy)
+        return;
+
+    dashboardBusy = true;
+
     try {
 
         const response =
             await fetch("/api/live");
+
+        if (!response.ok)
+            throw new Error("Solix API: HTTP " + response.status);
 
         const data =
             await response.json();
@@ -108,11 +132,86 @@ async function updateDashboard() {
         console.log(e);
 
     }
+    finally {
+
+        dashboardBusy = false;
+
+    }
+
+}
+
+async function updateAutomation() {
+
+    if (automationBusy)
+        return;
+
+    automationBusy = true;
+
+    try {
+
+        const response = await fetch("/api/automation");
+
+        if (!response.ok)
+            throw new Error("Automation API: HTTP " + response.status);
+
+        const data = await response.json();
+        const badge = document.getElementById("automationStatus");
+
+        badge.className = "automation-badge";
+        if (data.error) {
+            badge.classList.add("error");
+            badge.innerText = "Fehler";
+        }
+        else if (data.enabled && data.running) {
+            badge.classList.add("active");
+            badge.innerText = "Aktiv";
+        }
+        else {
+            badge.classList.add("inactive");
+            badge.innerText = "Inaktiv";
+        }
+
+        document.getElementById("audiPlug").innerText =
+            data.audi_plug_connected === true ? "Verbunden" :
+            data.audi_plug_connected === false ? "Getrennt" : "Unbekannt";
+
+        document.getElementById("automationSoc").innerText =
+            data.solix_battery_percent == null ? "--" :
+            data.solix_battery_percent + " %";
+
+        const smartPlug = data.smartplug || {};
+        document.getElementById("smartPlug").innerText =
+            smartPlug.state === true ? "Eingeschaltet" :
+            smartPlug.state === false ? "Ausgeschaltet" :
+            smartPlug.available ? "Bereit" : "Nicht gefunden";
+
+        document.getElementById("automationReason").innerText =
+            data.error || automationReasons[data.reason] || "Automatik wartet auf neue Daten.";
+
+    }
+    catch (e) {
+
+        const badge = document.getElementById("automationStatus");
+        badge.className = "automation-badge error";
+        badge.innerText = "Fehler";
+        document.getElementById("automationReason").innerText =
+            "Automatikstatus konnte nicht geladen werden.";
+        console.log(e);
+
+    }
+    finally {
+
+        automationBusy = false;
+
+    }
 
 }
 
 updateDashboard();
+updateAutomation();
 
-setInterval(updateDashboard, 5000);
+setInterval(updateDashboard, 15000);
+
+setInterval(updateAutomation, 30000);
 
 setInterval(updateLastRefresh, 1000);

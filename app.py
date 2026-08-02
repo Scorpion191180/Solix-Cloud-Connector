@@ -6,16 +6,21 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from audi.client import AudiClient
+from automation.controller import ChargingAutomation
 from solix.client import SolixClient
 
 client = SolixClient()
 audi_client = AudiClient()
+charging_automation = ChargingAutomation(client, audi_client)
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    await charging_automation.start()
     yield
+    await charging_automation.stop()
     await audi_client.close()
+    await client.close()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -63,3 +68,9 @@ async def live():
 async def audi():
     """Return optional read-only Audi Connect data from the protected cache."""
     return await audi_client.get_live()
+
+
+@app.get("/api/automation")
+async def automation():
+    """Return the safe public status of the background charging controller."""
+    return charging_automation.status()
