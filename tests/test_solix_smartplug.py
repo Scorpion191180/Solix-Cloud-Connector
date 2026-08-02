@@ -16,6 +16,23 @@ class FakeMqttDevice:
         return self.result
 
 
+class FakeRefreshApi:
+    def __init__(self):
+        self.calls = []
+
+    async def update_sites(self):
+        self.calls.append("sites")
+
+    async def update_site_details(self):
+        self.calls.append("site_details")
+
+    async def update_device_details(self):
+        self.calls.append("device_details")
+
+    async def update_device_energy(self):
+        self.calls.append("device_energy")
+
+
 class SolixSmartPlugTests(unittest.IsolatedAsyncioTestCase):
     def make_client(self, devices):
         client = SolixClient()
@@ -80,6 +97,17 @@ class SolixSmartPlugTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaisesRegex(RuntimeError, "Mehrere Smart Plugs"):
             await client.get_smartplug_status()
+
+    async def test_live_refresh_skips_unused_energy_history(self):
+        client = SolixClient()
+        client.api = FakeRefreshApi()
+
+        await client.refresh(force=True)
+
+        self.assertEqual(
+            client.api.calls,
+            ["sites", "site_details", "device_details"],
+        )
 
 
 if __name__ == "__main__":

@@ -38,6 +38,9 @@ class ChargingAutomation:
         self._solix = solix_client
         self._audi = audi_client
         self._enabled = _boolean_setting("AUTOMATION_ENABLED")
+        # A newly enabled installation observes all inputs first and never
+        # sends MQTT commands until dry-run mode is explicitly disabled.
+        self._dry_run = _boolean_setting("AUTOMATION_DRY_RUN", default=True)
         self._on_threshold = _integer_setting(
             "AUTOMATION_ON_SOC", 30, minimum=2, maximum=100
         )
@@ -152,6 +155,12 @@ class ChargingAutomation:
         if decision.desired_state is None:
             return
 
+        if self._dry_run:
+            self._last_action = (
+                "would_turn_on" if decision.desired_state else "would_turn_off"
+            )
+            return
+
         try:
             result = await self._solix.set_smartplug_power(decision.desired_state)
         except Exception as exc:
@@ -194,6 +203,7 @@ class ChargingAutomation:
     def status(self) -> dict[str, Any]:
         return {
             "enabled": self._enabled,
+            "dry_run": self._dry_run,
             "running": bool(self._task and not self._task.done()),
             "interval_seconds": self._interval_seconds,
             "on_threshold_percent": self._on_threshold,

@@ -16,6 +16,13 @@ const automationReasons = {
     solix_soc_unknown_plug_already_off: "Solix-Ladestand unbekannt: Smart Plug bleibt ausgeschaltet."
 };
 
+const automationDryRunReasons = {
+    above_on_threshold: "Testbetrieb: Smart Plug würde jetzt eingeschaltet.",
+    below_off_threshold: "Testbetrieb: Smart Plug würde jetzt ausgeschaltet.",
+    cable_not_connected: "Testbetrieb: Smart Plug würde wegen des Ladesteckers ausgeschaltet.",
+    solix_soc_unknown: "Testbetrieb: Smart Plug würde wegen unbekanntem Solix-Ladestand ausgeschaltet."
+};
+
 function setBatteryColor(percent) {
 
     const battery = document.getElementById("battery-fill");
@@ -162,6 +169,10 @@ async function updateAutomation() {
             badge.classList.add("error");
             badge.innerText = "Fehler";
         }
+        else if (data.enabled && data.running && data.dry_run) {
+            badge.classList.add("pending");
+            badge.innerText = "Testbetrieb";
+        }
         else if (data.enabled && data.running) {
             badge.classList.add("active");
             badge.innerText = "Aktiv";
@@ -186,7 +197,10 @@ async function updateAutomation() {
             smartPlug.available ? "Bereit" : "Nicht gefunden";
 
         document.getElementById("automationReason").innerText =
-            data.error || automationReasons[data.reason] || "Automatik wartet auf neue Daten.";
+            data.error ||
+            (data.dry_run && automationDryRunReasons[data.reason]) ||
+            automationReasons[data.reason] ||
+            "Automatik wartet auf neue Daten.";
 
     }
     catch (e) {
