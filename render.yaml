@@ -5,3 +5,14 @@ services:
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: AUDI_EMAIL
+        sync: false
+      - key: AUDI_PASSWORD
+        sync: false
+      - key: AUDI_COUNTRY
+        value: DE
+      - key: AUDI_API_LEVEL
+        value: "1"
+      - key: AUDI_CACHE_SECONDS
+        value: "14400"

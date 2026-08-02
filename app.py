@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -6,10 +8,17 @@ from fastapi.templating import Jinja2Templates
 from audi.client import AudiClient
 from solix.client import SolixClient
 
-app = FastAPI()
-
 client = SolixClient()
 audi_client = AudiClient()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    yield
+    await audi_client.close()
+
+
+app = FastAPI(lifespan=lifespan)
 
 # Templates und statische Dateien
 templates = Jinja2Templates(directory="templates")
@@ -52,5 +61,5 @@ async def live():
 
 @app.get("/api/audi")
 async def audi():
-    """Read-only Audi Connect data, cached for 15 minutes."""
+    """Return optional read-only Audi Connect data from the protected cache."""
     return await audi_client.get_live()

@@ -2,10 +2,12 @@ fastapi
 uvicorn
 httpx
 cryptography
-aiohttp
+aiohttp>=3.13.5,<4
 aiofiles
 paho-mqtt
 python-dotenv
 git+https://github.com/thomluther/anker-solix-api.git
 Jinja2
-audiconnectpy
+beautifulsoup4>=4.14.3,<5
+certifi>=2026.4.22
+tenacity>=9.1.4,<10
