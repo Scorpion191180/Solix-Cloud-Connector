@@ -6,6 +6,7 @@ import asyncio
 import os
 import ssl
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 import aiohttp
@@ -33,11 +34,14 @@ class SolixClient:
         self._cache_seconds = _integer_setting(
             "SOLIX_CACHE_SECONDS", DEFAULT_CACHE_SECONDS, MIN_CACHE_SECONDS, 3600
         )
+        self._solarbank_pn = os.getenv("SOLIX_SOLARBANK_PN", "").strip().upper()
+        self._solarbank_sn = os.getenv("SOLIX_SOLARBANK_SN", "").strip().upper()
         self._smartplug_sn = os.getenv("SOLIX_SMARTPLUG_SN", "").strip().upper()
         self._smartplug_command_timeout = _integer_setting(
             "SMARTPLUG_COMMAND_TIMEOUT_SECONDS", 45, 10, 90
         )
         self._last_smartplug_state: bool | None = None
+        self._last_refresh_at: datetime | None = None
 
     async def _ensure_api_locked(self) -> None:
         if self.api is not None:
@@ -68,6 +72,7 @@ class SolixClient:
         # requests are comparatively expensive and caused Anker's
         # energy_analysis endpoint to throttle a single live refresh.
         self._last_refresh = time.monotonic()
+        self._last_refresh_at = datetime.now(timezone.utc)
 
     async def connect(self) -> AnkerSolixApi:
         async with self._lock:
@@ -98,20 +103,68 @@ class SolixClient:
         assert self.api is not None
         return self.api.devices
 
+    def _select_solarbank_locked(self) -> tuple[dict[str, Any], str, int]:
+        """Select the intended system without exposing its serial number."""
+        assert self.api is not None
+        banks = [
+            (serial, device)
+            for serial, device in self.api.devices.items()
+            if device.get("type") == "solarbank"
+        ]
+        if not banks:
+            raise RuntimeError("Keine Solarbank gefunden")
+
+        if self._solarbank_sn:
+            matches = [
+                device
+                for serial, device in banks
+                if serial.upper() == self._solarbank_sn
+            ]
+            if len(matches) != 1:
+                raise RuntimeError(
+                    "SOLIX_SOLARBANK_SN wurde im Anker-Konto nicht eindeutig gefunden"
+                )
+            return matches[0], "configured_serial", len(banks)
+
+        if self._solarbank_pn:
+            matches = [
+                device
+                for _, device in banks
+                if str(device.get("device_pn", "")).upper() == self._solarbank_pn
+            ]
+            if len(matches) != 1:
+                raise RuntimeError(
+                    "SOLIX_SOLARBANK_PN wurde im Anker-Konto nicht eindeutig gefunden"
+                )
+            return matches[0], "configured_model", len(banks)
+
+        if len(banks) == 1:
+            return banks[0][1], "only_solarbank", 1
+
+        # Safe deterministic fallback for existing installations: the main
+        # system normally has the most expansion packs and largest capacity.
+        # A configured model/serial still wins and is recommended.
+        selected = max(
+            (device for _, device in banks),
+            key=lambda device: (
+                self._number(device.get("sub_package_num")),
+                self._number(device.get("battery_capacity")),
+            ),
+        )
+        return selected, "auto_largest_system", len(banks)
+
+    @staticmethod
+    def _number(value: Any) -> int:
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return 0
+
     async def get_live(self) -> dict[str, Any]:
         await self.refresh()
         assert self.api is not None
 
-        solarbank = next(
-            (
-                device
-                for device in self.api.devices.values()
-                if device.get("type") == "solarbank"
-            ),
-            None,
-        )
-        if solarbank is None:
-            return {"error": "Keine Solarbank gefunden"}
+        solarbank, selection, solarbank_count = self._select_solarbank_locked()
 
         def to_int(value: Any) -> int:
             try:
@@ -123,8 +176,7 @@ class SolixClient:
             "status": solarbank.get("status_desc"),
             "battery_percent": to_int(solarbank.get("battery_soc")),
             "battery_energy_wh": to_int(solarbank.get("battery_energy")),
-            # Vorläufig auf die vorhandene Anlage angepasst.
-            "battery_capacity_wh": 10400,
+            "battery_capacity_wh": to_int(solarbank.get("battery_capacity")),
             "battery_power": to_int(solarbank.get("bat_charge_power")),
             "pv_total": sum(
                 to_int(solarbank.get(f"solar_power_{number}"))
@@ -138,6 +190,16 @@ class SolixClient:
             "grid_power": to_int(solarbank.get("grid_to_battery_power")),
             "firmware": solarbank.get("sw_version"),
             "wifi_signal": to_int(solarbank.get("wifi_signal")),
+            "solarbank_model": solarbank.get("device_pn"),
+            "solarbank_count": solarbank_count,
+            "selection": selection,
+            "last_update": (
+                self._last_refresh_at.isoformat() if self._last_refresh_at else None
+            ),
+            "data_age_seconds": max(
+                0, int(time.monotonic() - self._last_refresh)
+            ),
+            "refresh_interval_seconds": self._cache_seconds,
         }
 
     def _select_smartplug_locked(self) -> tuple[str, dict[str, Any]]:

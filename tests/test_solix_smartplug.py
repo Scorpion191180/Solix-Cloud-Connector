@@ -1,5 +1,7 @@
+import os
 import time
 import unittest
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -108,6 +110,66 @@ class SolixSmartPlugTests(unittest.IsolatedAsyncioTestCase):
             client.api.calls,
             ["sites", "site_details", "device_details"],
         )
+
+    async def test_configured_model_selects_solarbank_4(self):
+        devices = {
+            "SMALL-SECRET": {
+                "type": "solarbank",
+                "device_pn": "A17C5",
+                "battery_soc": "92",
+                "battery_capacity": "2688",
+                "sub_package_num": 0,
+            },
+            "MAIN-SECRET": {
+                "type": "solarbank",
+                "device_pn": "AE103",
+                "battery_soc": "18",
+                "battery_energy": "2712",
+                "battery_capacity": "15072",
+                "sub_package_num": 2,
+            },
+        }
+        with patch.dict(os.environ, {"SOLIX_SOLARBANK_PN": "AE103"}):
+            client = self.make_client(devices)
+        client._last_refresh_at = datetime.now(timezone.utc)
+
+        result = await client.get_live()
+
+        self.assertEqual(result["solarbank_model"], "AE103")
+        self.assertEqual(result["battery_percent"], 18)
+        self.assertEqual(result["battery_capacity_wh"], 15072)
+        self.assertEqual(result["solarbank_count"], 2)
+        self.assertEqual(result["selection"], "configured_model")
+        self.assertNotIn("MAIN-SECRET", str(result))
+
+    async def test_multiple_banks_fallback_to_largest_system(self):
+        devices = {
+            "SMALL-SECRET": {
+                "type": "solarbank",
+                "device_pn": "A17C5",
+                "battery_soc": "92",
+                "battery_capacity": "2688",
+                "sub_package_num": 0,
+            },
+            "MAIN-SECRET": {
+                "type": "solarbank",
+                "device_pn": "AE103",
+                "battery_soc": "18",
+                "battery_capacity": "15072",
+                "sub_package_num": 2,
+            },
+        }
+        with patch.dict(
+            os.environ,
+            {"SOLIX_SOLARBANK_PN": "", "SOLIX_SOLARBANK_SN": ""},
+        ):
+            client = self.make_client(devices)
+        client._last_refresh_at = datetime.now(timezone.utc)
+
+        result = await client.get_live()
+
+        self.assertEqual(result["solarbank_model"], "AE103")
+        self.assertEqual(result["selection"], "auto_largest_system")
 
 
 if __name__ == "__main__":

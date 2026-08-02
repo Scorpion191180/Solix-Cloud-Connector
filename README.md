@@ -54,7 +54,8 @@ AUDI_REFRESH_TOKEN=token-aus-der-gerätefreigabe
 AUDI_COUNTRY=DE
 AUDI_API_LEVEL=1
 AUDI_CACHE_SECONDS=900
-SOLIX_CACHE_SECONDS=60
+SOLIX_CACHE_SECONDS=30
+SOLIX_SOLARBANK_PN=AE103
 AUTOMATION_ENABLED=true
 AUTOMATION_DRY_RUN=true
 AUTOMATION_ON_SOC=30
@@ -68,7 +69,14 @@ Optional:
 AUDI_VIN=WAU...       # nur nötig, wenn nicht das erste Fahrzeug verwendet werden soll
 AUDI_SPIN=1234        # nicht erforderlich; die Audi-Anbindung bleibt lesend
 SOLIX_SMARTPLUG_SN=... # nur nötig, wenn mehrere Smart Plugs vorhanden sind
+SOLIX_SOLARBANK_SN=... # nur nötig, wenn mehrere Solarbanken dasselbe Modell haben
 ```
+
+Sind mehrere Solix-Systeme im Konto, wählt `SOLIX_SOLARBANK_PN` das Modell für
+Dashboard und Ladeautomatik eindeutig aus. Für die vorhandene Solarbank 4 ist
+das `AE103`; die kleinere A17C5 bleibt dadurch von der Ladeautomatik getrennt.
+Der Live-Ticker fragt die lokale App alle fünf Sekunden ab. Neue Anker-Cloud-
+Daten werden zum Schutz vor Drosselung höchstens alle 30 Sekunden geladen.
 
 Die einmalige Gerätefreigabe wird lokal ausgeführt:
 

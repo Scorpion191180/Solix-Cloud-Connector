@@ -15,7 +15,9 @@ services:
       - key: AUDI_CACHE_SECONDS
         value: "900"
       - key: SOLIX_CACHE_SECONDS
-        value: "60"
+        value: "30"
+      - key: SOLIX_SOLARBANK_PN
+        value: "AE103"
       - key: AUTOMATION_ENABLED
         value: "false"
       - key: AUTOMATION_DRY_RUN
