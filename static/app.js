@@ -102,8 +102,11 @@ async function updateDashboard() {
         document.getElementById("battery").innerText =
             data.battery_percent + " %";
 
+        const capacitySuffix =
+            data.battery_capacity_source === "configured" ? " (reale Kapazität)" : "";
         document.getElementById("batteryWh").innerText =
-            data.battery_energy_wh + " Wh / " + data.battery_capacity_wh + " Wh";
+            data.battery_energy_wh.toLocaleString("de-DE") + " Wh / " +
+            data.battery_capacity_wh.toLocaleString("de-DE") + " Wh" + capacitySuffix;
 
         document.getElementById("batteryPower").innerText =
             data.battery_power + " W";

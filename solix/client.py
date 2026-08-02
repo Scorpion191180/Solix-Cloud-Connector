@@ -36,6 +36,9 @@ class SolixClient:
         )
         self._solarbank_pn = os.getenv("SOLIX_SOLARBANK_PN", "").strip().upper()
         self._solarbank_sn = os.getenv("SOLIX_SOLARBANK_SN", "").strip().upper()
+        self._battery_capacity_wh = _integer_setting(
+            "SOLIX_BATTERY_CAPACITY_WH", 0, 0, 100_000
+        )
         self._smartplug_sn = os.getenv("SOLIX_SMARTPLUG_SN", "").strip().upper()
         self._smartplug_command_timeout = _integer_setting(
             "SMARTPLUG_COMMAND_TIMEOUT_SECONDS", 45, 10, 90
@@ -172,11 +175,26 @@ class SolixClient:
             except (TypeError, ValueError):
                 return 0
 
+        battery_percent = to_int(solarbank.get("battery_soc"))
+        cloud_capacity_wh = to_int(solarbank.get("battery_capacity"))
+        configured_capacity = self._battery_capacity_wh > 0
+        battery_capacity_wh = (
+            self._battery_capacity_wh if configured_capacity else cloud_capacity_wh
+        )
+        battery_energy_wh = (
+            round(battery_capacity_wh * battery_percent / 100)
+            if configured_capacity
+            else to_int(solarbank.get("battery_energy"))
+        )
+
         return {
             "status": solarbank.get("status_desc"),
-            "battery_percent": to_int(solarbank.get("battery_soc")),
-            "battery_energy_wh": to_int(solarbank.get("battery_energy")),
-            "battery_capacity_wh": to_int(solarbank.get("battery_capacity")),
+            "battery_percent": battery_percent,
+            "battery_energy_wh": battery_energy_wh,
+            "battery_capacity_wh": battery_capacity_wh,
+            "battery_capacity_source": (
+                "configured" if configured_capacity else "cloud"
+            ),
             "battery_power": to_int(solarbank.get("bat_charge_power")),
             "pv_total": sum(
                 to_int(solarbank.get(f"solar_power_{number}"))
