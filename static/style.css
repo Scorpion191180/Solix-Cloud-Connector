@@ -300,6 +300,89 @@ header p{
     font-size:14px;
 }
 
+.threshold-control{
+    display:grid;
+    grid-template-columns:minmax(220px,1fr) auto;
+    align-items:center;
+    gap:12px 18px;
+    margin-top:18px;
+    padding:16px;
+    border:1px solid rgba(34,197,94,.28);
+    border-radius:16px;
+    background:rgba(15,23,42,.55);
+}
+
+.threshold-copy strong,
+.threshold-copy span{
+    display:block;
+}
+
+.threshold-copy span,
+.threshold-status,
+.threshold-scale{
+    color:var(--sub);
+    font-size:12px;
+}
+
+.threshold-copy span{
+    margin-top:5px;
+    line-height:1.4;
+}
+
+.threshold-value-row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+}
+
+.threshold-value-row output{
+    min-width:64px;
+    color:#86efac;
+    font-size:24px;
+    font-weight:800;
+    text-align:right;
+}
+
+.threshold-save{
+    min-height:42px;
+    padding:10px 14px;
+    color:white;
+    border:0;
+    border-radius:10px;
+    background:#15803d;
+    font-weight:700;
+    cursor:pointer;
+}
+
+.threshold-save:disabled{
+    opacity:.45;
+    cursor:not-allowed;
+}
+
+.threshold-control input[type="range"]{
+    grid-column:1/-1;
+    width:100%;
+    accent-color:var(--green);
+    cursor:pointer;
+}
+
+.threshold-control input[type="range"]:disabled{
+    opacity:.45;
+    cursor:not-allowed;
+}
+
+.threshold-scale{
+    grid-column:1/-1;
+    display:flex;
+    justify-content:space-between;
+    margin-top:-8px;
+}
+
+.threshold-status{
+    grid-column:1/-1;
+    margin:0;
+}
+
 .manual-control{
     display:grid;
     grid-template-columns:minmax(220px,1fr) minmax(180px,.7fr) auto;
@@ -480,6 +563,20 @@ header{
 
 .manual-control{
     grid-template-columns:1fr;
+}
+
+.threshold-control{
+    grid-template-columns:1fr;
+}
+
+.threshold-value-row{
+    justify-content:space-between;
+}
+
+.threshold-control input[type="range"],
+.threshold-scale,
+.threshold-status{
+    grid-column:auto;
 }
 
 .manual-status{

@@ -129,6 +129,25 @@ class ChargingAutomationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(controller.status()["interval_seconds"], 60)
 
+    async def test_start_threshold_can_be_changed_to_20_percent(self):
+        controller = self.make_controller(
+            FakeSolixClient(20, state=False), FakeAudiClient(True)
+        )
+
+        status = await controller.set_on_threshold(20)
+        evaluated = await controller.evaluate()
+
+        self.assertEqual(status["on_threshold_percent"], 20)
+        self.assertEqual(evaluated["last_action"], "turned_on")
+
+    async def test_start_threshold_rejects_values_below_20_percent(self):
+        controller = self.make_controller(
+            FakeSolixClient(19, state=False), FakeAudiClient(True)
+        )
+
+        with self.assertRaises(ValueError):
+            await controller.set_on_threshold(19)
+
 
 if __name__ == "__main__":
     unittest.main()

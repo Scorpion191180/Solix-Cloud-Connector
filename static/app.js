@@ -4,28 +4,51 @@ let dashboardBusy = false;
 let automationBusy = false;
 let audiBusy = false;
 let manualControlBusy = false;
+let thresholdBusy = false;
+let thresholdDirty = false;
+let thresholdControlAvailable = false;
+let activeStartThreshold = 30;
 
 const automationReasons = {
     automation_disabled: "Die Ladeautomatik ist deaktiviert.",
     waiting_for_first_evaluation: "Die erste Prüfung läuft.",
-    above_on_threshold: "Akku über 30 % und Ladestecker verbunden: Smart Plug wurde eingeschaltet.",
-    above_on_threshold_plug_already_on: "Akku über 30 %: Smart Plug ist bereits eingeschaltet.",
     below_off_threshold: "Akku unter 10 %: Smart Plug wurde ausgeschaltet.",
     below_off_threshold_plug_already_off: "Akku unter 10 %: Smart Plug ist bereits ausgeschaltet.",
-    within_hysteresis_band: "Akku zwischen 10 % und 30 %: aktueller Zustand bleibt bestehen.",
     cable_not_connected: "Ladestecker nicht verbunden: Smart Plug wurde sicher ausgeschaltet.",
     cable_not_connected_plug_already_off: "Ladestecker nicht verbunden: Smart Plug bleibt ausgeschaltet.",
     solix_soc_unknown: "Solix-Ladestand unbekannt: Smart Plug wurde sicher ausgeschaltet.",
     solix_soc_unknown_plug_already_off: "Solix-Ladestand unbekannt: Smart Plug bleibt ausgeschaltet.",
-    manual_control: "Der Smart Plug wurde zuletzt manuell getestet."
+    manual_control: "Der Smart Plug wurde zuletzt manuell getestet.",
+    start_threshold_updated: "Der neue Startwert gilt ab der nächsten Prüfung."
 };
 
 const automationDryRunReasons = {
-    above_on_threshold: "Testbetrieb: Smart Plug würde jetzt eingeschaltet.",
+    at_or_above_on_threshold: "Testbetrieb: Smart Plug würde jetzt eingeschaltet.",
     below_off_threshold: "Testbetrieb: Smart Plug würde jetzt ausgeschaltet.",
     cable_not_connected: "Testbetrieb: Smart Plug würde wegen des Ladesteckers ausgeschaltet.",
     solix_soc_unknown: "Testbetrieb: Smart Plug würde wegen unbekanntem Solix-Ladestand ausgeschaltet."
 };
+
+function getAutomationReason(data) {
+    const start = data.on_threshold_percent ?? activeStartThreshold;
+    const stop = data.off_threshold_percent ?? 10;
+
+    if (data.reason === "at_or_above_on_threshold")
+        return "Solix-Akku ab " + start + " % und Ladestecker verbunden: Smart Plug wurde eingeschaltet.";
+    if (data.reason === "at_or_above_on_threshold_plug_already_on")
+        return "Solix-Akku ab " + start + " %: Smart Plug ist bereits eingeschaltet.";
+    if (data.reason === "within_hysteresis_band")
+        return "Solix-Akku zwischen " + stop + " % und " + start + " %: aktueller Zustand bleibt bestehen.";
+
+    return automationReasons[data.reason] || "Automatik wartet auf neue Daten.";
+}
+
+function refreshThresholdControls() {
+    const slider = document.getElementById("startThreshold");
+    const button = document.getElementById("saveStartThreshold");
+    slider.disabled = !thresholdControlAvailable || thresholdBusy;
+    button.disabled = !thresholdControlAvailable || thresholdBusy || !thresholdDirty;
+}
 
 function setBatteryColor(percent) {
 
@@ -236,19 +259,30 @@ async function updateAutomation() {
             smartPlug.available ? "Bereit" : "Nicht gefunden";
 
         const manualAvailable = data.manual_control_available === true;
+        thresholdControlAvailable = manualAvailable;
         document.getElementById("controlToken").disabled = !manualAvailable;
         document.getElementById("smartPlugOn").disabled = !manualAvailable;
         document.getElementById("smartPlugOff").disabled = !manualAvailable;
         if (!manualAvailable) {
             document.getElementById("manualControlStatus").innerText =
                 "Manueller Test ist auf dem Server nicht freigeschaltet.";
+            document.getElementById("thresholdStatus").innerText =
+                "Der Regler ist auf dem Server nicht freigeschaltet.";
         }
+
+        const serverThreshold = Number(data.on_threshold_percent ?? 30);
+        activeStartThreshold = serverThreshold;
+        document.getElementById("startRuleValue").innerText = serverThreshold + " %";
+        if (!thresholdDirty && !thresholdBusy) {
+            document.getElementById("startThreshold").value = serverThreshold;
+            document.getElementById("startThresholdValue").innerText = serverThreshold + " %";
+        }
+        refreshThresholdControls();
 
         document.getElementById("automationReason").innerText =
             data.error ||
             (data.dry_run && automationDryRunReasons[data.reason]) ||
-            automationReasons[data.reason] ||
-            "Automatik wartet auf neue Daten.";
+            getAutomationReason(data);
 
     }
     catch (e) {
@@ -267,6 +301,55 @@ async function updateAutomation() {
 
     }
 
+}
+
+async function saveStartThreshold() {
+    if (thresholdBusy || !thresholdDirty)
+        return;
+
+    const token = document.getElementById("controlToken").value.trim();
+    const status = document.getElementById("thresholdStatus");
+    const selected = Number(document.getElementById("startThreshold").value);
+
+    if (!token) {
+        status.innerText = "Bitte zuerst unten den Steuer-Code eingeben.";
+        return;
+    }
+
+    if (!window.confirm(
+        "Solix-Startwert auf " + selected + " % setzen? Die Automatik verwendet ihn ab der nächsten Prüfung."
+    ))
+        return;
+
+    thresholdBusy = true;
+    refreshThresholdControls();
+    status.innerText = "Startwert wird gespeichert …";
+
+    try {
+        const response = await fetch("/api/automation/settings", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-Control-Token": token
+            },
+            body: JSON.stringify({ on_threshold_percent: selected })
+        });
+        const data = await response.json();
+        if (!response.ok)
+            throw new Error(data.detail || "Startwert konnte nicht gespeichert werden");
+
+        activeStartThreshold = data.on_threshold_percent;
+        thresholdDirty = false;
+        status.innerText = "Startwert " + activeStartThreshold + " % gespeichert – aktiv ab der nächsten Minutenprüfung.";
+        await updateAutomation();
+    }
+    catch (e) {
+        status.innerText = e.message;
+    }
+    finally {
+        thresholdBusy = false;
+        refreshThresholdControls();
+    }
 }
 
 async function updateAudi() {
@@ -360,6 +443,13 @@ updateAudi();
 
 document.getElementById("smartPlugOn").addEventListener("click", () => setManualSmartPlug(true));
 document.getElementById("smartPlugOff").addEventListener("click", () => setManualSmartPlug(false));
+document.getElementById("startThreshold").addEventListener("input", (event) => {
+    const selected = Number(event.target.value);
+    document.getElementById("startThresholdValue").innerText = selected + " %";
+    thresholdDirty = selected !== activeStartThreshold;
+    refreshThresholdControls();
+});
+document.getElementById("saveStartThreshold").addEventListener("click", saveStartThreshold);
 
 setInterval(updateDashboard, 5000);
 

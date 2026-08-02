@@ -6,7 +6,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from audi.client import AudiClient
 from automation.controller import ChargingAutomation
@@ -19,6 +19,10 @@ charging_automation = ChargingAutomation(client, audi_client)
 
 class ManualSmartPlugCommand(BaseModel):
     enabled: bool
+
+
+class AutomationSettingsUpdate(BaseModel):
+    on_threshold_percent: int = Field(ge=20, le=90)
 
 
 def _manual_control_configured() -> bool:
@@ -37,7 +41,7 @@ def _authorize_manual_control(provided_token: str | None) -> None:
     if not provided_token or not hmac.compare_digest(
         provided_token.encode("utf-8"), expected_token.encode("utf-8")
     ):
-        raise HTTPException(status_code=401, detail="Test-Code ist nicht korrekt")
+        raise HTTPException(status_code=401, detail="Steuer-Code ist nicht korrekt")
 
 
 @asynccontextmanager
@@ -149,4 +153,21 @@ async def manual_smartplug(
         "ok": True,
         "requested_state": command.enabled,
         "smartplug": result,
+    }
+
+
+@app.post("/api/automation/settings")
+async def update_automation_settings(
+    settings: AutomationSettingsUpdate,
+    x_control_token: str | None = Header(default=None),
+):
+    """Change the protected runtime start threshold without switching now."""
+    _authorize_manual_control(x_control_token)
+    status = await charging_automation.set_on_threshold(
+        settings.on_threshold_percent
+    )
+    return {
+        "ok": True,
+        "on_threshold_percent": status["on_threshold_percent"],
+        "applies_on_next_evaluation": True,
     }

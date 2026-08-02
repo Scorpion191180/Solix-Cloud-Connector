@@ -10,7 +10,8 @@ class AutomationDecision:
     """Result of one policy evaluation.
 
     ``desired_state`` is ``None`` when the current plug state must be kept.
-    This makes the 10/30 percent gap a real hysteresis band.
+    This makes the gap between the stop and selected start value a real
+    hysteresis band.
     """
 
     desired_state: bool | None
@@ -48,10 +49,12 @@ def decide_smartplug_state(
             return AutomationDecision(None, "solix_soc_unknown_plug_already_off")
         return AutomationDecision(False, "solix_soc_unknown")
 
-    if battery_percent > on_threshold:
+    if battery_percent >= on_threshold:
         if current_state is True:
-            return AutomationDecision(None, "above_on_threshold_plug_already_on")
-        return AutomationDecision(True, "above_on_threshold")
+            return AutomationDecision(
+                None, "at_or_above_on_threshold_plug_already_on"
+            )
+        return AutomationDecision(True, "at_or_above_on_threshold")
 
     if battery_percent < off_threshold:
         if current_state is False:

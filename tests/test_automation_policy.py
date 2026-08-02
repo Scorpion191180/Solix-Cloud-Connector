@@ -4,22 +4,24 @@ from automation.policy import decide_smartplug_state
 
 
 class AutomationPolicyTests(unittest.TestCase):
-    def test_turns_on_only_above_30_with_connected_cable(self):
+    def test_turns_on_at_selected_threshold_with_connected_cable(self):
         decision = decide_smartplug_state(
             enabled=True,
             cable_connected=True,
-            battery_percent=31,
+            battery_percent=20,
             current_state=False,
+            on_threshold=20,
         )
         self.assertIs(decision.desired_state, True)
-        self.assertEqual(decision.reason, "above_on_threshold")
+        self.assertEqual(decision.reason, "at_or_above_on_threshold")
 
-    def test_exactly_30_holds_current_state(self):
+    def test_just_below_selected_threshold_holds_current_state(self):
         decision = decide_smartplug_state(
             enabled=True,
             cable_connected=True,
-            battery_percent=30,
+            battery_percent=19,
             current_state=False,
+            on_threshold=20,
         )
         self.assertIsNone(decision.desired_state)
         self.assertEqual(decision.reason, "within_hysteresis_band")

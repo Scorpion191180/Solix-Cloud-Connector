@@ -27,10 +27,13 @@ wird dabei weiterhin höchstens alle 15 Minuten aus der Cloud aktualisiert
 (vier Cloud-Abfragen pro Stunde); die übrigen Minuten wird der geschützte
 Audi-Cache zusammen mit den aktuellen Solix-Daten ausgewertet:
 
-- Audi-Ladestecker verbunden und Solix-Akku **über 30 %**: Smart Plug an.
+- Audi-Ladestecker verbunden und Solix-Akku am gewählten Startwert: Smart Plug
+  an. Der Startwert lässt sich im Dashboard geschützt zwischen **20 % und
+  90 %** einstellen.
 - Solix-Akku **unter 10 %**: Smart Plug aus.
-- Zwischen 10 % und 30 % bleibt der letzte Zustand bestehen. Diese Hysterese
-  verhindert schnelles Ein-/Ausschalten an einem Grenzwert.
+- Zwischen 10 % und dem gewählten Startwert bleibt der letzte Zustand
+  bestehen. Diese Hysterese verhindert schnelles Ein-/Ausschalten an einem
+  Grenzwert.
 - Ladestecker getrennt oder unbekannt: Smart Plug aus.
 - Solix-Ladestand unbekannt: Smart Plug aus.
 
@@ -49,6 +52,11 @@ und mit einem geheimen Test-Code geschützt wurde. Einschalten ist ausschließli
 bei verbundenem Audi-Ladestecker und mindestens 10 % Solix-Ladestand möglich;
 Ausschalten bleibt immer möglich. Der manuelle Test ändert den Dry-Run-Modus der
 Automatik nicht.
+
+Der gleiche Steuer-Code schützt den Startwert-Regler. Eine Änderung wird ab der
+nächsten Minutenprüfung verwendet und löst beim Speichern selbst noch keinen
+Smart-Plug-Befehl aus. Nach einem Neustart des Render-Dienstes gilt wieder der
+mit `AUTOMATION_ON_SOC` konfigurierte Standardwert.
 
 Vor der echten Freigabe läuft die Steuerung mit `AUTOMATION_DRY_RUN=true` im
 Testbetrieb. Dabei werden Audi, Solix und Smart Plug vollständig geprüft und
