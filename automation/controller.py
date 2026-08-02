@@ -13,6 +13,8 @@ from .policy import AutomationDecision, decide_smartplug_state
 
 DEFAULT_INTERVAL_SECONDS = 60
 MIN_INTERVAL_SECONDS = 60
+MIN_ON_THRESHOLD_PERCENT = 20
+MAX_ON_THRESHOLD_PERCENT = 90
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,7 +44,10 @@ class ChargingAutomation:
         # sends MQTT commands until dry-run mode is explicitly disabled.
         self._dry_run = _boolean_setting("AUTOMATION_DRY_RUN", default=True)
         self._on_threshold = _integer_setting(
-            "AUTOMATION_ON_SOC", 30, minimum=2, maximum=100
+            "AUTOMATION_ON_SOC",
+            30,
+            minimum=MIN_ON_THRESHOLD_PERCENT,
+            maximum=MAX_ON_THRESHOLD_PERCENT,
         )
         self._off_threshold = _integer_setting(
             "AUTOMATION_OFF_SOC", 10, minimum=0, maximum=98
@@ -216,6 +221,22 @@ class ChargingAutomation:
             "solix_battery_percent": self._last_battery_percent,
             "smartplug": dict(self._smartplug),
         }
+
+    async def set_on_threshold(self, percent: int) -> dict[str, Any]:
+        """Apply a validated runtime start threshold without sending a command."""
+        if isinstance(percent, bool) or not (
+            MIN_ON_THRESHOLD_PERCENT <= percent <= MAX_ON_THRESHOLD_PERCENT
+        ):
+            raise ValueError(
+                "Der Startwert muss zwischen 20 % und 90 % liegen"
+            )
+
+        async with self._evaluation_lock:
+            self._on_threshold = percent
+            self._last_reason = "start_threshold_updated"
+            self._last_action = "none"
+            self._last_error = None
+            return self.status()
 
     def record_manual_result(
         self, result: dict[str, Any], enabled: bool

@@ -250,7 +250,7 @@ Signalstärke
 </div>
 
 <div class="automation-rule">
-<span><b>EIN</b> bei Stecker verbunden und Akku &gt; 30 %</span>
+<span><b>EIN</b> bei Stecker verbunden und Akku ab <strong id="startRuleValue">30 %</strong></span>
 <span><b>AUS</b> bei Akku &lt; 10 % oder getrenntem Stecker</span>
 <span><b>PRÜFUNG</b> jede Minute · Audi-Cloud alle 15 Minuten</span>
 </div>
@@ -259,19 +259,47 @@ Signalstärke
 Automatikstatus wird geladen …
 </p>
 
+<div class="threshold-control" id="thresholdControl">
+<div class="threshold-copy">
+<strong>Solix-Startwert</strong>
+<span>Ab diesem Ladestand darf die Automatik den Audi-Ladevorgang starten.</span>
+</div>
+<div class="threshold-value-row">
+<output id="startThresholdValue" for="startThreshold">30 %</output>
+<button type="button" class="threshold-save" id="saveStartThreshold" disabled>Speichern</button>
+</div>
+<input
+    id="startThreshold"
+    type="range"
+    min="20"
+    max="90"
+    step="1"
+    value="30"
+    aria-label="Solix-Startwert"
+    disabled
+>
+<div class="threshold-scale" aria-hidden="true">
+<span>20 %</span>
+<span>90 %</span>
+</div>
+<p class="threshold-status" id="thresholdStatus" aria-live="polite">
+Zum Speichern denselben Steuer-Code wie beim manuellen Test verwenden.
+</p>
+</div>
+
 <div class="manual-control" id="manualControl">
 <div class="manual-control-copy">
 <strong>Manueller Smart-Plug-Test</strong>
 <span>Der Audi-Stecker muss verbunden sein; Einschalten ist unter 10 % Solix-Akku gesperrt.</span>
 </div>
 <div class="manual-code">
-<label for="controlToken">Test-Code</label>
+<label for="controlToken">Steuer-Code</label>
 <input
     id="controlToken"
     type="password"
     autocomplete="off"
     spellcheck="false"
-    placeholder="Test-Code eingeben"
+    placeholder="Steuer-Code eingeben"
     disabled
 >
 </div>
