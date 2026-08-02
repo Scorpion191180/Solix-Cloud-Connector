@@ -6,7 +6,7 @@ aiohttp>=3.13.5,<4
 aiofiles
 paho-mqtt
 python-dotenv
-git+https://github.com/thomluther/anker-solix-api.git
+git+https://github.com/thomluther/anker-solix-api.git@3d58b89793f4916f38dec7256c6eb5e8d59e728c
 Jinja2
 beautifulsoup4>=4.14.3,<5
 certifi>=2026.4.22

@@ -1,5 +1,15 @@
 # Third-party notices
 
+## anker-solix-api
+
+Solix Cloud access and A17X8 MQTT control use:
+
+- Project: `thomluther/anker-solix-api`
+- Source: https://github.com/thomluther/anker-solix-api
+- Commit: `3d58b89793f4916f38dec7256c6eb5e8d59e728c`
+- Version: 3.7.0
+- License: MIT
+
 ## myaudi-api
 
 The source files in `audi/vendor/audi_connect/` are vendored from:
