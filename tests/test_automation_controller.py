@@ -6,11 +6,18 @@ from automation.controller import ChargingAutomation
 
 
 class FakeAudiClient:
-    def __init__(self, connected=True):
+    def __init__(self, connected=True, stale=False, error=None):
         self.connected = connected
+        self.stale = stale
+        self.error = error
 
     async def get_live(self):
-        return {"available": True, "plug_connected": self.connected}
+        return {
+            "available": True,
+            "plug_connected": self.connected,
+            "stale": self.stale,
+            "error": self.error,
+        }
 
 
 class FakeSolixClient:
@@ -81,6 +88,24 @@ class ChargingAutomationTests(unittest.IsolatedAsyncioTestCase):
         status = await controller.evaluate()
 
         self.assertEqual(solix.commands, [False])
+        self.assertEqual(status["reason"], "cable_not_connected")
+
+    async def test_stale_connected_audi_data_cannot_keep_plug_on(self):
+        solix = FakeSolixClient(80, state=True)
+        controller = self.make_controller(
+            solix,
+            FakeAudiClient(
+                connected=True,
+                stale=True,
+                error="Audi Connect antwortet mit HTTP 401",
+            ),
+        )
+
+        status = await controller.evaluate()
+
+        self.assertEqual(solix.commands, [False])
+        self.assertTrue(status["audi_data_stale"])
+        self.assertIsNone(status["audi_plug_connected"])
         self.assertEqual(status["reason"], "cable_not_connected")
 
     async def test_hysteresis_does_not_send_a_command(self):

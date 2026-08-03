@@ -1,9 +1,17 @@
 import os
 import time
 import unittest
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock, patch
 
-from audi.client import AudiClient, MIN_CACHE_SECONDS
+import aiohttp
+
+from audi.client import (
+    AudiClient,
+    ERROR_RETRY_SECONDS,
+    MIN_CACHE_SECONDS,
+    TOKEN_REFRESH_SECONDS,
+)
 
 
 class AudiClientTests(unittest.IsolatedAsyncioTestCase):
@@ -154,6 +162,127 @@ class AudiClientTests(unittest.IsolatedAsyncioTestCase):
             client = AudiClient()
 
         self.assertEqual(client._cache_seconds, MIN_CACHE_SECONDS)
+
+    async def test_auth_clock_is_not_reset_when_token_is_not_yet_due(self):
+        with patch.dict(
+            os.environ,
+            {"AUDI_REFRESH_TOKEN": "refresh-token"},
+            clear=True,
+        ):
+            client = AudiClient()
+
+        original_auth_time = time.time() - TOKEN_REFRESH_SECONDS - 1
+        auth = SimpleNamespace(
+            refresh_tokens=AsyncMock(return_value=False),
+            refresh_token="refresh-token",
+        )
+        client._auth = auth
+        client._vehicle_info = {"vin": "WAU123"}
+        client._auth_time = original_auth_time
+
+        await client._ensure_auth()
+
+        auth.refresh_tokens.assert_awaited_once()
+        self.assertEqual(client._auth_time, original_auth_time)
+
+    async def test_successful_token_refresh_updates_clock_and_rotated_token(self):
+        with patch.dict(
+            os.environ,
+            {"AUDI_REFRESH_TOKEN": "old-refresh-token"},
+            clear=True,
+        ):
+            client = AudiClient()
+
+        auth = SimpleNamespace(
+            refresh_tokens=AsyncMock(return_value=True),
+            refresh_token="rotated-refresh-token",
+        )
+        client._auth = auth
+        client._vehicle_info = {"vin": "WAU123"}
+        client._auth_time = time.time() - TOKEN_REFRESH_SECONDS - 1
+
+        await client._ensure_auth()
+
+        self.assertGreater(client._auth_time, time.time() - 5)
+        self.assertEqual(client._refresh_token, "rotated-refresh-token")
+
+    async def test_401_forces_token_refresh_and_retries_vehicle_request(self):
+        with patch.dict(
+            os.environ,
+            {"AUDI_REFRESH_TOKEN": "old-refresh-token"},
+            clear=True,
+        ):
+            client = AudiClient()
+
+        unauthorized = aiohttp.ClientResponseError(
+            request_info=None,
+            history=(),
+            status=401,
+            message="Unauthorized",
+        )
+        auth = SimpleNamespace(
+            get_stored_vehicle_data=AsyncMock(
+                side_effect=[unauthorized, {"charging": {}}]
+            ),
+            refresh_tokens=AsyncMock(return_value=True),
+            refresh_token="rotated-refresh-token",
+        )
+        client._auth = auth
+        client._vehicle_info = {"vin": "WAU123"}
+        client._ensure_auth = AsyncMock()
+        payload = client._empty_payload()
+        payload["available"] = True
+        client._normalise_vehicle = Mock(return_value=payload)
+
+        result = await client._refresh_from_cloud()
+
+        auth.refresh_tokens.assert_awaited_once_with(24 * 60 * 60)
+        self.assertEqual(auth.get_stored_vehicle_data.await_count, 2)
+        self.assertEqual(client._refresh_token, "rotated-refresh-token")
+        self.assertTrue(result["available"])
+
+    async def test_failed_cloud_refresh_is_retried_at_most_every_15_minutes(self):
+        with patch.dict(
+            os.environ,
+            {"AUDI_REFRESH_TOKEN": "refresh-token"},
+            clear=True,
+        ):
+            client = AudiClient()
+
+        client._cache = client._empty_payload()
+        client._cache.update({"available": True, "vehicle_name": "Q3"})
+        client._last_success = time.time() - client._cache_seconds - 1
+        client._last_error = "Audi Connect antwortet mit HTTP 401"
+        client._last_attempt = time.time() - 10
+        client._refresh_from_cloud = AsyncMock()
+
+        result = await client.get_live()
+
+        client._refresh_from_cloud.assert_not_awaited()
+        self.assertTrue(result["stale"])
+        self.assertGreaterEqual(
+            result["retry_after_seconds"], ERROR_RETRY_SECONDS - 11
+        )
+
+    async def test_initial_auth_error_also_observes_retry_backoff(self):
+        with patch.dict(
+            os.environ,
+            {"AUDI_REFRESH_TOKEN": "refresh-token"},
+            clear=True,
+        ):
+            client = AudiClient()
+
+        client._last_error = "Audi-Autorisierung wurde abgelehnt"
+        client._last_attempt = time.time() - 10
+        client._refresh_from_cloud = AsyncMock()
+
+        result = await client.get_live()
+
+        client._refresh_from_cloud.assert_not_awaited()
+        self.assertFalse(result["available"])
+        self.assertGreaterEqual(
+            result["retry_after_seconds"], ERROR_RETRY_SECONDS - 11
+        )
 
 
 if __name__ == "__main__":

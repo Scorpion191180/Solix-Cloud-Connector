@@ -78,6 +78,8 @@ class ChargingAutomation:
         self._last_error: str | None = None
         self._last_battery_percent: int | float | None = None
         self._last_cable_connected: bool | None = None
+        self._last_audi_stale = False
+        self._last_audi_error: str | None = None
         self._smartplug: dict[str, Any] = {
             "available": False,
             "name": None,
@@ -129,9 +131,14 @@ class ChargingAutomation:
             audi_data, solix_data = await asyncio.gather(
                 self._audi.get_live(), self._solix.get_live()
             )
+            self._last_audi_stale = audi_data.get("stale") is True
+            self._last_audi_error = (
+                str(audi_data.get("error")) if audi_data.get("error") else None
+            )
             self._last_cable_connected = (
                 audi_data.get("plug_connected")
                 if audi_data.get("available") is True
+                and not self._last_audi_stale
                 else None
             )
             self._last_battery_percent = self._number(
@@ -218,6 +225,8 @@ class ChargingAutomation:
             "reason": self._last_reason,
             "error": self._last_error,
             "audi_plug_connected": self._last_cable_connected,
+            "audi_data_stale": self._last_audi_stale,
+            "audi_error": self._last_audi_error,
             "solix_battery_percent": self._last_battery_percent,
             "smartplug": dict(self._smartplug),
         }

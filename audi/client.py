@@ -16,6 +16,7 @@ import aiohttp
 DEFAULT_CACHE_SECONDS = 4 * 60 * 60
 MIN_CACHE_SECONDS = 15 * 60
 TOKEN_REFRESH_SECONDS = 45 * 60
+ERROR_RETRY_SECONDS = 15 * 60
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,6 +56,7 @@ class AudiClient:
         self._vehicle_info: dict[str, Any] | None = None
         self._cache: dict[str, Any] | None = None
         self._last_success: float | None = None
+        self._last_attempt: float | None = None
         self._last_error: str | None = None
         self._lock = asyncio.Lock()
 
@@ -70,6 +72,7 @@ class AudiClient:
             "stale": False,
             "cache_age_seconds": None,
             "cache_ttl_seconds": self._cache_seconds,
+            "retry_after_seconds": None,
             "last_update": None,
             "error": None,
             "vehicle_name": None,
@@ -210,7 +213,20 @@ class AudiClient:
         )
         return payload
 
-    async def _login(self) -> None:
+    def _remember_refresh_token(self) -> None:
+        """Keep a rotated token usable for the lifetime of this process."""
+        if self._auth is None:
+            return
+        rotated_token = self._auth.refresh_token
+        if rotated_token:
+            self._refresh_token = rotated_token
+
+    async def _login(
+        self,
+        refresh_token: str | None = None,
+        *,
+        clear_cached_tokens: bool = False,
+    ) -> None:
         from .vendor.audi_connect.api import AudiAPI
         from .vendor.audi_connect.auth import AudiAuth
         from .vendor.audi_connect.token_store import TokenStore
@@ -223,14 +239,21 @@ class AudiClient:
                 connector=aiohttp.TCPConnector(ssl=ssl_context)
             )
 
+        token_store = TokenStore(filepath=self._token_file)
+        if clear_cached_tokens:
+            token_store.clear()
+
         self._auth = AudiAuth(
             AudiAPI(self._session),
             country=self._country,
             spin=self._spin,
             api_level=self._api_level,
-            token_store=TokenStore(filepath=self._token_file),
+            token_store=token_store,
         )
-        vehicles = await self._auth.login_with_refresh_token(self._refresh_token)
+        vehicles = await self._auth.login_with_refresh_token(
+            refresh_token or self._refresh_token
+        )
+        self._remember_refresh_token()
         if self._vin:
             self._vehicle_info = next(
                 (
@@ -259,8 +282,10 @@ class AudiClient:
             return
 
         try:
-            await self._auth.refresh_tokens(elapsed)
-            self._auth_time = time.time()
+            refreshed = await self._auth.refresh_tokens(elapsed)
+            if refreshed:
+                self._remember_refresh_token()
+                self._auth_time = time.time()
         except Exception:
             # A single full login is safer than repeatedly retrying a failed
             # token refresh. Further retries only happen on the next API call.
@@ -268,13 +293,49 @@ class AudiClient:
             self._vehicle_info = None
             await self._login()
 
+    async def _recover_unauthorized(self) -> None:
+        """Refresh an unexpectedly rejected bearer token, with one full fallback."""
+        latest_refresh_token = self._refresh_token
+        if self._auth is not None:
+            latest_refresh_token = self._auth.refresh_token or latest_refresh_token
+            try:
+                refreshed = await self._auth.refresh_tokens(24 * 60 * 60)
+                if refreshed:
+                    self._remember_refresh_token()
+                    self._auth_time = time.time()
+                    return
+            except Exception:
+                _LOGGER.warning(
+                    "Immediate Audi token refresh failed; starting a clean session",
+                    exc_info=True,
+                )
+
+        self._auth = None
+        self._vehicle_info = None
+        await self._login(
+            latest_refresh_token,
+            clear_cached_tokens=True,
+        )
+
     async def _refresh_from_cloud(self) -> dict[str, Any]:
         await self._ensure_auth()
         assert self._auth is not None
         assert self._vehicle_info is not None
 
         vin = str(self._vehicle_info.get("vin", ""))
-        raw_data = await self._auth.get_stored_vehicle_data(vin)
+        try:
+            raw_data = await self._auth.get_stored_vehicle_data(vin)
+        except aiohttp.ClientResponseError as exc:
+            if exc.status != 401:
+                raise
+            _LOGGER.warning(
+                "Audi bearer token was rejected; refreshing once before retry"
+            )
+            await self._recover_unauthorized()
+            assert self._auth is not None
+            assert self._vehicle_info is not None
+            vin = str(self._vehicle_info.get("vin", ""))
+            raw_data = await self._auth.get_stored_vehicle_data(vin)
         payload = self._normalise_vehicle(self._vehicle_info, raw_data)
         payload.update(
             {
@@ -296,6 +357,31 @@ class AudiClient:
         payload["stale"] = age >= self._cache_seconds
         payload["cache_age_seconds"] = age
         payload["error"] = self._last_error
+        if self._last_error and self._last_attempt is not None:
+            elapsed = int(time.time() - self._last_attempt)
+            payload["retry_after_seconds"] = max(
+                0, ERROR_RETRY_SECONDS - elapsed
+            )
+        return payload
+
+    def _retry_delayed_after_error(self) -> bool:
+        return bool(
+            self._last_error
+            and self._last_attempt is not None
+            and (time.time() - self._last_attempt) < ERROR_RETRY_SECONDS
+        )
+
+    def _failed_payload(self) -> dict[str, Any]:
+        cached = self._cached_payload()
+        if cached:
+            return cached
+        payload = self._empty_payload()
+        payload["error"] = self._last_error
+        if self._last_attempt is not None:
+            elapsed = int(time.time() - self._last_attempt)
+            payload["retry_after_seconds"] = max(
+                0, ERROR_RETRY_SECONDS - elapsed
+            )
         return payload
 
     @staticmethod
@@ -324,11 +410,16 @@ class AudiClient:
         cached = self._cached_payload()
         if cached and not cached["stale"]:
             return cached
+        if self._retry_delayed_after_error():
+            return self._failed_payload()
 
         async with self._lock:
             cached = self._cached_payload()
             if cached and not cached["stale"]:
                 return cached
+            if self._retry_delayed_after_error():
+                return self._failed_payload()
+            self._last_attempt = time.time()
             try:
                 self._cache = await self._refresh_from_cloud()
                 self._last_success = time.time()
@@ -337,12 +428,7 @@ class AudiClient:
             except Exception as exc:
                 self._last_error = self._public_error(exc)
                 _LOGGER.exception("Audi Connect refresh failed")
-                cached = self._cached_payload()
-                if cached:
-                    return cached
-                payload = self._empty_payload()
-                payload["error"] = self._last_error
-                return payload
+                return self._failed_payload()
 
     async def close(self) -> None:
         if self._session and not self._session.closed:

@@ -36,6 +36,10 @@ Audi-Cache zusammen mit den aktuellen Solix-Daten ausgewertet:
   Grenzwert.
 - Ladestecker getrennt oder unbekannt: Smart Plug aus.
 - Solix-Ladestand unbekannt: Smart Plug aus.
+- Veraltete Audi-Daten werden deutlich markiert und niemals zum Einschalten
+  verwendet. Bei einem abgelaufenen Audi-Zugriffstoken versucht die App genau
+  eine sofortige Erneuerung; weitere Fehler werden höchstens alle 15 Minuten
+  erneut geprüft, um das Audi-Konto nicht mit Anfragen zu belasten.
 
 Bei genau einem Smart Plug wird er automatisch gewählt. Sind später mehrere
 Smart Plugs im Konto, muss `SOLIX_SMARTPLUG_SN` auf die Seriennummer des
