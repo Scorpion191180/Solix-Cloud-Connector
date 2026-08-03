@@ -1409,7 +1409,7 @@ function updateLabelPositions() {
         const element = pvStringElements[panel.id];
         element.style.left = x + "px";
         element.style.top = y + "px";
-        element.style.setProperty("--string-label-scale", THREE.MathUtils.clamp(0.60 + state.zoom * 0.28, 0.82, 1.34));
+        element.style.setProperty("--string-label-scale", THREE.MathUtils.clamp(0.72 + state.zoom * 0.33, 0.98, 1.56));
         element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
     });
 }

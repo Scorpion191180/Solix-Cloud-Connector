@@ -21,9 +21,9 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260803-12", dashboard)
-        self.assertIn("house.js?v=20260803-12", dashboard)
-        self.assertIn("app.js?v=20260803-12", dashboard)
+        self.assertIn("style.css?v=20260803-13", dashboard)
+        self.assertIn("house.js?v=20260803-13", dashboard)
+        self.assertIn("app.js?v=20260803-13", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
 
