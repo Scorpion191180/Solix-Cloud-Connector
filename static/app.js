@@ -252,6 +252,11 @@ function renderEnergyDiagram() {
         "diagramSummary",
         summaryParts.length ? summaryParts.join(" · ") : "Live-Energiefluss wird aufgebaut …"
     );
+
+    window.solixDashboardState = { solix, automation, audi };
+    window.dispatchEvent(new CustomEvent("solix-dashboard-data", {
+        detail: window.solixDashboardState
+    }));
 }
 
 function renderChargingFlow() {
@@ -772,6 +777,14 @@ document.getElementById("startThreshold").addEventListener("input", (event) => {
     refreshThresholdControls();
 });
 document.getElementById("saveStartThreshold").addEventListener("click", saveStartThreshold);
+document.getElementById("technicalToggle").addEventListener("click", (event) => {
+    const container = document.querySelector(".container");
+    const open = container.classList.toggle("technical-open");
+    event.currentTarget.setAttribute("aria-expanded", String(open));
+    event.currentTarget.innerText = open ?
+        "Technische Details ausblenden" :
+        "Technische Details & Steuerung anzeigen";
+});
 
 setInterval(updateDashboard, 5000);
 
