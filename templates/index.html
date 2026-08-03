@@ -7,7 +7,16 @@
 
 <title>☀️ Solix Control</title>
 
-<link rel="stylesheet" href="/static/style.css?v=20260803-4">
+<link rel="stylesheet" href="/static/style.css?v=20260803-6">
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/"
+  }
+}
+</script>
 
 </head>
 
@@ -36,7 +45,7 @@
 
 </header>
 
-<section class="live-ticker" aria-label="Solix Live-Ticker">
+<section class="live-ticker technical-panel" aria-label="Solix Live-Ticker">
 <span class="live-ticker-label">LIVE-TICKER</span>
 <div class="live-ticker-values">
 <span>🔋 Akku <strong id="tickerBattery">--</strong></span>
@@ -50,7 +59,7 @@
 </section>
 
 
-<section class="cards">
+<section class="cards technical-panel">
 
 <div class="card">
 
@@ -164,7 +173,55 @@ Signalstärke
 </section>
 
 
-<section class="flow-card">
+<section class="virtual-house-card">
+
+<div class="house-header">
+<div>
+<div class="eyebrow">DEIN ENERGIEHAUS</div>
+<h2>Haus &amp; Garage interaktiv</h2>
+<p>Mit dem Finger drehen und Komponenten antippen.</p>
+</div>
+<span class="house-live-badge" id="houseLiveBadge">Live wird verbunden</span>
+</div>
+
+<div class="house-stage" id="houseStage">
+<canvas
+    id="houseCanvas"
+    role="img"
+    tabindex="0"
+    aria-label="Drehbares 3D-Modell des Grundstücks mit Balkon-PV, Solarbank, Stromnetz, Garage und Audi Q3"
+    aria-describedby="houseInstructions"
+>
+Dein Browser unterstützt die interaktive Hausansicht nicht.
+</canvas>
+<div class="house-gesture" id="houseInstructions">↔ Wischen zum Drehen · Antippen für Details</div>
+<button class="house-reset" id="houseReset" type="button" aria-label="Hausansicht zurücksetzen">⟳ Ansicht</button>
+</div>
+
+<div class="house-inspector" id="houseInspector" aria-live="polite">
+<span class="house-inspector-icon" id="houseInspectorIcon">🔋</span>
+<div>
+<small id="houseInspectorLabel">SOLARBANK 4</small>
+<strong id="houseInspectorValue">--</strong>
+<p id="houseInspectorDetail">Live-Werte werden verbunden …</p>
+</div>
+</div>
+
+<div class="house-component-legend" aria-label="Komponenten im virtuellen Haus">
+<span>☀️ Balkon-PV</span>
+<span>🔋 Solarbank 4</span>
+<span>🌐 Stromnetz</span>
+<span>🚙 Audi Q3</span>
+</div>
+
+</section>
+
+<button class="technical-toggle" id="technicalToggle" type="button" aria-expanded="false">
+Technische Details &amp; Steuerung anzeigen
+</button>
+
+
+<section class="flow-card technical-panel">
 
 <div class="flow-header">
 <div>
@@ -294,7 +351,7 @@ Signalstärke
 </section>
 
 
-<section class="automation-card">
+<section class="automation-card technical-panel">
 
 <div class="automation-header">
 <div>
@@ -442,7 +499,7 @@ Noch kein manueller Befehl gesendet.
 </section>
 
 
-<section class="card">
+<section class="card technical-panel">
 
 <h2>PV-Eingänge</h2>
 
@@ -504,7 +561,7 @@ Noch kein manueller Befehl gesendet.
 </section>
 
 
-<nav class="bottom-nav">
+<nav class="bottom-nav technical-panel">
 
 <div class="active">
 🏠
@@ -534,7 +591,8 @@ Einstellungen
 
 </div>
 
-<script src="/static/app.js?v=20260803-4"></script>
+<script type="module" src="/static/house.js?v=20260803-6"></script>
+<script src="/static/app.js?v=20260803-6"></script>
 
 </body>
 </html>
