@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import os
 import ssl
 import time
@@ -262,11 +263,43 @@ class SolixClient:
             return False
         return None
 
+    @staticmethod
+    def _optional_number(value: Any) -> int | float | None:
+        if value is None or isinstance(value, bool):
+            return None
+        if isinstance(value, int | float):
+            number = float(value)
+        else:
+            text = str(value).strip().lower().replace(",", ".")
+            if not text:
+                return None
+            cleaned = "".join(
+                character
+                for character in text
+                if character in "-+.0123456789"
+            )
+            try:
+                number = float(cleaned)
+            except (TypeError, ValueError):
+                return None
+        if not math.isfinite(number):
+            return None
+        return int(number) if number.is_integer() else round(number, 2)
+
+    @classmethod
+    def _power_watts(cls, value: Any) -> int | float | None:
+        number = cls._optional_number(value)
+        if number is None:
+            return None
+        if isinstance(value, str) and "kw" in value.lower():
+            number = float(number) * 1000
+        return int(number) if float(number).is_integer() else round(float(number), 1)
+
     def _smartplug_status_locked(
         self, device: dict[str, Any], state: bool | None = None
     ) -> dict[str, Any]:
+        mqtt_data = device.get("mqtt_data") or {}
         if state is None:
-            mqtt_data = device.get("mqtt_data") or {}
             for source in (mqtt_data, device):
                 for key in (
                     "ac_output_switch",
@@ -282,6 +315,29 @@ class SolixClient:
         if state is None:
             state = self._last_smartplug_state
 
+        power_w: int | float | None = None
+        current_a: int | float | None = None
+        voltage_v: int | float | None = None
+        measurement_source: str | None = None
+        for source_name, source in (("mqtt", mqtt_data), ("cloud", device)):
+            for key in (
+                "power",
+                "current_power",
+                "output_power",
+                "ac_power",
+                "ac_output_power",
+            ):
+                if key in source and (
+                    measured_power := self._power_watts(source.get(key))
+                ) is not None:
+                    power_w = measured_power
+                    measurement_source = source_name
+                    break
+            if power_w is not None:
+                current_a = self._optional_number(source.get("current"))
+                voltage_v = self._optional_number(source.get("voltage"))
+                break
+
         return {
             "available": True,
             "name": device.get("alias_name")
@@ -289,6 +345,10 @@ class SolixClient:
             or "Anker SOLIX Smart Plug",
             "model": device.get("device_pn"),
             "state": state,
+            "power_w": power_w,
+            "current_a": current_a,
+            "voltage_v": voltage_v,
+            "measurement_source": measurement_source,
         }
 
     async def get_smartplug_status(self) -> dict[str, Any]:

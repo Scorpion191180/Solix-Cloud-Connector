@@ -63,9 +63,54 @@ class SolixSmartPlugTests(unittest.IsolatedAsyncioTestCase):
                 "name": "Wallbox",
                 "model": "A17X8",
                 "state": False,
+                "power_w": None,
+                "current_a": None,
+                "voltage_v": None,
+                "measurement_source": None,
             },
         )
         self.assertNotIn("serial", status)
+
+    async def test_smartplug_exposes_mqtt_power_current_and_voltage(self):
+        client = self.make_client(
+            {
+                "SECRET-SERIAL": {
+                    "type": "smartplug",
+                    "device_pn": "A17X8",
+                    "mqtt_data": {
+                        "ac_output_switch": 1,
+                        "power": 2274.6,
+                        "current": 9.89,
+                        "voltage": 230.1,
+                    },
+                    "current_power": "2100",
+                }
+            }
+        )
+
+        status = await client.get_smartplug_status()
+
+        self.assertEqual(status["power_w"], 2274.6)
+        self.assertEqual(status["current_a"], 9.89)
+        self.assertEqual(status["voltage_v"], 230.1)
+        self.assertEqual(status["measurement_source"], "mqtt")
+
+    async def test_smartplug_uses_cloud_power_when_mqtt_has_no_measurement(self):
+        client = self.make_client(
+            {
+                "SECRET-SERIAL": {
+                    "type": "smartplug",
+                    "device_pn": "A17X8",
+                    "mqtt_data": {"ac_output_switch": 1},
+                    "current_power": "2.3 kW",
+                }
+            }
+        )
+
+        status = await client.get_smartplug_status()
+
+        self.assertEqual(status["power_w"], 2300)
+        self.assertEqual(status["measurement_source"], "cloud")
 
     async def test_set_power_uses_supported_mqtt_device(self):
         client = self.make_client(

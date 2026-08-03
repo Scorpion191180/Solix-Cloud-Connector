@@ -208,6 +208,184 @@ header p{
     margin:5px 0 0;
 }
 
+.charging-visual{
+    margin-top:22px;
+    padding:18px;
+    border:1px solid rgba(148,163,184,.2);
+    border-radius:20px;
+    background:rgba(15,23,42,.64);
+    transition:border-color .25s,background .25s;
+}
+
+.charging-flow-main{
+    display:grid;
+    grid-template-columns:minmax(110px,.8fr) minmax(180px,1.5fr) minmax(110px,.8fr);
+    align-items:center;
+    gap:18px;
+}
+
+.charging-device{
+    display:flex;
+    min-width:0;
+    min-height:116px;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    padding:14px 10px;
+    border:1px solid rgba(148,163,184,.16);
+    border-radius:18px;
+    background:rgba(30,41,59,.9);
+    text-align:center;
+}
+
+.charging-device-icon{
+    font-size:31px;
+    line-height:1;
+}
+
+.charging-device small,
+.charging-reading small{
+    margin-top:8px;
+    color:var(--sub);
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.05em;
+    text-transform:uppercase;
+}
+
+.charging-device strong{
+    margin-top:5px;
+    font-size:21px;
+}
+
+.charging-bridge{
+    display:flex;
+    min-width:0;
+    flex-direction:column;
+    align-items:center;
+}
+
+.charging-track{
+    position:relative;
+    width:100%;
+    height:26px;
+    overflow:hidden;
+}
+
+.charging-track::before{
+    content:"";
+    position:absolute;
+    top:11px;
+    right:0;
+    left:0;
+    height:4px;
+    border-radius:999px;
+    background:#475569;
+}
+
+.charging-track span{
+    position:absolute;
+    top:7px;
+    left:-14px;
+    width:12px;
+    height:12px;
+    border-radius:50%;
+    background:#64748b;
+    opacity:0;
+}
+
+.charging-track span:nth-child(2){animation-delay:.65s;}
+.charging-track span:nth-child(3){animation-delay:1.3s;}
+
+.charging-reading{
+    display:flex;
+    align-items:center;
+    flex-direction:column;
+    text-align:center;
+}
+
+.charging-reading strong{
+    margin-top:3px;
+    font-size:32px;
+    line-height:1.05;
+}
+
+.charging-reading span{
+    min-height:16px;
+    margin-top:5px;
+    color:var(--sub);
+    font-size:11px;
+}
+
+.charging-flow-status{
+    display:grid;
+    grid-template-columns:auto auto 1fr;
+    align-items:center;
+    gap:8px;
+    margin-top:16px;
+    padding-top:14px;
+    border-top:1px solid rgba(148,163,184,.14);
+    color:var(--sub);
+    font-size:13px;
+}
+
+.charging-flow-status strong{
+    color:var(--text);
+}
+
+.charging-state-dot{
+    width:10px;
+    height:10px;
+    border-radius:50%;
+    background:#64748b;
+}
+
+.charging-visual.charging{
+    border-color:rgba(34,197,94,.5);
+    background:linear-gradient(90deg,rgba(21,128,61,.14),rgba(15,23,42,.68));
+}
+
+.charging-visual.charging .charging-track::before{
+    background:linear-gradient(90deg,#16a34a,#86efac);
+    box-shadow:0 0 14px rgba(34,197,94,.45);
+}
+
+.charging-visual.charging .charging-track span{
+    background:#dcfce7;
+    box-shadow:0 0 12px #22c55e;
+    animation:charge-flow 1.95s linear infinite;
+}
+
+.charging-visual.charging .charging-state-dot{
+    background:var(--green);
+    box-shadow:0 0 12px rgba(34,197,94,.7);
+    animation:pulse 1.4s infinite;
+}
+
+.charging-visual.charging .charging-reading strong{
+    color:#86efac;
+}
+
+.charging-visual.standby{
+    border-color:rgba(250,204,21,.35);
+}
+
+.charging-visual.standby .charging-track::before,
+.charging-visual.standby .charging-state-dot{
+    background:#ca8a04;
+}
+
+.charging-visual.off .charging-state-dot{
+    background:#ef4444;
+}
+
+@keyframes charge-flow{
+    0%{left:-14px;opacity:0;}
+    12%{opacity:1;}
+    88%{opacity:1;}
+    100%{left:100%;opacity:0;}
+}
+
 .eyebrow{
     color:#60a5fa;
     font-size:12px;
@@ -561,6 +739,40 @@ header{
     grid-template-columns:1fr;
 }
 
+.charging-visual{
+    padding:14px 10px;
+}
+
+.charging-flow-main{
+    grid-template-columns:minmax(76px,.8fr) minmax(112px,1.25fr) minmax(76px,.8fr);
+    gap:8px;
+}
+
+.charging-device{
+    min-height:102px;
+    padding:12px 5px;
+}
+
+.charging-device-icon{
+    font-size:26px;
+}
+
+.charging-device strong{
+    font-size:17px;
+}
+
+.charging-reading strong{
+    font-size:24px;
+}
+
+.charging-flow-status{
+    grid-template-columns:auto 1fr;
+}
+
+.charging-flow-status > span:last-child{
+    grid-column:2;
+}
+
 .manual-control{
     grid-template-columns:1fr;
 }
@@ -583,4 +795,11 @@ header{
     grid-column:auto;
 }
 
+}
+
+@media(prefers-reduced-motion:reduce){
+    .charging-visual.charging .charging-track span{
+        animation:none;
+        opacity:.8;
+    }
 }

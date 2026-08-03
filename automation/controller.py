@@ -85,6 +85,10 @@ class ChargingAutomation:
             "name": None,
             "model": None,
             "state": None,
+            "power_w": None,
+            "current_a": None,
+            "voltage_v": None,
+            "measurement_source": None,
         }
 
     @property
