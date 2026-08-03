@@ -33,6 +33,10 @@ function getAutomationReason(data) {
     const start = data.on_threshold_percent ?? activeStartThreshold;
     const stop = data.off_threshold_percent ?? 10;
 
+    if (data.audi_data_stale && String(data.reason || "").startsWith("cable_not_connected"))
+        return "Audi-Daten sind veraltet: Der Smart Plug bleibt sicher ausgeschaltet. " +
+            (data.audi_error || "Audi Connect wird erneut versucht.");
+
     if (data.reason === "at_or_above_on_threshold")
         return "Solix-Akku ab " + start + " % und Ladestecker verbunden: Smart Plug wurde eingeschaltet.";
     if (data.reason === "at_or_above_on_threshold_plug_already_on")
@@ -245,6 +249,7 @@ async function updateAutomation() {
         }
 
         document.getElementById("audiPlug").innerText =
+            data.audi_data_stale ? "Daten veraltet" :
             data.audi_plug_connected === true ? "Verbunden" :
             data.audi_plug_connected === false ? "Getrennt" : "Unbekannt";
 
@@ -369,6 +374,17 @@ async function updateAudi() {
             throw new Error(data.error || "Audi-Daten sind nicht verfügbar");
 
         const battery = data.battery_percent == null ? "--" : data.battery_percent + " %";
+        if (data.stale) {
+            const staleBattery = battery + " (veraltet)";
+            document.getElementById("audiBattery").innerText = staleBattery;
+            document.getElementById("tickerAudiBattery").innerText = battery + "*";
+            const lastUpdate = data.last_update ?
+                new Date(data.last_update).toLocaleString("de-DE") : "unbekannt";
+            document.getElementById("audiRange").innerText =
+                "Letzter Audi-Stand: " + lastUpdate + " · " +
+                (data.error || "Aktualisierung wird erneut versucht");
+            return;
+        }
         document.getElementById("audiBattery").innerText = battery;
         document.getElementById("tickerAudiBattery").innerText = battery;
         document.getElementById("audiRange").innerText =
