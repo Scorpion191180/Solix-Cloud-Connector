@@ -21,12 +21,21 @@ const state = {
     data: window.solixDashboardState || { solix: {}, automation: {}, audi: {} },
     pointers: new Map(),
     pointerStartX: 0,
+    pointerStartY: 0,
     lastPointerX: 0,
+    lastPointerY: 0,
+    pointerMode: "rotate",
     pointerMoved: false,
     pinchStartDistance: 0,
     pinchStartZoom: 1,
     yaw: 0.78,
     targetYaw: 0.78,
+    pitch: 0,
+    targetPitch: 0,
+    panX: 0,
+    targetPanX: 0,
+    panY: 0,
+    targetPanY: 0,
     zoom: 1,
     targetZoom: 1,
     lastTime: 0
@@ -47,6 +56,10 @@ const camera = new THREE.PerspectiveCamera(39, 1, 0.1, 100);
 camera.position.set(14.8, 10.6, 18.5);
 const cameraTarget = new THREE.Vector3(0, 2.1, 0);
 const cameraBaseOffset = camera.position.clone().sub(cameraTarget);
+const currentCameraTarget = cameraTarget.clone();
+const cameraOffset = new THREE.Vector3();
+const cameraRight = new THREE.Vector3();
+const cameraUp = new THREE.Vector3();
 camera.lookAt(cameraTarget);
 
 let renderer;
@@ -689,7 +702,7 @@ function createHouse() {
     createGable(house);
 
     // Lange Balkonfassade aus IMG_7376/7377: Fenstergruppen und je eine Balkontür.
-    [4.90, 0.42, -0.55, -2.12, -5.20].forEach((z) =>
+    [4.90, 0.42, -0.55, -2.12, -5.46].forEach((z) =>
         createWindow(house, [3.275, 1.48, z], [0.74, 1.16], "side"));
     createWindow(house, [3.285, 3.66, 5.45], [1.24, 1.10], "side");
     createDoor(house, [3.285, 3.58, 4.10], [0.78, 1.86], "side");
@@ -699,8 +712,8 @@ function createHouse() {
     createWindow(house, [3.285, 3.66, -1.42], [0.72, 1.10], "side");
     createDoor(house, [3.285, 3.58, -2.70], [0.78, 1.86], "side");
     createDoor(house, [3.285, 3.58, -4.06], [0.78, 1.86], "side");
-    createFrontWoodDoor(house, [3.30, 1.35, -3.32]);
-    createDoor(house, [3.30, 1.35, -4.43], [0.80, 1.92], "side");
+    createFrontWoodDoor(house, [3.30, 1.35, -3.15]);
+    createDoor(house, [3.30, 1.35, -4.30], [0.80, 1.92], "side");
     createBayWindow(house);
 
     // Gartenfassade aus IMG_7397: dunkler Garagenabschnitt und acht Öffnungen in Fotoreihenfolge.
@@ -724,11 +737,12 @@ function createHouse() {
     createWindow(house, [-3.30, 1.48, 5.08], [1.24, 1.14], "side-back");
 
     // Weiße Heckenseite: zwei Fensterreihen; laut Foto gibt es hier keine Tür.
-    [-1.92, 0, 1.92].forEach((x) =>
+    // Die rechten Fenster bleiben vor der Erkerkante und schneiden nicht mehr in dessen Rückfläche.
+    [-1.92, 0, 1.40].forEach((x) =>
         createWindow(house, [x, 3.68, -GABLE_Z - 0.02], [0.72, 1.08], "back"));
     [-1.90, -0.15].forEach((x) =>
         createWindow(house, [x, 1.46, -GABLE_Z - 0.02], [0.78, 1.14], "back"));
-    createWindow(house, [1.66, 1.46, -GABLE_Z - 0.02], [0.78, 1.14], "back");
+    createWindow(house, [1.25, 1.46, -GABLE_Z - 0.02], [0.78, 1.14], "back");
 
     createBalconyPanels(house);
     return house;
@@ -770,6 +784,28 @@ function createCarBodyShell(car, material, profile, width) {
     return addMesh(car, geometry, material, 0, 0, 0, {
         rotation: [0, -Math.PI / 2, 0]
     });
+}
+
+function createDetailedWheel(car, x, z, tireMaterial, rimMaterial, bodySide) {
+    const outerX = x + Math.sign(x) * 0.105;
+    const wheel = addMesh(car, new THREE.CylinderGeometry(0.32, 0.32, 0.19, 32),
+        tireMaterial, x, 0.38, z, { rotation: [0, 0, Math.PI / 2] });
+    addMesh(wheel, new THREE.CylinderGeometry(0.155, 0.155, 0.195, 24),
+        rimMaterial, 0, 0, 0, { castShadow: false });
+    addMesh(car, new THREE.TorusGeometry(0.225, 0.036, 10, 28), rimMaterial,
+        outerX, 0.38, z, { rotation: [0, Math.PI / 2, 0], castShadow: false });
+    for (let spoke = 0; spoke < 5; spoke += 1)
+        addBox(car, [0.026, 0.235, 0.030], rimMaterial, [outerX, 0.38, z], {
+            rotation: [spoke * Math.PI / 5 + 0.16, 0, 0],
+            castShadow: false
+        });
+    addMesh(car, new THREE.CylinderGeometry(0.050, 0.050, 0.205, 20),
+        rimMaterial, outerX, 0.38, z, { rotation: [0, 0, Math.PI / 2], castShadow: false });
+
+    // Sichtbare Radhauskante und Seitenschweller statt einer glatten Spielzeug-Karosserie.
+    addMesh(car, new THREE.TorusGeometry(0.345, 0.025, 8, 28), tireMaterial,
+        Math.sign(x) * (bodySide + 0.018), 0.43, z,
+        { rotation: [0, Math.PI / 2, 0], castShadow: false });
 }
 
 function createCar(color, model = "generic") {
@@ -815,6 +851,18 @@ function createCar(color, model = "generic") {
     addBox(car, [isFox ? 1.43 : 1.60, 0.16, 0.10], black,
         [0, 0.39, noseZ], { radius: 0.035 });
 
+    // Unterboden, Stoßfänger und Innenraum geben der Silhouette auch beim Zoomen echte Tiefe.
+    addBox(car, [isFox ? 1.46 : 1.62, 0.13, isFox ? 2.42 : 2.72], black,
+        [0, 0.30, -0.02], { radius: 0.045 });
+    addBox(car, [isFox ? 1.40 : 1.56, 0.18, 0.26], black,
+        [0, 0.43, noseZ - 0.05], { radius: 0.055 });
+    addBox(car, [isFox ? 1.38 : 1.54, 0.17, 0.24], black,
+        [0, 0.42, tailZ + 0.05], { radius: 0.050 });
+    [-0.42, 0.34].forEach((z) => {
+        addBox(car, [0.56, 0.52, 0.48], black, [0, 0.89, z], { radius: 0.09 });
+        addBox(car, [0.50, 0.09, 0.40], black, [0, 1.15, z], { radius: 0.04 });
+    });
+
     // Separate Scheibenflächen folgen den geneigten Karosserielinien und reflektieren die Umgebung.
     const cabinLength = isYeti ? 1.88 : isFox ? 1.46 : 1.72;
     const cabinY = isYeti ? 1.14 : isFox ? 1.08 : 1.04;
@@ -848,18 +896,19 @@ function createCar(color, model = "generic") {
                 [sideSign * (sideX + 0.018), 0.96, z], { radius: 0.012, castShadow: false }));
         addBox(car, [0.16, 0.12, 0.28], paint,
             [sideSign * (sideX + 0.11), cabinY + 0.02, 0.62], { radius: 0.045 });
+        addBox(car, [0.025, 0.055, isFox ? 1.55 : 1.86], paint,
+            [sideSign * (sideX + 0.025), 0.76, -0.04], { radius: 0.012 });
+        addBox(car, [0.050, 0.11, 1.34], black,
+            [sideSign * (sideX + 0.018), 0.29, -0.02], { radius: 0.025 });
     });
     [tailZ, noseZ].forEach((z) =>
         addBox(car, [1.58, 0.14, 0.10], black, [0, 0.40, z], { radius: 0.04 }));
     [-0.81, 0.81].forEach((x) =>
         addBox(car, [0.07, 0.13, 2.30], black, [x, 0.38, -0.05], { radius: 0.025 }));
 
-    [[-0.82, -0.98], [0.82, -0.98], [-0.82, 0.98], [0.82, 0.98]].forEach(([x, z]) => {
-        const wheel = addMesh(car, new THREE.CylinderGeometry(0.31, 0.31, 0.18, 24), black, x, 0.38, z, { rotation: [0, 0, Math.PI / 2] });
-        addMesh(wheel, new THREE.CylinderGeometry(0.15, 0.15, 0.185, 16), rim, 0, 0, 0, { rotation: [0, 0, 0], castShadow: false });
-        addMesh(car, new THREE.TorusGeometry(0.22, 0.035, 8, 20), rim,
-            x + Math.sign(x) * 0.105, 0.38, z, { rotation: [0, Math.PI / 2, 0], castShadow: false });
-    });
+    const wheelZ = isYeti ? 1.10 : isFox ? 0.98 : 1.08;
+    [[-sideX, -wheelZ], [sideX, -wheelZ], [-sideX, wheelZ], [sideX, wheelZ]].forEach(([x, z]) =>
+        createDetailedWheel(car, x, z, black, rim, sideX));
 
     const plate = new THREE.MeshStandardMaterial({ color: 0xf1efe7, roughness: 0.55 });
     addBox(car, [0.52, 0.13, 0.035], plate, [0, 0.50, tailZ - 0.07], { radius: 0.014, castShadow: false });
@@ -887,6 +936,19 @@ function createCar(color, model = "generic") {
         });
         addBox(car, [1.20, 0.10, 0.34], paint, [0, 1.28, -1.48], { radius: 0.045 });
         addBox(car, [0.48, 0.12, 0.045], new THREE.MeshStandardMaterial({ color: 0xe7e7df, roughness: 0.52 }), [0, 0.50, -1.68], { radius: 0.018, castShadow: false });
+        [-0.62, 0.62].forEach((x) => {
+            addBox(car, [0.28, 0.18, 0.045], black, [x, 0.42, 1.80], { radius: 0.045 });
+            addBox(car, [0.34, 0.045, 0.055], front, [x, 0.76, 1.80], {
+                rotation: [0, 0, x < 0 ? -0.10 : 0.10], radius: 0.018, castShadow: false
+            });
+            addBox(car, [0.33, 0.055, 0.050], rear, [x, 0.78, -1.75], {
+                rotation: [0, 0, x < 0 ? 0.11 : -0.11], radius: 0.018, castShadow: false
+            });
+        });
+        addBox(car, [1.28, 0.035, 0.045], rear, [0, 0.79, -1.755], { radius: 0.012, castShadow: false });
+        addBox(car, [0.76, 0.025, 0.055], black, [0, 1.20, 0.80], {
+            rotation: [-0.43, 0, 0], castShadow: false
+        });
     }
     else if (isYeti) {
         // Skoda Yeti: hoher, kantiger Aufbau, flaches Dach und charakteristische Zusatzscheinwerfer.
@@ -902,6 +964,8 @@ function createCar(color, model = "generic") {
             addBox(car, [0.035, 0.20, 0.025], rim, [x, 0.55, 1.855], { castShadow: false }));
         [-0.55, 0.55].forEach((x) =>
             addBox(car, [0.045, 0.06, 1.72], rim, [x, 1.61, -0.28], { radius: 0.012 }));
+        addBox(car, [1.32, 0.055, 0.055], rear, [0, 0.78, -1.75], { radius: 0.018, castShadow: false });
+        addBox(car, [1.16, 0.08, 0.26], black, [0, 0.39, -1.71], { radius: 0.035 });
     }
     else if (isFox) {
         // VW Fox: kurzes, hohes Heck, große Frontscheibe und mittiges VW-Zeichen.
@@ -912,6 +976,10 @@ function createCar(color, model = "generic") {
         addBox(car, [0.025, 0.19, 0.025], rim, [0, 0.58, 1.73], { castShadow: false });
         addBox(car, [0.18, 0.025, 0.025], rim, [0, 0.58, 1.73], { castShadow: false });
         addBox(car, [1.08, 0.09, 0.26], paint, [0, 1.30, -1.48], { radius: 0.045 });
+        addBox(car, [1.18, 0.055, 0.050], rear, [0, 0.78, -1.57], { radius: 0.018, castShadow: false });
+        addBox(car, [0.72, 0.045, 0.055], black, [0, 1.12, 0.82], {
+            rotation: [-0.43, 0, 0], castShadow: false
+        });
     }
     return car;
 }
@@ -1329,7 +1397,7 @@ function updateLabelPositions() {
         element.style.left = x + "px";
         element.style.top = y + "px";
         element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
-        element.style.setProperty("--scene-label-scale", THREE.MathUtils.clamp(0.36 + state.zoom * 0.24, 0.56, 1.04));
+        element.style.setProperty("--scene-label-scale", THREE.MathUtils.clamp(0.68 + state.zoom * 0.32, 0.90, 1.54));
     });
 
     pvPanelAnchors.forEach((panel) => {
@@ -1341,7 +1409,7 @@ function updateLabelPositions() {
         const element = pvStringElements[panel.id];
         element.style.left = x + "px";
         element.style.top = y + "px";
-        element.style.setProperty("--string-label-scale", THREE.MathUtils.clamp(0.34 + state.zoom * 0.22, 0.52, 1.02));
+        element.style.setProperty("--string-label-scale", THREE.MathUtils.clamp(0.60 + state.zoom * 0.28, 0.82, 1.34));
         element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
     });
 }
@@ -1361,9 +1429,21 @@ function resize() {
         compactView ? 21.4 : 16.0
     );
     cameraBaseOffset.copy(basePosition).sub(cameraTarget);
-    camera.position.copy(cameraTarget).addScaledVector(cameraBaseOffset, 1 / state.zoom);
-    camera.lookAt(cameraTarget);
+    updateCameraTransform();
     camera.updateProjectionMatrix();
+}
+
+function updateCameraTransform() {
+    cameraRight.set(cameraBaseOffset.z, 0, -cameraBaseOffset.x).normalize();
+    cameraOffset.copy(cameraBaseOffset)
+        .applyAxisAngle(cameraRight, state.pitch)
+        .multiplyScalar(1 / state.zoom);
+    cameraUp.copy(cameraOffset).normalize().cross(cameraRight).normalize();
+    currentCameraTarget.copy(cameraTarget)
+        .addScaledVector(cameraRight, state.panX)
+        .addScaledVector(cameraUp, state.panY);
+    camera.position.copy(currentCameraTarget).add(cameraOffset);
+    camera.lookAt(currentCameraTarget);
 }
 
 function pointerDistance() {
@@ -1392,7 +1472,10 @@ canvas.addEventListener("pointerdown", (event) => {
     canvas.setPointerCapture(event.pointerId);
     if (state.pointers.size === 1) {
         state.pointerStartX = event.clientX;
+        state.pointerStartY = event.clientY;
         state.lastPointerX = event.clientX;
+        state.lastPointerY = event.clientY;
+        state.pointerMode = event.pointerType === "mouse" && event.button === 2 ? "pan" : "rotate";
         state.pointerMoved = false;
     }
     else if (state.pointers.size === 2) {
@@ -1416,11 +1499,21 @@ canvas.addEventListener("pointermove", (event) => {
         state.pointerMoved = true;
         return;
     }
-    const delta = event.clientX - state.lastPointerX;
-    if (Math.abs(event.clientX - state.pointerStartX) > 5)
+    const deltaX = event.clientX - state.lastPointerX;
+    const deltaY = event.clientY - state.lastPointerY;
+    if (Math.hypot(event.clientX - state.pointerStartX, event.clientY - state.pointerStartY) > 5)
         state.pointerMoved = true;
-    state.targetYaw += delta * 0.009;
+    if (state.pointerMode === "pan") {
+        const panSpeed = 0.012 / Math.max(0.80, state.targetZoom);
+        state.targetPanX = THREE.MathUtils.clamp(state.targetPanX - deltaX * panSpeed, -3.2, 3.2);
+        state.targetPanY = THREE.MathUtils.clamp(state.targetPanY + deltaY * panSpeed, -1.8, 2.2);
+    }
+    else {
+        state.targetYaw += deltaX * 0.009;
+        state.targetPitch = THREE.MathUtils.clamp(state.targetPitch - deltaY * 0.0034, -0.14, 0.16);
+    }
     state.lastPointerX = event.clientX;
+    state.lastPointerY = event.clientY;
 });
 
 function finishPointer(event) {
@@ -1432,7 +1525,9 @@ function finishPointer(event) {
     if (state.pointers.size === 1) {
         const remaining = Array.from(state.pointers.values())[0];
         state.pointerStartX = remaining.x;
+        state.pointerStartY = remaining.y;
         state.lastPointerX = remaining.x;
+        state.lastPointerY = remaining.y;
     }
     else {
         state.pinchStartDistance = 0;
@@ -1442,6 +1537,7 @@ function finishPointer(event) {
 
 canvas.addEventListener("pointerup", finishPointer);
 canvas.addEventListener("pointercancel", finishPointer);
+canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 canvas.addEventListener("wheel", (event) => {
     event.preventDefault();
     beginSceneInteraction();
@@ -1467,16 +1563,26 @@ canvas.addEventListener("keydown", (event) => {
         finishSceneInteractionSoon();
         return;
     }
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight")
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key))
         return;
     event.preventDefault();
     beginSceneInteraction();
-    state.targetYaw += event.key === "ArrowLeft" ? -0.16 : 0.16;
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight")
+        state.targetYaw += event.key === "ArrowLeft" ? -0.16 : 0.16;
+    else
+        state.targetPitch = THREE.MathUtils.clamp(
+            state.targetPitch + (event.key === "ArrowUp" ? 0.05 : -0.05),
+            -0.14,
+            0.16
+        );
     finishSceneInteractionSoon();
 });
 
 resetButton.addEventListener("click", () => {
     state.targetYaw = 0.78;
+    state.targetPitch = 0;
+    state.targetPanX = 0;
+    state.targetPanY = 0;
     state.targetZoom = 1;
     state.selected = "battery";
     updateLiveUi();
@@ -1500,10 +1606,12 @@ function animate(time) {
     const delta = Math.min(0.05, (time - state.lastTime) * 0.001 || 0.016);
     state.lastTime = time;
     state.yaw = THREE.MathUtils.damp(state.yaw, state.targetYaw, 10, delta);
+    state.pitch = THREE.MathUtils.damp(state.pitch, state.targetPitch, 10, delta);
+    state.panX = THREE.MathUtils.damp(state.panX, state.targetPanX, 10, delta);
+    state.panY = THREE.MathUtils.damp(state.panY, state.targetPanY, 10, delta);
     state.zoom = THREE.MathUtils.damp(state.zoom, state.targetZoom, 10, delta);
     world.rotation.y = state.yaw;
-    camera.position.copy(cameraTarget).addScaledVector(cameraBaseOffset, 1 / state.zoom);
-    camera.lookAt(cameraTarget);
+    updateCameraTransform();
 
     if (!reduceMotion) {
         Object.values(flows).forEach((flow) => {
