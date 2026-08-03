@@ -7,7 +7,7 @@
 
 <title>☀️ Solix Control</title>
 
-<link rel="stylesheet" href="/static/style.css?v=20260803-3">
+<link rel="stylesheet" href="/static/style.css?v=20260803-4">
 
 </head>
 
@@ -166,38 +166,129 @@ Signalstärke
 
 <section class="flow-card">
 
-<h2>Energiefluss</h2>
-
-<div class="flow">
-
-<div class="node">
-☀️
-<div id="flowPV">--</div>
+<div class="flow-header">
+<div>
+<div class="eyebrow">LIVE-SCHALTBILD</div>
+<h2>Energiefluss im Gesamtsystem</h2>
+</div>
+<span class="diagram-update" id="diagramUpdate">Werte werden verbunden</span>
 </div>
 
-<div class="line"></div>
+<div class="energy-diagram-scroll">
+<svg
+    class="energy-diagram"
+    viewBox="0 0 1100 700"
+    role="img"
+    aria-labelledby="energyDiagramTitle energyDiagramDescription"
+>
+<title id="energyDiagramTitle">Live-Schaltbild der Solix-Anlage und Audi-Ladung</title>
+<desc id="energyDiagramDescription">PV-Eingänge, Solarbank, Stromnetz, Hausverteilung, Verbraucher, Smart Plug und Audi mit aktuellen Stromflüssen.</desc>
 
-<div class="node">
-🔋
-<div id="flowBattery">--</div>
+<defs>
+<filter id="diagramGlow" x="-50%" y="-50%" width="200%" height="200%">
+<feGaussianBlur stdDeviation="4" result="blur"></feGaussianBlur>
+<feMerge>
+<feMergeNode in="blur"></feMergeNode>
+<feMergeNode in="SourceGraphic"></feMergeNode>
+</feMerge>
+</filter>
+<marker id="diagramArrowSolar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#facc15"></path></marker>
+<marker id="diagramArrowBattery" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#38bdf8"></path></marker>
+<marker id="diagramArrowGrid" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#a78bfa"></path></marker>
+<marker id="diagramArrowHome" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#60a5fa"></path></marker>
+<marker id="diagramArrowCharging" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#22c55e"></path></marker>
+</defs>
+
+<g class="diagram-links" aria-hidden="true">
+<path id="diagramLinkPv" class="diagram-link solar" d="M280 150 L370 150"></path>
+<path id="diagramLinkSolix" class="diagram-link battery" d="M520 255 L520 335"></path>
+<path id="diagramLinkGrid" class="diagram-link grid" d="M280 575 C350 575 345 392 405 392"></path>
+<path id="diagramLinkOther" class="diagram-link home" d="M635 375 C710 375 720 120 800 120"></path>
+<path id="diagramLinkPlug" class="diagram-link charging" d="M635 405 C710 405 730 350 800 350"></path>
+<path id="diagramLinkAudi" class="diagram-link charging" d="M935 425 L935 505"></path>
+</g>
+
+<g class="diagram-link-labels" aria-hidden="true">
+<g class="diagram-link-label"><rect x="292" y="116" width="66" height="28" rx="14"></rect><text id="diagramPvLink" x="325" y="135">--</text></g>
+<g class="diagram-link-label"><rect x="534" y="281" width="80" height="28" rx="14"></rect><text id="diagramSolixLink" x="574" y="300">--</text></g>
+<g class="diagram-link-label"><rect x="297" y="520" width="74" height="28" rx="14"></rect><text id="diagramGridLink" x="334" y="539">--</text></g>
+<g class="diagram-link-label"><rect x="685" y="225" width="78" height="28" rx="14"></rect><text id="diagramOtherLink" x="724" y="244">--</text></g>
+<g class="diagram-link-label"><rect x="686" y="368" width="78" height="28" rx="14"></rect><text id="diagramPlugLink" x="725" y="387">--</text></g>
+<g class="diagram-link-label"><rect x="946" y="452" width="82" height="28" rx="14"></rect><text id="diagramAudiLink" x="987" y="471">--</text></g>
+</g>
+
+<g id="diagramNodePv" class="diagram-node solar-node">
+<rect x="20" y="45" width="260" height="210" rx="26"></rect>
+<text class="diagram-node-icon" x="48" y="88">☀️</text>
+<text class="diagram-node-title" x="100" y="82">PV-ANLAGE</text>
+<text class="diagram-node-subtitle" x="100" y="105">4 Eingänge</text>
+<text class="diagram-node-value" id="diagramPvTotal" x="48" y="155">--</text>
+<g class="diagram-pv-inputs">
+<text x="48" y="197">PV1 <tspan id="diagramPv1">--</tspan></text>
+<text x="158" y="197">PV2 <tspan id="diagramPv2">--</tspan></text>
+<text x="48" y="226">PV3 <tspan id="diagramPv3">--</tspan></text>
+<text x="158" y="226">PV4 <tspan id="diagramPv4">--</tspan></text>
+</g>
+</g>
+
+<g id="diagramNodeSolix" class="diagram-node battery-node">
+<rect x="370" y="45" width="300" height="210" rx="26"></rect>
+<text class="diagram-node-icon" x="400" y="91">🔋</text>
+<text class="diagram-node-title" x="456" y="82">SOLARBANK 4</text>
+<text class="diagram-node-subtitle" x="456" y="105">AE103 · 10,4 kWh</text>
+<text class="diagram-node-value" id="diagramBatterySoc" x="400" y="164">--</text>
+<text class="diagram-node-state" id="diagramBatteryState" x="400" y="204">Status wird geladen</text>
+<text class="diagram-node-meta" id="diagramBatteryPower" x="400" y="230">--</text>
+</g>
+
+<g id="diagramNodeGrid" class="diagram-node grid-node">
+<rect x="20" y="500" width="260" height="150" rx="26"></rect>
+<text class="diagram-node-icon" x="48" y="548">🌐</text>
+<text class="diagram-node-title" x="100" y="540">STROMNETZ</text>
+<text class="diagram-node-value compact" id="diagramGridPower" x="48" y="600">--</text>
+<text class="diagram-node-state" id="diagramGridState" x="48" y="627">Kein Netzfluss</text>
+</g>
+
+<g id="diagramNodeHome" class="diagram-node home-hub-node">
+<rect x="405" y="335" width="230" height="115" rx="24"></rect>
+<text class="diagram-node-icon" x="430" y="378">🏠</text>
+<text class="diagram-node-title" x="482" y="370">HAUSVERTEILUNG</text>
+<text class="diagram-node-value compact" id="diagramHomePower" x="430" y="422">--</text>
+</g>
+
+<g id="diagramNodeOther" class="diagram-node other-node">
+<rect x="800" y="45" width="270" height="150" rx="26"></rect>
+<text class="diagram-node-icon" x="828" y="92">💡</text>
+<text class="diagram-node-title" x="880" y="84">SONSTIGE VERBRAUCHER</text>
+<text class="diagram-node-value compact" id="diagramOtherPower" x="828" y="142">--</text>
+<text class="diagram-node-state" x="828" y="170">Hauslast ohne Audi</text>
+</g>
+
+<g id="diagramNodePlug" class="diagram-node plug-node">
+<rect x="800" y="275" width="270" height="150" rx="26"></rect>
+<text class="diagram-node-icon" x="828" y="322">🔌</text>
+<text class="diagram-node-title" x="880" y="314">ANKER SMART PLUG</text>
+<text class="diagram-node-value compact" id="diagramPlugPower" x="828" y="372">--</text>
+<text class="diagram-node-state" id="diagramPlugState" x="828" y="400">Wird geprüft</text>
+</g>
+
+<g id="diagramNodeAudi" class="diagram-node audi-node">
+<rect x="800" y="505" width="270" height="155" rx="26"></rect>
+<text class="diagram-node-icon" x="828" y="552">🚙</text>
+<text class="diagram-node-title" x="880" y="544">AUDI Q3</text>
+<text class="diagram-node-value compact" id="diagramAudiSoc" x="828" y="602">--</text>
+<text class="diagram-node-state" id="diagramAudiState" x="828" y="630">Wird geprüft</text>
+</g>
+</svg>
 </div>
 
-<div class="line"></div>
-
-<div class="flow-bottom">
-
-<div class="node">
-🏠
-<div id="flowHouse">--</div>
+<div class="diagram-footer">
+<p id="diagramSummary" aria-live="polite">Live-Energiefluss wird aufgebaut …</p>
+<div class="diagram-legend" aria-label="Legende">
+<span><i class="legend-line active"></i> Strom fließt</span>
+<span><i class="legend-line"></i> Kein Stromfluss</span>
+<span>Werte aus Solix-, Smart-Plug- und Audi-Cloud</span>
 </div>
-
-<div class="node">
-🌐
-<div id="flowGrid">--</div>
-</div>
-
-</div>
-
 </div>
 
 </section>
@@ -443,7 +534,7 @@ Einstellungen
 
 </div>
 
-<script src="/static/app.js?v=20260803-3"></script>
+<script src="/static/app.js?v=20260803-4"></script>
 
 </body>
 </html>

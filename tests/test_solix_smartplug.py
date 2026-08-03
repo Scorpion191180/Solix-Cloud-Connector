@@ -243,6 +243,10 @@ class SolixSmartPlugTests(unittest.IsolatedAsyncioTestCase):
                 "battery_soc": "18",
                 "battery_energy": "2712",
                 "battery_capacity": "15072",
+                "bat_charge_power": "0",
+                "bat_discharge_power": "740",
+                "output_power": "920",
+                "charging_status_desc": "bypass_discharge",
                 "sub_package_num": 2,
             },
         }
@@ -263,6 +267,12 @@ class SolixSmartPlugTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["battery_energy_wh"], 1872)
         self.assertEqual(result["battery_capacity_wh"], 10400)
         self.assertEqual(result["battery_capacity_source"], "configured")
+        self.assertEqual(result["battery_power"], -740)
+        self.assertEqual(result["battery_discharge_power"], 740)
+        self.assertEqual(result["battery_charge_power"], 0)
+        self.assertEqual(result["battery_flow_direction"], "discharging")
+        self.assertEqual(result["system_output_power"], 920)
+        self.assertEqual(result["charging_status"], "bypass_discharge")
         self.assertEqual(result["solarbank_count"], 2)
         self.assertEqual(result["selection"], "configured_model")
         self.assertNotIn("MAIN-SECRET", str(result))
