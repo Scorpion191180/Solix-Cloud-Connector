@@ -1136,7 +1136,10 @@ function loadDetailedVehicles(vehicles) {
         length: 3.72,
         width: 1.78,
         paint: 0x161d22,
-        orientation: { z: Math.PI }
+        // Das Quellmodell definiert seine Höhe in negativer Y-Richtung.
+        // Nach der automatischen Längsausrichtung dreht diese Korrektur den
+        // Wagen aufrecht auf seine Räder.
+        orientation: { x: -Math.PI }
     });
     loadVehicleAsset(vehicles.fox, {
         name: "Volkswagen Fox",
