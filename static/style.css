@@ -237,11 +237,35 @@ header p{
     border:1px solid rgba(148,163,184,.18);
     border-radius:20px;
     background:
-        radial-gradient(circle at 74% 16%,rgba(255,255,255,.78),transparent 24%),
-        linear-gradient(180deg,#86bce0 0%,#c8e2ef 57%,#77906e 58%,#405d3e 100%);
+        radial-gradient(circle at 76% 13%,rgba(255,255,255,.92),transparent 18%),
+        linear-gradient(180deg,#79b3dd 0%,#cbe4f1 56%,#849c75 57%,#405d3e 100%);
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),inset 0 -30px 70px rgba(13,35,28,.18);
+}
+
+.house-stage::before,
+.house-stage::after{
+    position:absolute;
+    inset:0;
+    content:"";
+    pointer-events:none;
+}
+
+.house-stage::before{
+    z-index:0;
+    background:
+        radial-gradient(ellipse at 18% 19%,rgba(255,255,255,.28),transparent 17%),
+        radial-gradient(ellipse at 48% 10%,rgba(255,255,255,.20),transparent 16%);
+}
+
+.house-stage::after{
+    z-index:2;
+    border-radius:inherit;
+    box-shadow:inset 0 0 40px rgba(15,23,42,.18),inset 0 -18px 36px rgba(2,6,23,.12);
 }
 
 #houseCanvas{
+    position:relative;
+    z-index:1;
     display:block;
     width:100%;
     height:100%;
@@ -336,10 +360,18 @@ header p{
     opacity:.28;
 }
 
+.house-stage.is-interacting .house-scene-label,
+.house-stage.is-interacting .house-string-label,
+.house-stage.is-interacting .house-gesture,
+.house-stage.is-interacting .house-reset{
+    opacity:0!important;
+    pointer-events:none;
+}
+
 .house-gesture,
 .house-reset{
     position:absolute;
-    z-index:2;
+    z-index:6;
     bottom:12px;
     border:1px solid rgba(148,163,184,.25);
     border-radius:999px;
@@ -1178,22 +1210,58 @@ header p{
 
 @media(max-width:700px){
 
-header{
-    flex-direction:column;
-    align-items:flex-start;
-    gap:18px;
+body{
+    padding:0;
+    overflow-x:hidden;
 }
 
-.house-header{
-    flex-direction:column;
+.container{
+    width:100%;
+    max-width:none;
+    padding-bottom:72px;
 }
 
-.house-live-badge{
-    white-space:normal;
+.container > header,
+.virtual-house-card > .house-header{
+    display:none;
+}
+
+.virtual-house-card{
+    width:100%;
+    margin:0;
+    padding:0 0 18px;
+    overflow:visible;
+    border:0;
+    border-radius:0;
+    background:var(--bg);
+    box-shadow:none;
 }
 
 .house-stage{
-    height:330px;
+    width:100vw;
+    height:100svh;
+    min-height:560px;
+    margin:0;
+    border:0;
+    border-radius:0;
+}
+
+.house-inspector,
+.house-component-legend{
+    margin-right:14px;
+    margin-left:14px;
+}
+
+.house-inspector{
+    margin-top:16px;
+}
+
+.technical-toggle,
+.flow-card,
+.automation-card,
+.history-card{
+    margin-right:14px;
+    margin-left:14px;
 }
 
 .house-scene-label{

@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
 const canvas = document.getElementById("houseCanvas");
 const stage = document.getElementById("houseStage");
@@ -64,9 +65,13 @@ catch (error) {
 
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.08;
+renderer.toneMappingExposure = 1.12;
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.shadowMap.type = THREE.VSMShadowMap;
+
+const environmentGenerator = new THREE.PMREMGenerator(renderer);
+scene.environment = environmentGenerator.fromScene(new RoomEnvironment(), 0.035).texture;
+environmentGenerator.dispose();
 
 const world = new THREE.Group();
 world.rotation.y = state.yaw;
@@ -101,35 +106,42 @@ function seededNoise(seed) {
 
 function makeTexture(background, ink, mode, repeatX, repeatY) {
     const textureCanvas = document.createElement("canvas");
-    textureCanvas.width = 128;
-    textureCanvas.height = 128;
+    textureCanvas.width = 256;
+    textureCanvas.height = 256;
     const context = textureCanvas.getContext("2d");
     const random = seededNoise(background.length * 173 + mode.length * 29);
     context.fillStyle = background;
-    context.fillRect(0, 0, 128, 128);
+    context.fillRect(0, 0, 256, 256);
     context.strokeStyle = ink;
     context.fillStyle = ink;
 
     if (mode === "stucco") {
-        context.globalAlpha = 0.18;
-        for (let index = 0; index < 520; index += 1) {
-            const x = random() * 128;
-            const y = random() * 128;
-            context.fillRect(x, y, 0.7 + random() * 1.5, 0.45);
+        context.globalAlpha = 0.15;
+        for (let y = 3; y < 256; y += 6) {
+            for (let x = (Math.floor(y / 6) % 2) * 3; x < 256; x += 8) {
+                context.fillRect(x, y, 5.8 + random() * 1.2, 1.0);
+                context.fillRect(x + 0.8, y + 1.8, 4.4, 0.45);
+            }
+        }
+        context.globalAlpha = 0.09;
+        for (let index = 0; index < 900; index += 1) {
+            const x = random() * 256;
+            const y = random() * 256;
+            context.fillRect(x, y, 0.7 + random() * 1.5, 0.55);
         }
     }
     else if (mode === "tiles") {
-        context.lineWidth = 2;
+        context.lineWidth = 2.4;
         context.globalAlpha = 0.42;
-        for (let y = 0; y < 128; y += 16) {
+        for (let y = 0; y < 256; y += 18) {
             context.beginPath();
             context.moveTo(0, y);
-            context.lineTo(128, y);
+            context.lineTo(256, y);
             context.stroke();
-            for (let x = (y / 16 % 2) * 8; x < 128; x += 16) {
+            for (let x = (Math.floor(y / 18) % 2) * 9; x < 256; x += 18) {
                 context.beginPath();
                 context.moveTo(x, y);
-                context.lineTo(x, y + 16);
+                context.lineTo(x, y + 18);
                 context.stroke();
             }
         }
@@ -137,12 +149,12 @@ function makeTexture(background, ink, mode, repeatX, repeatY) {
     else if (mode === "shingles") {
         context.lineWidth = 1;
         context.globalAlpha = 0.5;
-        for (let y = 0; y < 128; y += 12) {
+        for (let y = 0; y < 256; y += 12) {
             context.beginPath();
             context.moveTo(0, y);
-            context.lineTo(128, y);
+            context.lineTo(256, y);
             context.stroke();
-            for (let x = (y / 12 % 2) * 10; x < 128; x += 20) {
+            for (let x = (y / 12 % 2) * 10; x < 256; x += 20) {
                 context.beginPath();
                 context.moveTo(x, y);
                 context.lineTo(x, y + 12);
@@ -152,18 +164,18 @@ function makeTexture(background, ink, mode, repeatX, repeatY) {
     }
     else if (mode === "grass") {
         context.globalAlpha = 0.33;
-        for (let index = 0; index < 650; index += 1)
-            context.fillRect(random() * 128, random() * 128, 1, 1 + random() * 2);
+        for (let index = 0; index < 1600; index += 1)
+            context.fillRect(random() * 256, random() * 256, 1, 1 + random() * 3);
     }
     else if (mode === "pavers") {
         context.globalAlpha = 0.34;
         context.lineWidth = 1;
-        for (let y = 0; y < 128; y += 18) {
+        for (let y = 0; y < 256; y += 18) {
             context.beginPath();
             context.moveTo(0, y);
-            context.lineTo(128, y);
+            context.lineTo(256, y);
             context.stroke();
-            for (let x = (y / 18 % 2) * 16; x < 128; x += 32) {
+            for (let x = (y / 18 % 2) * 16; x < 256; x += 32) {
                 context.beginPath();
                 context.moveTo(x, y);
                 context.lineTo(x, y + 18);
@@ -177,7 +189,7 @@ function makeTexture(background, ink, mode, repeatX, repeatY) {
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
     texture.repeat.set(repeatX, repeatY);
-    texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    texture.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
     return texture;
 }
 
@@ -190,23 +202,28 @@ const textures = {
 };
 
 const materials = {
-    wall: new THREE.MeshStandardMaterial({ map: textures.wall, roughness: 0.96 }),
-    roof: new THREE.MeshStandardMaterial({ map: textures.roof, roughness: 0.84 }),
-    shingle: new THREE.MeshStandardMaterial({ map: textures.shingle, roughness: 0.92 }),
-    trim: new THREE.MeshStandardMaterial({ color: 0x8d1922, roughness: 0.68 }),
+    wall: new THREE.MeshStandardMaterial({ map: textures.wall, bumpMap: textures.wall, bumpScale: 0.035, roughness: 0.93, envMapIntensity: 0.34 }),
+    roof: new THREE.MeshStandardMaterial({ map: textures.roof, bumpMap: textures.roof, bumpScale: 0.07, roughness: 0.78, envMapIntensity: 0.38 }),
+    shingle: new THREE.MeshStandardMaterial({ map: textures.shingle, bumpMap: textures.shingle, bumpScale: 0.045, roughness: 0.88, envMapIntensity: 0.26 }),
+    trim: new THREE.MeshStandardMaterial({ color: 0x8d1922, roughness: 0.62, envMapIntensity: 0.4 }),
     darkTrim: new THREE.MeshStandardMaterial({ color: 0x3b302f, roughness: 0.8 }),
+    windowInterior: new THREE.MeshStandardMaterial({ color: 0x16212a, roughness: 0.72 }),
     glass: new THREE.MeshPhysicalMaterial({
         color: 0x7997ad,
         roughness: 0.12,
         metalness: 0.12,
-        transmission: 0.22,
+        transmission: 0.30,
         transparent: true,
-        opacity: 0.78,
-        clearcoat: 0.65
+        opacity: 0.82,
+        clearcoat: 0.92,
+        clearcoatRoughness: 0.08,
+        thickness: 0.05,
+        ior: 1.47,
+        envMapIntensity: 1.15
     }),
     garageRed: new THREE.MeshStandardMaterial({ color: 0xb5141d, roughness: 0.55 }),
-    grass: new THREE.MeshStandardMaterial({ map: textures.grass, roughness: 1 }),
-    paving: new THREE.MeshStandardMaterial({ map: textures.paving, roughness: 0.96 }),
+    grass: new THREE.MeshStandardMaterial({ map: textures.grass, bumpMap: textures.grass, bumpScale: 0.025, roughness: 1 }),
+    paving: new THREE.MeshStandardMaterial({ map: textures.paving, bumpMap: textures.paving, bumpScale: 0.035, roughness: 0.91, envMapIntensity: 0.25 }),
     wood: new THREE.MeshStandardMaterial({ color: 0x57352a, roughness: 0.9 }),
     solar: new THREE.MeshPhysicalMaterial({
         color: 0x091c31,
@@ -256,6 +273,7 @@ function createWindow(parent, position, size, side = "front") {
         group.rotation.y = Math.PI;
     parent.add(group);
 
+    addBox(group, [size[0] + 0.22, size[1] + 0.22, 0.09], materials.windowInterior, [0, 0, -0.035]);
     addBox(group, [size[0] + 0.16, size[1] + 0.16, 0.11], materials.darkTrim, [0, 0, 0]);
     addBox(group, [size[0], size[1], 0.125], materials.glass, [0, 0, 0.015], { castShadow: false });
     addBox(group, [0.055, size[1], 0.145], materials.darkTrim, [0, 0, 0.04]);
@@ -302,6 +320,47 @@ function createRoof(parent) {
     [-3.30, 3.30].forEach((x) => {
         addBox(parent, [0.16, 0.24, HOUSE_LENGTH + 0.75], materials.trim, [x, 4.94, 0]);
         addBox(parent, [0.10, 0.18, HOUSE_LENGTH + 0.78], materials.darkTrim, [x + Math.sign(x) * 0.10, 4.88, 0]);
+    });
+
+    // Feine Ziegelreihen, Traufen und Fallrohre geben dem vorhandenen Dach mehr Tiefe.
+    const roofRidgeMaterial = new THREE.MeshStandardMaterial({
+        color: 0x7f2e24,
+        roughness: 0.72,
+        envMapIntensity: 0.42
+    });
+    for (let x = 0.34; x <= 3.22; x += 0.38) {
+        [-x, x].forEach((rowX) => {
+            const rowY = 7.045 - Math.abs(rowX) * (2.15 / 3.55);
+            addBox(parent, [0.055, 0.055, HOUSE_LENGTH + 0.42], roofRidgeMaterial,
+                [rowX, rowY, 0], { castShadow: false });
+        });
+    }
+    const gutterMaterial = new THREE.MeshStandardMaterial({
+        color: 0x3f4548,
+        metalness: 0.58,
+        roughness: 0.38
+    });
+    [-3.47, 3.47].forEach((x) => {
+        addMesh(parent, new THREE.CylinderGeometry(0.075, 0.075, HOUSE_LENGTH + 0.62, 14),
+            gutterMaterial, x, 4.82, 0, { rotation: [Math.PI / 2, 0, 0] });
+        [-6.18, 6.18].forEach((z) =>
+            addMesh(parent, new THREE.CylinderGeometry(0.065, 0.065, 4.62, 12),
+                gutterMaterial, x, 2.42, z));
+    });
+    const skylightFrame = new THREE.MeshStandardMaterial({
+        color: 0x343b40,
+        metalness: 0.48,
+        roughness: 0.34
+    });
+    [
+        [-1.62, -2.72, 0.58, 0.76],
+        [-1.48, 2.34, 0.72, 0.92]
+    ].forEach(([x, z, width, length]) => {
+        const roofY = 7.06 - Math.abs(x) * (2.15 / 3.55);
+        addBox(parent, [width + 0.12, 0.08, length + 0.12], skylightFrame,
+            [x, roofY + 0.045, z], { rotation: [0, 0, slope] });
+        addBox(parent, [width, 0.09, length], materials.glass,
+            [x - 0.015, roofY + 0.085, z], { rotation: [0, 0, slope], castShadow: false });
     });
 
     const chimneyMaterial = new THREE.MeshStandardMaterial({
@@ -368,17 +427,18 @@ const PV_PANEL_Z = [2.42, 4.42, -2.85, -1.45];
 function createBalconyPanels(parent) {
     const railMaterial = new THREE.MeshStandardMaterial({ color: 0x49332f, roughness: 0.8 });
     const sets = [
-        { z: 3.52, length: 5.62, panelZ: PV_PANEL_Z.slice(0, 2) },
+        { z: 3.00, length: 6.65, panelZ: PV_PANEL_Z.slice(0, 2) },
         { z: -2.15, length: 3.58, panelZ: PV_PANEL_Z.slice(2) }
     ];
     sets.forEach((set) => {
         addBox(parent, [0.82, 0.12, set.length], materials.darkTrim, [3.52, 2.08, set.z]);
-        addBox(parent, [0.14, 0.14, set.length - 0.16], railMaterial, [3.45, 2.82, set.z]);
+        // Geländer und PV sitzen an der äußeren Balkonkante, mit Abstand zur Hauswand.
+        addBox(parent, [0.14, 0.14, set.length - 0.16], railMaterial, [3.88, 2.82, set.z]);
         for (let offset = -set.length / 2 + 0.20; offset <= set.length / 2 - 0.20; offset += 0.72)
-            addBox(parent, [0.08, 1.05, 0.08], railMaterial, [3.45, 2.35, set.z + offset]);
+            addBox(parent, [0.08, 1.05, 0.08], railMaterial, [3.88, 2.35, set.z + offset]);
         set.panelZ.forEach((panelZ) => {
             const panel = addBox(parent, [0.10, 1.12, 1.16], materials.solar,
-                [3.57, 2.36, panelZ], { radius: 0.025 });
+                [3.96, 2.36, panelZ], { radius: 0.025 });
             panel.rotation.z = -0.16;
             for (let row = -1; row <= 1; row += 1)
                 addBox(panel, [0.018, 0.012, 1.05], new THREE.MeshStandardMaterial({ color: 0x6688a2 }), [0.058, row * 0.31, 0], { castShadow: false });
@@ -459,22 +519,32 @@ function createHouse() {
     createDoor(house, [3.285, 3.58, 4.10], [0.78, 1.86], "side");
     createWindow(house, [3.285, 3.66, 2.72], [1.24, 1.10], "side");
     createDoor(house, [3.285, 3.58, 1.45], [0.78, 1.86], "side");
+    createWindow(house, [3.285, 3.66, 0.18], [0.78, 1.10], "side");
     createWindow(house, [3.285, 3.66, -1.42], [0.72, 1.10], "side");
     createDoor(house, [3.285, 3.58, -2.70], [0.78, 1.86], "side");
     createDoor(house, [3.285, 3.58, -4.06], [0.78, 1.86], "side");
     createDoor(house, [3.30, 1.35, -3.48], [0.80, 1.92], "side");
     createBayWindow(house);
 
-    // Gartenfassade aus IMG_7380/7381: unregelmäßige, tatsächlich sichtbare Öffnungen.
-    [5.22, 3.82, 2.42, 0.96, -0.62, -2.12, -5.02].forEach((z) =>
-        createWindow(house, [-3.275, 3.70, z], [z === 3.82 ? 0.92 : 0.72, 1.08], "side-back"));
+    // Gartenfassade aus IMG_7397: dunkler Garagenabschnitt und acht Öffnungen in Fotoreihenfolge.
+    addBox(house, [0.16, 4.90, 2.45], materials.shingle, [-3.285, 2.50, 5.18]);
+    [
+        [-5.02, 0.68],
+        [-2.12, 0.68],
+        [-0.62, 0.68],
+        [0.96, 0.78],
+        [2.42, 1.02],
+        [3.82, 0.62],
+        [5.22, 1.02]
+    ].forEach(([z, width]) =>
+        createWindow(house, [-3.30, 3.70, z], [width, 1.08], "side-back"));
     createDoor(house, [-3.285, 3.58, -3.62], [1.18, 1.86], "side-back");
     createJulietGuard(house, -3.62);
-    [5.12, 3.25, -0.35].forEach((z) =>
-        createWindow(house, [-3.275, 1.46, z], [0.78, 1.14], "side-back"));
-    createWoodDoorWithCanopy(house, [-3.285, 1.34, 1.22]);
-    createDoor(house, [-3.285, 1.34, -2.72], [0.82, 1.92], "side-back");
-    createWindow(house, [-3.275, 1.50, -4.78], [0.62, 0.92], "side-back");
+    createWindow(house, [-3.30, 1.50, -4.92], [0.72, 1.10], "side-back");
+    createDoor(house, [-3.30, 1.34, -3.55], [0.82, 1.92], "side-back");
+    createWindow(house, [-3.30, 1.46, 0.18], [0.62, 1.10], "side-back");
+    createWoodDoorWithCanopy(house, [-3.30, 1.34, 1.80]);
+    createWindow(house, [-3.30, 1.48, 5.08], [1.24, 1.14], "side-back");
 
     // Weiße Heckenseite: zwei Fensterreihen; laut Foto gibt es hier keine Tür.
     [-1.92, 0, 1.92].forEach((x) =>
@@ -502,8 +572,34 @@ function createSolarBank() {
     return bank;
 }
 
-function createCar(color, detailed = false) {
+function createCarBodyShell(car, material, profile, width) {
+    const shape = new THREE.Shape();
+    profile.forEach(([lengthPosition, height], index) => {
+        if (index === 0)
+            shape.moveTo(lengthPosition, height);
+        else
+            shape.lineTo(lengthPosition, height);
+    });
+    shape.closePath();
+    const geometry = new THREE.ExtrudeGeometry(shape, {
+        depth: width,
+        steps: 1,
+        bevelEnabled: true,
+        bevelSegments: 4,
+        bevelSize: 0.055,
+        bevelThickness: 0.045
+    });
+    geometry.translate(0, 0, -width / 2);
+    return addMesh(car, geometry, material, 0, 0, 0, {
+        rotation: [0, -Math.PI / 2, 0]
+    });
+}
+
+function createCar(color, model = "generic") {
     const car = new THREE.Group();
+    const isAudi = model === "audi-q3";
+    const isYeti = model === "skoda-yeti";
+    const isFox = model === "vw-fox";
     const paint = new THREE.MeshPhysicalMaterial({
         color,
         metalness: 0.72,
@@ -513,9 +609,54 @@ function createCar(color, detailed = false) {
     });
     const black = new THREE.MeshStandardMaterial({ color: 0x07090c, roughness: 0.42 });
     const rim = new THREE.MeshStandardMaterial({ color: 0x85909a, metalness: 0.86, roughness: 0.25 });
-    addBox(car, [1.72, 0.48, 3.25], paint, [0, 0.54, 0], { radius: 0.18 });
-    addBox(car, [1.48, 0.56, 1.74], materials.glass, [0, 0.94, -0.16], { radius: 0.16, castShadow: false });
-    addBox(car, [1.30, 0.13, 1.50], paint, [0, 1.22, -0.18], { radius: 0.06 });
+    const contactShadow = new THREE.MeshBasicMaterial({
+        color: 0x050708,
+        transparent: true,
+        opacity: 0.28,
+        depthWrite: false
+    });
+    addMesh(car, new THREE.CircleGeometry(1.0, 36), contactShadow, 0, 0.08, 0, {
+        rotation: [-Math.PI / 2, 0, 0],
+        castShadow: false,
+        receiveShadow: false
+    }).scale.set(0.92, 1.85, 1);
+    const profile = isYeti ? [
+        [-1.66, 0.28], [-1.66, 0.86], [-1.46, 1.30], [-1.18, 1.48],
+        [0.62, 1.48], [1.02, 1.12], [1.70, 0.84], [1.70, 0.28]
+    ] : isFox ? [
+        [-1.50, 0.28], [-1.50, 0.92], [-1.25, 1.26], [-0.84, 1.41],
+        [0.54, 1.39], [1.00, 1.08], [1.53, 0.78], [1.53, 0.28]
+    ] : [
+        [-1.72, 0.28], [-1.72, 0.78], [-1.45, 1.02], [-0.92, 1.34],
+        [0.62, 1.34], [1.10, 1.02], [1.74, 0.80], [1.74, 0.28]
+    ];
+    createCarBodyShell(car, paint, profile, isFox ? 1.58 : 1.70);
+    const noseZ = isFox ? 1.55 : 1.73;
+    const tailZ = isFox ? -1.53 : -1.71;
+    addBox(car, [isFox ? 1.40 : 1.58, 0.18, isFox ? 0.62 : 0.82], paint,
+        [0, 0.82, isFox ? 1.24 : 1.32], { radius: 0.075 });
+    addBox(car, [isFox ? 1.43 : 1.60, 0.16, 0.10], black,
+        [0, 0.39, noseZ], { radius: 0.035 });
+
+    // Separate Scheibenflächen folgen den geneigten Karosserielinien und reflektieren die Umgebung.
+    const cabinLength = isYeti ? 1.88 : isFox ? 1.46 : 1.72;
+    const cabinY = isYeti ? 1.14 : isFox ? 1.08 : 1.04;
+    [-0.84, 0.84].forEach((x) =>
+        addBox(car, [0.045, isYeti ? 0.56 : 0.48, cabinLength], materials.glass,
+            [x * (isFox ? 0.91 : 1), cabinY, -0.16], { radius: 0.035, castShadow: false }));
+    addBox(car, [1.46, 0.50, 0.055], materials.glass, [0, cabinY, 0.82], {
+        rotation: [-0.43, 0, 0], radius: 0.025, castShadow: false
+    });
+    addBox(car, [1.42, 0.46, 0.055], materials.glass, [0, cabinY, -0.96], {
+        rotation: [0.34, 0, 0], radius: 0.025, castShadow: false
+    });
+    [-0.83, 0.83].forEach((x) =>
+        addBox(car, [0.045, 0.09, cabinLength + 0.10], black,
+            [x * (isFox ? 0.91 : 1), cabinY - 0.31, -0.16], { radius: 0.015 }));
+    [tailZ, noseZ].forEach((z) =>
+        addBox(car, [1.58, 0.14, 0.10], black, [0, 0.40, z], { radius: 0.04 }));
+    [-0.81, 0.81].forEach((x) =>
+        addBox(car, [0.07, 0.13, 2.30], black, [x, 0.38, -0.05], { radius: 0.025 }));
 
     [[-0.82, -0.98], [0.82, -0.98], [-0.82, 0.98], [0.82, 0.98]].forEach(([x, z]) => {
         const wheel = addMesh(car, new THREE.CylinderGeometry(0.31, 0.31, 0.18, 24), black, x, 0.38, z, { rotation: [0, 0, Math.PI / 2] });
@@ -525,14 +666,15 @@ function createCar(color, detailed = false) {
     const front = new THREE.MeshStandardMaterial({ color: 0xcdf3ff, emissive: 0xa8def7, emissiveIntensity: 1.8 });
     const rear = new THREE.MeshStandardMaterial({ color: 0xff263c, emissive: 0xb00016, emissiveIntensity: 1.2 });
     [-0.55, 0.55].forEach((x) => {
-        addBox(car, [0.38, 0.10, 0.05], front, [x, 0.67, 1.64], { radius: 0.025, castShadow: false });
-        addBox(car, [0.38, 0.11, 0.05], rear, [x, 0.67, -1.64], { radius: 0.025, castShadow: false });
+        addBox(car, [0.38, 0.10, 0.05], front, [x, 0.67, noseZ + 0.055], { radius: 0.025, castShadow: false });
+        addBox(car, [0.38, 0.11, 0.05], rear, [x, 0.67, tailZ - 0.055], { radius: 0.025, castShadow: false });
     });
 
-    if (detailed) {
-        addBox(car, [1.05, 0.26, 0.05], black, [0, 0.49, 1.65], { radius: 0.08 });
+    if (isAudi) {
+        // Audi Q3: breite Singleframe-Front, vier Ringe, Dachreling und kompakte SUV-Silhouette.
+        addBox(car, [1.05, 0.26, 0.05], black, [0, 0.49, 1.79], { radius: 0.08 });
         [-0.34, -0.11, 0.11, 0.34].forEach((x) =>
-            addMesh(car, new THREE.TorusGeometry(0.105, 0.018, 8, 18), rim, x, 0.60, 1.69, { rotation: [Math.PI / 2, 0, 0], castShadow: false }));
+            addMesh(car, new THREE.TorusGeometry(0.105, 0.018, 8, 18), rim, x, 0.60, 1.82, { rotation: [Math.PI / 2, 0, 0], castShadow: false }));
         [-0.67, 0.67].forEach((x) =>
             addBox(car, [0.18, 0.12, 0.28], paint, [x, 1.03, 0.48], { radius: 0.05 }));
         [-0.56, 0.56].forEach((x) =>
@@ -540,25 +682,50 @@ function createCar(color, detailed = false) {
         addBox(car, [1.20, 0.10, 0.34], paint, [0, 1.28, -1.48], { radius: 0.045 });
         addBox(car, [0.48, 0.12, 0.045], new THREE.MeshStandardMaterial({ color: 0xe7e7df, roughness: 0.52 }), [0, 0.50, -1.68], { radius: 0.018, castShadow: false });
     }
+    else if (isYeti) {
+        // Skoda Yeti: hoher, kantiger Aufbau, flaches Dach und charakteristische Zusatzscheinwerfer.
+        addBox(car, [1.54, 0.12, 1.92], paint, [0, 1.50, -0.34], { radius: 0.035 });
+        addBox(car, [0.76, 0.30, 0.055], black, [0, 0.51, 1.80], { radius: 0.045 });
+        [-0.49, 0.49].forEach((x) => {
+            addMesh(car, new THREE.CylinderGeometry(0.115, 0.115, 0.05, 18), front,
+                x, 0.70, 1.82, { rotation: [Math.PI / 2, 0, 0], castShadow: false });
+            addMesh(car, new THREE.CylinderGeometry(0.075, 0.075, 0.055, 18), front,
+                x, 0.48, 1.82, { rotation: [Math.PI / 2, 0, 0], castShadow: false });
+        });
+        [-0.26, -0.13, 0, 0.13, 0.26].forEach((x) =>
+            addBox(car, [0.035, 0.20, 0.025], rim, [x, 0.55, 1.855], { castShadow: false }));
+        [-0.55, 0.55].forEach((x) =>
+            addBox(car, [0.045, 0.06, 1.72], rim, [x, 1.61, -0.28], { radius: 0.012 }));
+    }
+    else if (isFox) {
+        // VW Fox: kurzes, hohes Heck, große Frontscheibe und mittiges VW-Zeichen.
+        addBox(car, [1.25, 0.10, 1.18], paint, [0, 1.40, -0.28], { radius: 0.07 });
+        addBox(car, [0.82, 0.18, 0.05], black, [0, 0.49, 1.66], { radius: 0.07 });
+        addMesh(car, new THREE.TorusGeometry(0.13, 0.025, 8, 22), rim,
+            0, 0.58, 1.70, { rotation: [Math.PI / 2, 0, 0], castShadow: false });
+        addBox(car, [0.025, 0.19, 0.025], rim, [0, 0.58, 1.73], { castShadow: false });
+        addBox(car, [0.18, 0.025, 0.025], rim, [0, 0.58, 1.73], { castShadow: false });
+        addBox(car, [1.08, 0.09, 0.26], paint, [0, 1.30, -1.48], { radius: 0.045 });
+    }
     return car;
 }
 
 function createVehicles() {
-    const audi = createCar(0x008dc8, true);
+    const audi = createCar(0x008dc8, "audi-q3");
     audi.scale.set(1.10, 1.17, 1.08);
     audi.position.set(5.00, 0.02, 1.0);
     audi.rotation.y = Math.PI;
     world.add(audi);
 
     // IMG_7378: schwarzer Skoda Yeti mittig, kleiner schwarzer VW Fox ganz rechts.
-    const skodaYeti = createCar(0x11151a);
+    const skodaYeti = createCar(0x1b2329, "skoda-yeti");
     skodaYeti.scale.set(1.04, 1.16, 1.08);
-    skodaYeti.position.set(0, 0.02, 7.72);
+    skodaYeti.position.set(0, 0.02, 8.72);
     world.add(skodaYeti);
 
-    const vwFox = createCar(0x15171b);
+    const vwFox = createCar(0x202327, "vw-fox");
     vwFox.scale.set(0.82, 0.88, 0.80);
-    vwFox.position.set(2.10, 0.02, 7.48);
+    vwFox.position.set(2.10, 0.02, 8.45);
     vwFox.rotation.y = -0.05;
     world.add(vwFox);
     return audi;
@@ -572,14 +739,23 @@ function createTree(x, z, scale = 1) {
     const trunk = new THREE.MeshStandardMaterial({ color: 0x583728, roughness: 1 });
     const needles = [0x1d4e33, 0x235b39, 0x17432c].map((color) =>
         new THREE.MeshStandardMaterial({ color, roughness: 0.98 }));
-    addMesh(tree, new THREE.CylinderGeometry(0.22, 0.34, 3.4, 10), trunk, 0, 1.7, 0);
-    [1.8, 2.55, 3.35, 4.05].forEach((y, index) =>
-        addMesh(tree, new THREE.ConeGeometry(1.55 - index * 0.19, 2.3, 11), needles[index % needles.length], 0, y, 0));
+    addMesh(tree, new THREE.CylinderGeometry(0.20, 0.34, 3.6, 14), trunk, 0, 1.8, 0);
+    [
+        [1.50, 1.72, 2.00, 0.00, 0.00],
+        [1.40, 2.18, 1.92, 0.06, -0.04],
+        [1.28, 2.66, 1.80, -0.05, 0.05],
+        [1.14, 3.12, 1.68, 0.04, 0.00],
+        [0.98, 3.58, 1.54, -0.03, -0.03],
+        [0.78, 4.02, 1.38, 0.02, 0.02],
+        [0.56, 4.40, 1.14, 0.00, 0.00]
+    ].forEach(([radius, y, height, offsetX, offsetZ], index) =>
+        addMesh(tree, new THREE.ConeGeometry(radius, height, 18), needles[index % needles.length], offsetX, y, offsetZ));
 }
 
 function createGarden() {
     addBox(world, [23.0, 0.25, 22.8], materials.grass, [-1.50, -0.14, -0.55], { castShadow: false });
-    addBox(world, [7.3, 0.06, 5.3], materials.paving, [0, 0.02, 7.3], { castShadow: false });
+    // Ein zusammenhängender Vorplatz: von der linken Kante der Stellplätze bis zur Audi-Zufahrt.
+    addBox(world, [10.05, 0.07, 6.1], materials.paving, [1.375, 0.025, 7.7], { castShadow: false });
     addBox(world, [3.2, 0.07, 13.2], materials.paving, [4.80, 0.03, 0.20], { castShadow: false });
 
     const road = new THREE.MeshStandardMaterial({ color: 0x54595d, roughness: 1 });
@@ -640,6 +816,8 @@ sun.shadow.camera.bottom = -16;
 sun.shadow.camera.near = 1;
 sun.shadow.camera.far = 45;
 sun.shadow.bias = -0.00025;
+sun.shadow.radius = 3.5;
+sun.shadow.blurSamples = 10;
 scene.add(sun);
 const fill = new THREE.DirectionalLight(0x84b8ff, 1.15);
 fill.position.set(10, 8, -12);
@@ -647,17 +825,44 @@ scene.add(fill);
 
 const flows = {};
 
+function createCableCurve(points) {
+    const path = new THREE.CurvePath();
+    for (let index = 1; index < points.length; index += 1) {
+        path.add(new THREE.LineCurve3(
+            new THREE.Vector3(...points[index - 1]),
+            new THREE.Vector3(...points[index])
+        ));
+    }
+    return path;
+}
+
 function createFlow(id, points, color) {
-    const curve = new THREE.CatmullRomCurve3(points.map((point) => new THREE.Vector3(...point)), false, "catmullrom", 0.08);
+    const curve = createCableCurve(points);
+    const segments = Math.max(64, (points.length - 1) * 24);
+    const cableMaterial = new THREE.MeshStandardMaterial({
+        color: 0x26323b,
+        roughness: 0.64,
+        metalness: 0.18
+    });
+    const cable = new THREE.Mesh(new THREE.TubeGeometry(curve, segments, 0.036, 10, false), cableMaterial);
+    cable.castShadow = true;
+    cable.receiveShadow = true;
+    world.add(cable);
     const tubeMaterial = new THREE.MeshBasicMaterial({
         color,
         transparent: true,
-        opacity: 0.20,
+        opacity: 0.34,
         blending: THREE.AdditiveBlending,
         depthWrite: false
     });
-    const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 72, 0.035, 8, false), tubeMaterial);
+    const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, segments, 0.054, 10, false), tubeMaterial);
+    tube.renderOrder = 2;
     world.add(tube);
+    points.slice(1, -1).forEach((point) => {
+        const sleeve = addMesh(world, new THREE.SphereGeometry(0.065, 12, 8), cableMaterial,
+            point[0], point[1], point[2], { castShadow: false });
+        sleeve.renderOrder = 1;
+    });
     const pulseMaterial = new THREE.MeshBasicMaterial({
         color,
         transparent: true,
@@ -666,36 +871,43 @@ function createFlow(id, points, color) {
         depthWrite: false
     });
     const pulses = [];
-    for (let index = 0; index < 4; index += 1) {
-        const pulse = new THREE.Mesh(new THREE.SphereGeometry(0.095, 12, 8), pulseMaterial.clone());
-        pulse.userData.offset = index / 4;
+    for (let index = 0; index < 6; index += 1) {
+        const pulse = new THREE.Mesh(new THREE.SphereGeometry(0.11, 14, 10), pulseMaterial.clone());
+        pulse.userData.offset = index / 6;
+        pulse.renderOrder = 3;
         world.add(pulse);
         pulses.push(pulse);
     }
-    flows[id] = { curve, tube, pulses, active: false, reverse: false };
+    flows[id] = { curve, cable, tube, pulses, active: false, reverse: false };
 }
 
 const pvPanelAnchors = PV_PANEL_Z.map((z, index) => ({
     id: "pv" + (index + 1),
-    anchor: new THREE.Vector3(3.72, 2.74, z),
+    anchor: new THREE.Vector3(4.08, 2.74, z),
     z,
-    laneY: 2.10 + index * 0.09
+    laneX: 4.08 + index * 0.055,
+    laneY: 1.82 + index * 0.085
 }));
-pvPanelAnchors.forEach((panel) => {
+pvPanelAnchors.forEach((panel, index) => {
+    const bankLaneZ = -3.06 + index * 0.055;
     createFlow(panel.id, [
-        [3.64, 2.42, panel.z],
-        [3.82, 2.42, panel.z],
-        [3.84, panel.laneY, -3.08],
+        [4.01, 2.42, panel.z],
+        [panel.laneX, 2.42, panel.z],
+        [panel.laneX, panel.laneY, panel.z],
+        [panel.laneX, panel.laneY, bankLaneZ],
+        [panel.laneX, 2.72, bankLaneZ],
         [3.76, 2.72, -3.18]
     ], colors.pv);
 });
 createFlow("grid", [
-    [6.05, 0.25, -5.20], [5.70, 0.12, -5.20], [4.45, 0.12, -5.20],
-    [4.00, 0.12, -4.30], [3.82, 0.16, -3.18], [3.76, 2.72, -3.18]
+    [6.05, 0.58, -5.20], [6.05, 0.16, -5.20], [6.05, 0.16, -3.55],
+    [4.18, 0.16, -3.55], [4.02, 0.16, -3.18], [4.02, 2.72, -3.18],
+    [3.76, 2.72, -3.18]
 ], colors.grid);
 createFlow("audi", [
-    [3.76, 2.72, -3.18], [3.94, 2.40, -3.18], [3.94, 0.22, -3.18],
-    [4.52, 0.22, -0.45], [5.00, 0.52, 0.25]
+    [3.76, 2.72, -3.18], [4.12, 2.72, -3.18], [4.12, 0.18, -3.18],
+    [4.46, 0.18, -3.18], [4.46, 0.18, 0.18], [4.82, 0.18, 0.18],
+    [5.00, 0.52, 0.25]
 ], colors.audi);
 
 const labelAnchors = {
@@ -786,7 +998,7 @@ function componentData() {
 function setFlowState(flow, active, reverse = false) {
     flow.active = active;
     flow.reverse = reverse;
-    flow.tube.material.opacity = active ? 0.72 : 0.14;
+    flow.tube.material.opacity = active ? 0.94 : 0.34;
     flow.pulses.forEach((pulse) => {
         pulse.material.opacity = active ? 1 : 0;
         pulse.visible = active;
@@ -804,7 +1016,7 @@ function updateLiveUi() {
         label.classList.toggle("active", power != null && power >= 5);
     });
     setFlowState(flows.grid, raw.grid != null && Math.abs(raw.grid) >= 5, raw.grid < 0);
-    setFlowState(flows.audi, raw.charging && raw.output != null && raw.output >= 5);
+    setFlowState(flows.audi, raw.charging && raw.audiPower != null && raw.audiPower >= 5);
 
     ["pv", "battery", "grid", "audi"].forEach((id) => {
         const component = components[id];
@@ -871,11 +1083,12 @@ function resize() {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
-    camera.fov = width < 520 ? 46 : 39;
+    const compactView = width < 700;
+    camera.fov = compactView ? 45 : 39;
     const basePosition = new THREE.Vector3(
-        width < 520 ? 14.6 : 12.8,
-        width < 520 ? 10.7 : 9.1,
-        width < 520 ? 18.6 : 16.0
+        compactView ? 16.8 : 12.8,
+        compactView ? 12.0 : 9.1,
+        compactView ? 21.4 : 16.0
     );
     cameraBaseOffset.copy(basePosition).sub(cameraTarget);
     camera.position.copy(cameraTarget).addScaledVector(cameraBaseOffset, 1 / state.zoom);
@@ -890,7 +1103,21 @@ function pointerDistance() {
     return Math.hypot(pointers[0].x - pointers[1].x, pointers[0].y - pointers[1].y);
 }
 
+let interactionHideTimer = 0;
+
+function beginSceneInteraction() {
+    window.clearTimeout(interactionHideTimer);
+    stage.classList.add("is-interacting");
+}
+
+function finishSceneInteractionSoon() {
+    window.clearTimeout(interactionHideTimer);
+    interactionHideTimer = window.setTimeout(() =>
+        stage.classList.remove("is-interacting"), 180);
+}
+
 canvas.addEventListener("pointerdown", (event) => {
+    beginSceneInteraction();
     state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     canvas.setPointerCapture(event.pointerId);
     if (state.pointers.size === 1) {
@@ -939,6 +1166,7 @@ function finishPointer(event) {
     }
     else {
         state.pinchStartDistance = 0;
+        finishSceneInteractionSoon();
     }
 }
 
@@ -946,27 +1174,35 @@ canvas.addEventListener("pointerup", finishPointer);
 canvas.addEventListener("pointercancel", finishPointer);
 canvas.addEventListener("wheel", (event) => {
     event.preventDefault();
+    beginSceneInteraction();
     state.targetZoom = THREE.MathUtils.clamp(
         state.targetZoom * Math.exp(-event.deltaY * 0.0012),
         0.72,
         2.45
     );
+    finishSceneInteractionSoon();
 }, { passive: false });
 canvas.addEventListener("keydown", (event) => {
     if (event.key === "+" || event.key === "=") {
         event.preventDefault();
+        beginSceneInteraction();
         state.targetZoom = Math.min(2.45, state.targetZoom + 0.16);
+        finishSceneInteractionSoon();
         return;
     }
     if (event.key === "-" || event.key === "_") {
         event.preventDefault();
+        beginSceneInteraction();
         state.targetZoom = Math.max(0.72, state.targetZoom - 0.16);
+        finishSceneInteractionSoon();
         return;
     }
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight")
         return;
     event.preventDefault();
+    beginSceneInteraction();
     state.targetYaw += event.key === "ArrowLeft" ? -0.16 : 0.16;
+    finishSceneInteractionSoon();
 });
 
 resetButton.addEventListener("click", () => {
