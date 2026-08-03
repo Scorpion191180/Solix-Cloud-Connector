@@ -41,7 +41,7 @@ const colors = {
 };
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x9dbbd1, 0.019);
+scene.fog = new THREE.FogExp2(0xa9c3d2, 0.015);
 
 const camera = new THREE.PerspectiveCamera(39, 1, 0.1, 100);
 camera.position.set(14.8, 10.6, 18.5);
@@ -65,7 +65,7 @@ catch (error) {
 
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.12;
+renderer.toneMappingExposure = 1.06;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.VSMShadowMap;
 
@@ -183,6 +183,22 @@ function makeTexture(background, ink, mode, repeatX, repeatY) {
             }
         }
     }
+    else if (mode === "water") {
+        context.globalAlpha = 0.24;
+        context.lineWidth = 1.4;
+        for (let row = 0; row < 18; row += 1) {
+            const baseY = row * 15 + random() * 4;
+            context.beginPath();
+            for (let x = -12; x <= 268; x += 8) {
+                const y = baseY + Math.sin(x * 0.09 + row * 0.72) * 2.2;
+                if (x === -12)
+                    context.moveTo(x, y);
+                else
+                    context.lineTo(x, y);
+            }
+            context.stroke();
+        }
+    }
 
     const texture = new THREE.CanvasTexture(textureCanvas);
     texture.colorSpace = THREE.SRGBColorSpace;
@@ -193,28 +209,102 @@ function makeTexture(background, ink, mode, repeatX, repeatY) {
     return texture;
 }
 
+function makeWindowReflectionTexture() {
+    const reflectionCanvas = document.createElement("canvas");
+    reflectionCanvas.width = 256;
+    reflectionCanvas.height = 512;
+    const context = reflectionCanvas.getContext("2d");
+    const gradient = context.createLinearGradient(0, 0, 0, 512);
+    gradient.addColorStop(0, "#b9d7e8");
+    gradient.addColorStop(0.42, "#6e8ea5");
+    gradient.addColorStop(0.46, "#d9e1df");
+    gradient.addColorStop(1, "#273640");
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 256, 512);
+    context.globalAlpha = 0.22;
+    context.fillStyle = "#ffffff";
+    context.beginPath();
+    context.ellipse(78, 102, 92, 24, -0.10, 0, Math.PI * 2);
+    context.ellipse(196, 168, 104, 31, 0.08, 0, Math.PI * 2);
+    context.fill();
+    context.globalAlpha = 0.16;
+    context.fillStyle = "#10191e";
+    context.fillRect(0, 304, 256, 208);
+    const texture = new THREE.CanvasTexture(reflectionCanvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
+    return texture;
+}
+
+function makeSkyTexture() {
+    const skyCanvas = document.createElement("canvas");
+    skyCanvas.width = 1024;
+    skyCanvas.height = 512;
+    const context = skyCanvas.getContext("2d");
+    const gradient = context.createLinearGradient(0, 0, 0, 512);
+    gradient.addColorStop(0, "#78b5df");
+    gradient.addColorStop(0.58, "#c9dfea");
+    gradient.addColorStop(0.82, "#e8e4d8");
+    gradient.addColorStop(1, "#a9b59b");
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 1024, 512);
+    const random = seededNoise(7398);
+    context.save();
+    context.filter = "blur(16px)";
+    for (let cloud = 0; cloud < 11; cloud += 1) {
+        const centerX = random() * 1060 - 18;
+        const centerY = 58 + random() * 205;
+        const size = 62 + random() * 92;
+        context.fillStyle = `rgba(255,255,255,${0.08 + random() * 0.10})`;
+        for (let puff = 0; puff < 7; puff += 1) {
+            const x = centerX + (random() - 0.5) * size * 1.25;
+            const y = centerY + (random() - 0.5) * size * 0.28;
+            context.beginPath();
+            context.ellipse(x, y, size * (0.30 + random() * 0.28), size * (0.14 + random() * 0.14), random() * 0.35 - 0.18, 0, Math.PI * 2);
+            context.fill();
+        }
+    }
+    context.restore();
+    const sunGlow = context.createRadialGradient(835, 74, 4, 835, 74, 150);
+    sunGlow.addColorStop(0, "rgba(255,244,210,0.48)");
+    sunGlow.addColorStop(0.32, "rgba(255,241,205,0.16)");
+    sunGlow.addColorStop(1, "rgba(255,255,255,0)");
+    context.fillStyle = sunGlow;
+    context.fillRect(675, 0, 320, 230);
+    const texture = new THREE.CanvasTexture(skyCanvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+}
+
 const textures = {
     wall: makeTexture("#e9e4d8", "#8d887e", "stucco", 5, 8),
     roof: makeTexture("#a33e2c", "#4d1d18", "tiles", 5, 14),
     shingle: makeTexture("#4a332b", "#190f0d", "shingles", 5, 9),
     grass: makeTexture("#496b38", "#9eb36a", "grass", 8, 12),
-    paving: makeTexture("#777a79", "#363a3a", "pavers", 8, 12)
+    paving: makeTexture("#777a79", "#363a3a", "pavers", 8, 12),
+    water: makeTexture("#159bc5", "#d1f7ff", "water", 3, 6),
+    windowReflection: makeWindowReflectionTexture()
 };
+
+scene.background = makeSkyTexture();
 
 const materials = {
     wall: new THREE.MeshStandardMaterial({ map: textures.wall, bumpMap: textures.wall, bumpScale: 0.035, roughness: 0.93, envMapIntensity: 0.34 }),
     roof: new THREE.MeshStandardMaterial({ map: textures.roof, bumpMap: textures.roof, bumpScale: 0.07, roughness: 0.78, envMapIntensity: 0.38 }),
     shingle: new THREE.MeshStandardMaterial({ map: textures.shingle, bumpMap: textures.shingle, bumpScale: 0.045, roughness: 0.88, envMapIntensity: 0.26 }),
     trim: new THREE.MeshStandardMaterial({ color: 0x8d1922, roughness: 0.62, envMapIntensity: 0.4 }),
-    darkTrim: new THREE.MeshStandardMaterial({ color: 0x3b302f, roughness: 0.8 }),
+    darkTrim: new THREE.MeshStandardMaterial({ color: 0x352b29, roughness: 0.72, envMapIntensity: 0.42 }),
     windowInterior: new THREE.MeshStandardMaterial({ color: 0x16212a, roughness: 0.72 }),
     glass: new THREE.MeshPhysicalMaterial({
-        color: 0x7997ad,
-        roughness: 0.12,
+        color: 0xa9c6d5,
+        map: textures.windowReflection,
+        roughness: 0.09,
         metalness: 0.12,
-        transmission: 0.30,
+        transmission: 0.22,
         transparent: true,
-        opacity: 0.82,
+        opacity: 0.88,
         clearcoat: 0.92,
         clearcoatRoughness: 0.08,
         thickness: 0.05,
@@ -234,12 +324,29 @@ const materials = {
     }),
     water: new THREE.MeshPhysicalMaterial({
         color: 0x20b8df,
+        map: textures.water,
+        bumpMap: textures.water,
+        bumpScale: 0.035,
         metalness: 0.03,
         roughness: 0.08,
         transmission: 0.32,
         transparent: true,
         opacity: 0.84,
         clearcoat: 1
+    }),
+    curtain: new THREE.MeshStandardMaterial({
+        color: 0xe6dfd0,
+        roughness: 0.96,
+        transparent: true,
+        opacity: 0.34,
+        depthWrite: false
+    }),
+    soffit: new THREE.MeshStandardMaterial({ color: 0xe5e1d8, roughness: 0.88 }),
+    roofTile: new THREE.MeshStandardMaterial({
+        color: 0x9d3f2f,
+        roughness: 0.68,
+        metalness: 0.02,
+        envMapIntensity: 0.48
     })
 };
 
@@ -273,12 +380,17 @@ function createWindow(parent, position, size, side = "front") {
         group.rotation.y = Math.PI;
     parent.add(group);
 
-    addBox(group, [size[0] + 0.22, size[1] + 0.22, 0.09], materials.windowInterior, [0, 0, -0.035]);
-    addBox(group, [size[0] + 0.16, size[1] + 0.16, 0.11], materials.darkTrim, [0, 0, 0]);
-    addBox(group, [size[0], size[1], 0.125], materials.glass, [0, 0, 0.015], { castShadow: false });
-    addBox(group, [0.055, size[1], 0.145], materials.darkTrim, [0, 0, 0.04]);
-    addBox(group, [size[0], 0.055, 0.145], materials.darkTrim, [0, 0, 0.04]);
-    addBox(group, [size[0] + 0.26, 0.10, 0.20], materials.darkTrim, [0, -size[1] / 2 - 0.10, 0.02]);
+    // Tiefe Laibung, dunkler Innenraum und leicht sichtbare Vorhänge vermeiden die frühere flache Scheibenwirkung.
+    addBox(group, [size[0] + 0.26, size[1] + 0.26, 0.11], materials.windowInterior, [0, 0, -0.075]);
+    addBox(group, [size[0] + 0.18, size[1] + 0.18, 0.13], materials.darkTrim, [0, 0, -0.005]);
+    [-1, 1].forEach((sideSign) =>
+        addBox(group, [size[0] * 0.25, size[1] * 0.92, 0.018], materials.curtain,
+            [sideSign * size[0] * 0.34, 0, 0.028], { castShadow: false }));
+    addBox(group, [size[0], size[1], 0.075], materials.glass, [0, 0, 0.065], { castShadow: false });
+    addBox(group, [0.046, size[1], 0.115], materials.darkTrim, [0, 0, 0.115]);
+    addBox(group, [size[0], 0.046, 0.115], materials.darkTrim, [0, 0, 0.115]);
+    addBox(group, [size[0] + 0.30, 0.10, 0.24], materials.darkTrim, [0, -size[1] / 2 - 0.11, 0.035]);
+    addBox(group, [size[0] + 0.22, 0.055, 0.18], materials.soffit, [0, size[1] / 2 + 0.11, -0.02], { castShadow: false });
     return group;
 }
 
@@ -293,10 +405,11 @@ function createDoor(parent, position, size = [0.82, 1.96], side = "front") {
         group.rotation.y = Math.PI;
     parent.add(group);
 
-    addBox(group, [size[0] + 0.18, size[1] + 0.14, 0.13], materials.darkTrim, [0, 0, 0]);
-    addBox(group, [size[0], size[1], 0.145], materials.glass, [0, 0, 0.025], { castShadow: false });
-    addBox(group, [size[0] * 0.08, size[1], 0.16], materials.darkTrim, [0, 0, 0.05]);
-    addBox(group, [size[0], 0.075, 0.16], materials.darkTrim, [0, size[1] * 0.10, 0.05]);
+    addBox(group, [size[0] + 0.22, size[1] + 0.18, 0.15], materials.windowInterior, [0, 0, -0.055]);
+    addBox(group, [size[0] + 0.16, size[1] + 0.14, 0.13], materials.darkTrim, [0, 0, 0]);
+    addBox(group, [size[0], size[1], 0.085], materials.glass, [0, 0, 0.065], { castShadow: false });
+    addBox(group, [size[0] * 0.07, size[1], 0.13], materials.darkTrim, [0, 0, 0.12]);
+    addBox(group, [size[0], 0.065, 0.13], materials.darkTrim, [0, size[1] * 0.10, 0.12]);
     const handle = new THREE.MeshStandardMaterial({ color: 0xb9c1c5, metalness: 0.82, roughness: 0.26 });
     addMesh(group, new THREE.SphereGeometry(0.035, 10, 8), handle, size[0] * 0.34, -0.13, 0.12, { castShadow: false });
     return group;
@@ -307,6 +420,43 @@ const HOUSE_WIDTH = 6.4;
 const HOUSE_LENGTH = 12.8;
 const GABLE_Z = HOUSE_LENGTH / 2 + 0.08;
 
+function createRoofTiles(parent, slope) {
+    const tileGeometry = new RoundedBoxGeometry(0.34, 0.055, 0.235, 2, 0.018);
+    const rows = 13;
+    const columns = 58;
+    const tiles = new THREE.InstancedMesh(tileGeometry, materials.roofTile, rows * columns * 2);
+    tiles.castShadow = false;
+    tiles.receiveShadow = true;
+    const transform = new THREE.Object3D();
+    const shade = new THREE.Color();
+    let instance = 0;
+    [-1, 1].forEach((sideSign) => {
+        for (let row = 0; row < rows; row += 1) {
+            const distance = 0.18 + row * 0.265;
+            const x = sideSign * distance;
+            const y = 7.065 - distance * (2.15 / 3.55) + 0.085;
+            for (let column = 0; column < columns; column += 1) {
+                const z = -6.55 + column * 0.23 + (row % 2 ? 0.115 : 0);
+                if (z > 6.62)
+                    continue;
+                transform.position.set(x, y, z);
+                transform.rotation.set(0, 0, sideSign < 0 ? slope : -slope);
+                transform.scale.set(0.96 + (column % 4) * 0.008, 1, 0.96);
+                transform.updateMatrix();
+                tiles.setMatrixAt(instance, transform.matrix);
+                shade.setHSL(0.025 + (row % 3) * 0.002, 0.53, 0.37 + (column % 5) * 0.008);
+                tiles.setColorAt(instance, shade);
+                instance += 1;
+            }
+        }
+    });
+    tiles.count = instance;
+    tiles.instanceMatrix.needsUpdate = true;
+    if (tiles.instanceColor)
+        tiles.instanceColor.needsUpdate = true;
+    parent.add(tiles);
+}
+
 function createRoof(parent) {
     const slope = Math.atan2(2.15, 3.55);
     const roofLength = Math.hypot(3.55, 2.15);
@@ -316,8 +466,10 @@ function createRoof(parent) {
     addBox(parent, [roofLength, 0.20, HOUSE_LENGTH + 0.8], materials.roof, [1.76, 5.88, 0], {
         rotation: [0, 0, -slope]
     });
+    createRoofTiles(parent, slope);
     addBox(parent, [0.22, 0.22, HOUSE_LENGTH + 0.9], materials.darkTrim, [0, 7.02, 0], { radius: 0.04 });
     [-3.30, 3.30].forEach((x) => {
+        addBox(parent, [0.52, 0.11, HOUSE_LENGTH + 0.72], materials.soffit, [x, 4.79, 0]);
         addBox(parent, [0.16, 0.24, HOUSE_LENGTH + 0.75], materials.trim, [x, 4.94, 0]);
         addBox(parent, [0.10, 0.18, HOUSE_LENGTH + 0.78], materials.darkTrim, [x + Math.sign(x) * 0.10, 4.88, 0]);
     });
@@ -328,13 +480,9 @@ function createRoof(parent) {
         roughness: 0.72,
         envMapIntensity: 0.42
     });
-    for (let x = 0.34; x <= 3.22; x += 0.38) {
-        [-x, x].forEach((rowX) => {
-            const rowY = 7.045 - Math.abs(rowX) * (2.15 / 3.55);
-            addBox(parent, [0.055, 0.055, HOUSE_LENGTH + 0.42], roofRidgeMaterial,
-                [rowX, rowY, 0], { castShadow: false });
-        });
-    }
+    // First- und Ortgangziegel bleiben als eigene, dunklere Abschlussprofile sichtbar.
+    addMesh(parent, new THREE.CylinderGeometry(0.12, 0.12, HOUSE_LENGTH + 0.88, 14),
+        roofRidgeMaterial, 0, 7.11, 0, { rotation: [Math.PI / 2, 0, 0], castShadow: false });
     const gutterMaterial = new THREE.MeshStandardMaterial({
         color: 0x3f4548,
         metalness: 0.58,
@@ -434,9 +582,17 @@ function createBalconyPanels(parent) {
     sets.forEach((set) => {
         addBox(parent, [0.82, 0.12, set.length], materials.darkTrim, [3.52, 2.08, set.z]);
         // Geländer und PV sitzen an der äußeren Balkonkante, mit Abstand zur Hauswand.
-        addBox(parent, [0.14, 0.14, set.length - 0.16], railMaterial, [3.88, 2.82, set.z]);
-        for (let offset = -set.length / 2 + 0.20; offset <= set.length / 2 - 0.20; offset += 0.72)
-            addBox(parent, [0.08, 1.05, 0.08], railMaterial, [3.88, 2.35, set.z + offset]);
+        addBox(parent, [0.18, 0.16, set.length - 0.12], railMaterial, [3.88, 2.84, set.z], { radius: 0.025 });
+        addBox(parent, [0.12, 0.12, set.length - 0.18], railMaterial, [3.88, 2.06, set.z]);
+        for (let offset = -set.length / 2 + 0.16; offset <= set.length / 2 - 0.16; offset += 0.27) {
+            const slat = addBox(parent, [0.11, 0.78, 0.12], railMaterial,
+                [3.88, 2.43, set.z + offset], { radius: 0.018 });
+            slat.rotation.x = Math.sin(offset * 2.3) * 0.018;
+        }
+        [-set.length / 2 + 0.12, set.length / 2 - 0.12].forEach((endOffset) => {
+            addBox(parent, [0.70, 0.16, 0.14], railMaterial, [3.56, 2.84, set.z + endOffset]);
+            addBox(parent, [0.10, 0.96, 0.14], railMaterial, [3.88, 2.37, set.z + endOffset]);
+        });
         set.panelZ.forEach((panelZ) => {
             const panel = addBox(parent, [0.10, 1.12, 1.16], materials.solar,
                 [3.96, 2.36, panelZ], { radius: 0.025 });
@@ -671,9 +827,28 @@ function createCar(color, model = "generic") {
     addBox(car, [1.42, 0.46, 0.055], materials.glass, [0, cabinY, -0.96], {
         rotation: [0.34, 0, 0], radius: 0.025, castShadow: false
     });
+    addBox(car, [isFox ? 1.30 : 1.48, 0.10, cabinLength * 0.92], paint,
+        [0, cabinY + 0.34, -0.16], { radius: 0.045 });
     [-0.83, 0.83].forEach((x) =>
         addBox(car, [0.045, 0.09, cabinLength + 0.10], black,
             [x * (isFox ? 0.91 : 1), cabinY - 0.31, -0.16], { radius: 0.015 }));
+    [-0.83, 0.83].forEach((x) =>
+        [-0.48, 0.34].forEach((z) =>
+            addBox(car, [0.050, 0.52, 0.045], black,
+                [x * (isFox ? 0.91 : 1), cabinY, z], { castShadow: false })));
+
+    // Türfugen, Griffe und Spiegel geben den Fahrzeugen auch aus der Nähe eine erkennbare Karosserie.
+    const sideX = isFox ? 0.77 : 0.86;
+    [-1, 1].forEach((sideSign) => {
+        [-0.52, 0.38].forEach((z) =>
+            addBox(car, [0.022, 0.62, 0.026], black,
+                [sideSign * sideX, 0.78, z], { castShadow: false }));
+        [-0.47, 0.44].forEach((z) =>
+            addBox(car, [0.035, 0.035, 0.24], rim,
+                [sideSign * (sideX + 0.018), 0.96, z], { radius: 0.012, castShadow: false }));
+        addBox(car, [0.16, 0.12, 0.28], paint,
+            [sideSign * (sideX + 0.11), cabinY + 0.02, 0.62], { radius: 0.045 });
+    });
     [tailZ, noseZ].forEach((z) =>
         addBox(car, [1.58, 0.14, 0.10], black, [0, 0.40, z], { radius: 0.04 }));
     [-0.81, 0.81].forEach((x) =>
@@ -682,7 +857,13 @@ function createCar(color, model = "generic") {
     [[-0.82, -0.98], [0.82, -0.98], [-0.82, 0.98], [0.82, 0.98]].forEach(([x, z]) => {
         const wheel = addMesh(car, new THREE.CylinderGeometry(0.31, 0.31, 0.18, 24), black, x, 0.38, z, { rotation: [0, 0, Math.PI / 2] });
         addMesh(wheel, new THREE.CylinderGeometry(0.15, 0.15, 0.185, 16), rim, 0, 0, 0, { rotation: [0, 0, 0], castShadow: false });
+        addMesh(car, new THREE.TorusGeometry(0.22, 0.035, 8, 20), rim,
+            x + Math.sign(x) * 0.105, 0.38, z, { rotation: [0, Math.PI / 2, 0], castShadow: false });
     });
+
+    const plate = new THREE.MeshStandardMaterial({ color: 0xf1efe7, roughness: 0.55 });
+    addBox(car, [0.52, 0.13, 0.035], plate, [0, 0.50, tailZ - 0.07], { radius: 0.014, castShadow: false });
+    addBox(car, [0.46, 0.12, 0.035], plate, [0, 0.48, noseZ + 0.07], { radius: 0.014, castShadow: false });
 
     const front = new THREE.MeshStandardMaterial({ color: 0xcdf3ff, emissive: 0xa8def7, emissiveIntensity: 1.8 });
     const rear = new THREE.MeshStandardMaterial({ color: 0xff263c, emissive: 0xb00016, emissiveIntensity: 1.2 });
@@ -700,6 +881,10 @@ function createCar(color, model = "generic") {
             addBox(car, [0.18, 0.12, 0.28], paint, [x, 1.03, 0.48], { radius: 0.05 }));
         [-0.56, 0.56].forEach((x) =>
             addBox(car, [0.045, 0.08, 1.65], rim, [x, 1.38, -0.18], { radius: 0.015 }));
+        addBox(car, [0.92, 0.035, 0.92], materials.glass, [0, 1.405, -0.25], {
+            radius: 0.025,
+            castShadow: false
+        });
         addBox(car, [1.20, 0.10, 0.34], paint, [0, 1.28, -1.48], { radius: 0.045 });
         addBox(car, [0.48, 0.12, 0.045], new THREE.MeshStandardMaterial({ color: 0xe7e7df, roughness: 0.52 }), [0, 0.50, -1.68], { radius: 0.018, castShadow: false });
     }
@@ -758,23 +943,84 @@ function createTree(x, z, scale = 1) {
     tree.scale.setScalar(scale);
     world.add(tree);
     const trunk = new THREE.MeshStandardMaterial({ color: 0x583728, roughness: 1 });
-    const needles = [0x1d4e33, 0x235b39, 0x17432c].map((color) =>
-        new THREE.MeshStandardMaterial({ color, roughness: 0.98 }));
+    const needles = new THREE.MeshStandardMaterial({ color: 0x1d4e33, roughness: 0.96 });
     addMesh(tree, new THREE.CylinderGeometry(0.20, 0.34, 3.6, 14), trunk, 0, 1.8, 0);
-    [
-        [1.50, 1.72, 2.00, 0.00, 0.00],
-        [1.40, 2.18, 1.92, 0.06, -0.04],
-        [1.28, 2.66, 1.80, -0.05, 0.05],
-        [1.14, 3.12, 1.68, 0.04, 0.00],
-        [0.98, 3.58, 1.54, -0.03, -0.03],
-        [0.78, 4.02, 1.38, 0.02, 0.02],
-        [0.56, 4.40, 1.14, 0.00, 0.00]
-    ].forEach(([radius, y, height, offsetX, offsetZ], index) =>
-        addMesh(tree, new THREE.ConeGeometry(radius, height, 18), needles[index % needles.length], offsetX, y, offsetZ));
+    const foliageGeometry = new THREE.IcosahedronGeometry(0.58, 1);
+    const foliage = new THREE.InstancedMesh(foliageGeometry, needles, 46);
+    foliage.castShadow = true;
+    foliage.receiveShadow = true;
+    const transform = new THREE.Object3D();
+    const shade = new THREE.Color();
+    const random = seededNoise(7382);
+    let instance = 0;
+    const tiers = [
+        [1.56, 1.58, 7], [1.48, 1.98, 7], [1.34, 2.42, 7],
+        [1.18, 2.88, 6], [1.02, 3.34, 6], [0.82, 3.78, 5],
+        [0.60, 4.18, 4], [0.36, 4.52, 3]
+    ];
+    tiers.forEach(([radius, y, clusters], tierIndex) => {
+        for (let cluster = 0; cluster < clusters; cluster += 1) {
+            const angle = cluster / clusters * Math.PI * 2 + tierIndex * 0.44;
+            const spread = radius * (0.44 + random() * 0.20);
+            transform.position.set(Math.cos(angle) * spread, y + (random() - 0.5) * 0.16, Math.sin(angle) * spread);
+            transform.rotation.set(random() * 0.26, angle, random() * 0.18);
+            transform.scale.set(radius * (0.74 + random() * 0.22), 0.24 + radius * 0.13, radius * (0.70 + random() * 0.24));
+            transform.updateMatrix();
+            foliage.setMatrixAt(instance, transform.matrix);
+            shade.setHSL(0.35 + random() * 0.02, 0.45 + random() * 0.10, 0.16 + random() * 0.09);
+            foliage.setColorAt(instance, shade);
+            instance += 1;
+        }
+    });
+    foliage.count = instance;
+    foliage.instanceMatrix.needsUpdate = true;
+    if (foliage.instanceColor)
+        foliage.instanceColor.needsUpdate = true;
+    tree.add(foliage);
+    addMesh(tree, new THREE.ConeGeometry(0.42, 1.18, 14), needles, 0, 4.78, 0, { castShadow: true });
+}
+
+function createGrassDetail() {
+    const bladeGeometry = new THREE.ConeGeometry(0.020, 0.16, 3);
+    const bladeMaterial = new THREE.MeshStandardMaterial({ color: 0x49763f, roughness: 1 });
+    const blades = new THREE.InstancedMesh(bladeGeometry, bladeMaterial, 520);
+    blades.castShadow = false;
+    blades.receiveShadow = false;
+    const transform = new THREE.Object3D();
+    const shade = new THREE.Color();
+    const random = seededNoise(4309);
+    let instance = 0;
+    let attempts = 0;
+    while (instance < 520 && attempts < 4000) {
+        attempts += 1;
+        const x = -11.2 + random() * 20.8;
+        const z = -10.2 + random() * 20.0;
+        const onHouse = Math.abs(x) < 3.85 && Math.abs(z) < 6.95;
+        const onForecourt = z > 4.55 && x > -4.0 && x < 6.5;
+        const onAudiDrive = x > 3.15 && z > -6.55 && z < 6.7;
+        const aroundPool = x < -5.3 && z < -3.45;
+        if (onHouse || onForecourt || onAudiDrive || aroundPool)
+            continue;
+        transform.position.set(x, 0.07, z);
+        transform.rotation.set((random() - 0.5) * 0.22, random() * Math.PI, (random() - 0.5) * 0.22);
+        const height = 0.62 + random() * 0.85;
+        transform.scale.set(0.72 + random() * 0.55, height, 0.72 + random() * 0.55);
+        transform.updateMatrix();
+        blades.setMatrixAt(instance, transform.matrix);
+        shade.setHSL(0.24 + random() * 0.08, 0.34 + random() * 0.18, 0.24 + random() * 0.16);
+        blades.setColorAt(instance, shade);
+        instance += 1;
+    }
+    blades.count = instance;
+    blades.instanceMatrix.needsUpdate = true;
+    if (blades.instanceColor)
+        blades.instanceColor.needsUpdate = true;
+    world.add(blades);
 }
 
 function createGarden() {
     addBox(world, [23.0, 0.25, 22.8], materials.grass, [-1.50, -0.14, -0.55], { castShadow: false });
+    createGrassDetail();
     // Ein zusammenhängender Vorplatz: von der linken Kante der Stellplätze bis zur Audi-Zufahrt.
     addBox(world, [10.05, 0.07, 6.1], materials.paving, [1.375, 0.025, 7.7], { castShadow: false });
     addBox(world, [3.2, 0.07, 13.2], materials.paving, [4.80, 0.03, 0.20], { castShadow: false });
@@ -824,10 +1070,10 @@ createSolarBank();
 const audiModel = createVehicles();
 createGridBox();
 
-const hemisphere = new THREE.HemisphereLight(0xd8efff, 0x314129, 2.25);
+const hemisphere = new THREE.HemisphereLight(0xd9efff, 0x34452d, 1.58);
 scene.add(hemisphere);
-const sun = new THREE.DirectionalLight(0xfff0d2, 4.7);
-sun.position.set(-9, 15, 12);
+const sun = new THREE.DirectionalLight(0xffedcf, 3.65);
+sun.position.set(-10, 15, 10);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 sun.shadow.camera.left = -16;
@@ -840,9 +1086,12 @@ sun.shadow.bias = -0.00025;
 sun.shadow.radius = 3.5;
 sun.shadow.blurSamples = 10;
 scene.add(sun);
-const fill = new THREE.DirectionalLight(0x84b8ff, 1.15);
+const fill = new THREE.DirectionalLight(0x8ebef3, 0.62);
 fill.position.set(10, 8, -12);
 scene.add(fill);
+const warmBounce = new THREE.DirectionalLight(0xffc99a, 0.32);
+warmBounce.position.set(5, 3, 11);
+scene.add(warmBounce);
 
 const flows = {};
 
