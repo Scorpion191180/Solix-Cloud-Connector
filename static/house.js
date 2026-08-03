@@ -1,745 +1,783 @@
-(function () {
-    "use strict";
+import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 
-    const canvas = document.getElementById("houseCanvas");
-    if (!canvas)
-        return;
+const canvas = document.getElementById("houseCanvas");
+const stage = document.getElementById("houseStage");
 
-    const context = canvas.getContext("2d");
-    if (!context)
-        return;
+if (!canvas || !stage)
+    throw new Error("3D-Hausansicht konnte nicht initialisiert werden");
 
-    const inspectorIcon = document.getElementById("houseInspectorIcon");
-    const inspectorLabel = document.getElementById("houseInspectorLabel");
-    const inspectorValue = document.getElementById("houseInspectorValue");
-    const inspectorDetail = document.getElementById("houseInspectorDetail");
-    const liveBadge = document.getElementById("houseLiveBadge");
-    const resetButton = document.getElementById("houseReset");
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const inspectorIcon = document.getElementById("houseInspectorIcon");
+const inspectorLabel = document.getElementById("houseInspectorLabel");
+const inspectorValue = document.getElementById("houseInspectorValue");
+const inspectorDetail = document.getElementById("houseInspectorDetail");
+const liveBadge = document.getElementById("houseLiveBadge");
+const resetButton = document.getElementById("houseReset");
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    const state = {
-        width: 1,
-        height: 1,
-        ratio: 1,
-        yaw: -0.58,
-        selected: "battery",
-        data: window.solixDashboardState || {
-            solix: {},
-            automation: {},
-            audi: {}
-        },
-        hotspots: [],
-        pointerId: null,
-        pointerStartX: 0,
-        lastPointerX: 0,
-        pointerMoved: false,
-        dash: 0,
-        lastFrame: 0
+const state = {
+    selected: "battery",
+    data: window.solixDashboardState || { solix: {}, automation: {}, audi: {} },
+    pointerId: null,
+    pointerStartX: 0,
+    lastPointerX: 0,
+    pointerMoved: false,
+    yaw: 0.78,
+    targetYaw: 0.78,
+    lastTime: 0
+};
+
+const colors = {
+    pv: "#facc15",
+    battery: "#38bdf8",
+    grid: "#a78bfa",
+    audi: "#22c55e",
+    inactive: "#64748b"
+};
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x9dbbd1, 0.019);
+
+const camera = new THREE.PerspectiveCamera(39, 1, 0.1, 100);
+camera.position.set(14.8, 10.6, 18.5);
+camera.lookAt(0, 2.1, 0);
+
+let renderer;
+try {
+    renderer = new THREE.WebGLRenderer({
+        canvas,
+        alpha: true,
+        antialias: true,
+        powerPreference: "high-performance"
+    });
+}
+catch (error) {
+    liveBadge.textContent = "3D ist auf diesem Gerät nicht verfügbar";
+    throw error;
+}
+
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.08;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+
+const world = new THREE.Group();
+world.rotation.y = state.yaw;
+scene.add(world);
+
+function numberValue(value) {
+    if (value == null || typeof value === "boolean")
+        return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+}
+
+function formatPower(watts) {
+    const value = numberValue(watts);
+    if (value == null)
+        return "--";
+    if (Math.abs(value) >= 1000)
+        return (value / 1000).toLocaleString("de-DE", {
+            minimumFractionDigits: 1,
+            maximumFractionDigits: 2
+        }) + " kW";
+    return Math.round(value).toLocaleString("de-DE") + " W";
+}
+
+function seededNoise(seed) {
+    let value = seed % 2147483647;
+    return () => {
+        value = value * 16807 % 2147483647;
+        return (value - 1) / 2147483646;
     };
+}
 
-    const palette = {
-        pv: "#facc15",
-        battery: "#38bdf8",
-        grid: "#a78bfa",
-        home: "#60a5fa",
-        load: "#fb923c",
-        charging: "#22c55e",
-        inactive: "#526178",
-        text: "#f8fafc",
-        sub: "#94a3b8"
-    };
+function makeTexture(background, ink, mode, repeatX, repeatY) {
+    const textureCanvas = document.createElement("canvas");
+    textureCanvas.width = 128;
+    textureCanvas.height = 128;
+    const context = textureCanvas.getContext("2d");
+    const random = seededNoise(background.length * 173 + mode.length * 29);
+    context.fillStyle = background;
+    context.fillRect(0, 0, 128, 128);
+    context.strokeStyle = ink;
+    context.fillStyle = ink;
 
-    function numberValue(value) {
-        if (value == null || typeof value === "boolean")
-            return null;
-        const number = Number(value);
-        return Number.isFinite(number) ? number : null;
-    }
-
-    function formatPower(watts) {
-        const value = numberValue(watts);
-        if (value == null)
-            return "--";
-        if (Math.abs(value) >= 1000)
-            return (value / 1000).toLocaleString("de-DE", {
-                minimumFractionDigits: 1,
-                maximumFractionDigits: 2
-            }) + " kW";
-        return Math.round(value).toLocaleString("de-DE") + " W";
-    }
-
-    function roundRect(x, y, width, height, radius) {
-        const r = Math.min(radius, width / 2, height / 2);
-        context.beginPath();
-        context.moveTo(x + r, y);
-        context.lineTo(x + width - r, y);
-        context.quadraticCurveTo(x + width, y, x + width, y + r);
-        context.lineTo(x + width, y + height - r);
-        context.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
-        context.lineTo(x + r, y + height);
-        context.quadraticCurveTo(x, y + height, x, y + height - r);
-        context.lineTo(x, y + r);
-        context.quadraticCurveTo(x, y, x + r, y);
-        context.closePath();
-    }
-
-    function project(point) {
-        const cos = Math.cos(state.yaw);
-        const sin = Math.sin(state.yaw);
-        const horizontal = point[0] * cos - point[1] * sin;
-        const depth = point[0] * sin + point[1] * cos;
-        const scale = Math.min(state.width / 9.8, state.height / 5.5);
-        return {
-            x: state.width * 0.49 + horizontal * scale,
-            y: state.height * 0.70 + depth * scale * 0.42 - point[2] * scale,
-            depth
-        };
-    }
-
-    function faceDepth(points) {
-        return points.reduce((sum, point) => sum + project(point).depth, 0) / points.length;
-    }
-
-    function drawFace(points, fill, stroke) {
-        const projected = points.map(project);
-        context.beginPath();
-        context.moveTo(projected[0].x, projected[0].y);
-        for (let index = 1; index < projected.length; index += 1)
-            context.lineTo(projected[index].x, projected[index].y);
-        context.closePath();
-        context.fillStyle = fill;
-        context.fill();
-        context.strokeStyle = stroke || "rgba(148,163,184,.28)";
-        context.lineWidth = 1;
-        context.stroke();
-    }
-
-    function cuboidFaces(cx, cy, width, depth, bottom, height, fills) {
-        const left = cx - width / 2;
-        const right = cx + width / 2;
-        const front = cy - depth / 2;
-        const back = cy + depth / 2;
-        const top = bottom + height;
-        const vertices = [
-            [left, front, bottom], [right, front, bottom],
-            [right, back, bottom], [left, back, bottom],
-            [left, front, top], [right, front, top],
-            [right, back, top], [left, back, top]
-        ];
-        return [
-            { points: [vertices[0], vertices[1], vertices[5], vertices[4]], fill: fills[0] },
-            { points: [vertices[1], vertices[2], vertices[6], vertices[5]], fill: fills[1] },
-            { points: [vertices[2], vertices[3], vertices[7], vertices[6]], fill: fills[0] },
-            { points: [vertices[3], vertices[0], vertices[4], vertices[7]], fill: fills[1] },
-            { points: [vertices[4], vertices[5], vertices[6], vertices[7]], fill: fills[2] }
-        ];
-    }
-
-    function drawFaces(faces) {
-        faces
-            .map((face) => ({ ...face, depth: faceDepth(face.points) }))
-            .sort((a, b) => a.depth - b.depth)
-            .forEach((face) => drawFace(face.points, face.fill, face.stroke));
-    }
-
-    function componentData() {
-        const solix = state.data.solix || {};
-        const automation = state.data.automation || {};
-        const audi = state.data.audi || {};
-        const smartPlug = automation.smartplug || {};
-        const pv = numberValue(solix.pv_total);
-        const batterySoc = numberValue(solix.battery_percent) ??
-            numberValue(automation.solix_battery_percent);
-        const batteryCharge = numberValue(solix.battery_charge_power) ?? 0;
-        const batteryDischarge = numberValue(solix.battery_discharge_power) ??
-            Math.max(0, -(numberValue(solix.battery_power) ?? 0));
-        const output = numberValue(solix.system_output_power) ?? numberValue(solix.home_load);
-        const home = numberValue(solix.home_load);
-        const grid = numberValue(solix.grid_power);
-        const plugPower = numberValue(smartPlug.power_w);
-        const audiPowerKw = numberValue(audi.charging_power_kw);
-        const audiPower = plugPower ?? (audiPowerKw == null ? null : audiPowerKw * 1000);
-        const charging = plugPower != null ? plugPower >= 20 : audi.charging === true;
-
-        return {
-            pv: {
-                id: "pv", label: "DACH-PV", icon: "☀️", value: formatPower(pv),
-                detail: "PV1–PV4 liefern zusammen " + formatPower(pv) + ".",
-                point: [-0.2, -0.15, 3.18], color: palette.pv, active: pv != null && pv >= 5
-            },
-            battery: {
-                id: "battery", label: "SOLARBANK 4", icon: "🔋",
-                value: batterySoc == null ? "--" : Math.round(batterySoc) + " %",
-                detail: "PV-Eingang " + formatPower(pv) + " · " + (
-                    batteryCharge >= 5 ? "Akku lädt mit " + formatPower(batteryCharge) + "." :
-                    batteryDischarge >= 5 ? "Akku liefert " + formatPower(batteryDischarge) + "." :
-                    "Akku ist im Bereitschaftsmodus."
-                ),
-                point: [-1.78, -1.36, 0.9], color: palette.battery,
-                active: batteryCharge >= 5 || batteryDischarge >= 5
-            },
-            grid: {
-                id: "grid", label: "STROMNETZ", icon: "🌐",
-                value: formatPower(grid == null ? null : Math.abs(grid)),
-                detail: grid == null ? "Netzwert nicht verfügbar." :
-                    grid > 5 ? "Aktueller Netzbezug." :
-                    grid < -5 ? "Aktuelle Netzeinspeisung." : "Aktuell kein Netzfluss.",
-                point: [-4.25, 0.45, 1.45], color: palette.grid,
-                active: grid != null && Math.abs(grid) >= 5
-            },
-            audi: {
-                id: "audi", label: "AUDI Q3", icon: "🚙",
-                value: audi.battery_percent == null ? "--" : audi.battery_percent + " %",
-                detail: charging ? "Lädt in der Garage mit " + formatPower(audiPower) + "." :
-                    audi.plug_connected === true ? "Ladestecker verbunden · wartet." :
-                    audi.plug_connected === false ? "Ladestecker ist getrennt." : "Audi-Status wird geprüft.",
-                point: [3.45, -0.02, 0.65], color: palette.charging, active: charging
-            },
-            flows: { pv, output, grid, plugPower: audiPower, charging }
-        };
-    }
-
-    function drawBackground() {
-        const gradient = context.createLinearGradient(0, 0, 0, state.height);
-        gradient.addColorStop(0, "#101b32");
-        gradient.addColorStop(0.58, "#0c1629");
-        gradient.addColorStop(1, "#09101d");
-        context.fillStyle = gradient;
-        context.fillRect(0, 0, state.width, state.height);
-
-        const glow = context.createRadialGradient(
-            state.width * 0.72, state.height * 0.22, 0,
-            state.width * 0.72, state.height * 0.22, state.width * 0.55
-        );
-        glow.addColorStop(0, "rgba(45,212,191,.13)");
-        glow.addColorStop(1, "rgba(45,212,191,0)");
-        context.fillStyle = glow;
-        context.fillRect(0, 0, state.width, state.height);
-    }
-
-    function drawGround() {
-        const ground = [
-            [-4.8, -2.0, 0], [4.9, -2.0, 0],
-            [4.9, 2.0, 0], [-4.8, 2.0, 0]
-        ];
-        drawFace(ground, "rgba(24,58,53,.86)", "rgba(94,234,212,.15)");
-
-        drawFace(
-            [[1.45, -2.0, 0.015], [4.9, -2.0, 0.015], [4.15, -1.2, 0.015], [1.48, -1.2, 0.015]],
-            "rgba(72,86,103,.82)", "rgba(148,163,184,.22)"
-        );
-        drawFace(
-            [[0.58, -2.0, 0.02], [1.22, -2.0, 0.02], [1.22, -1.28, 0.02], [0.58, -1.28, 0.02]],
-            "rgba(96,104,112,.55)", "rgba(148,163,184,.18)"
-        );
-
-        context.save();
-        context.strokeStyle = "rgba(94,234,212,.08)";
-        context.lineWidth = 1;
-        for (let x = -4; x <= 4; x += 1) {
-            const start = project([x, -1.9, 0.01]);
-            const end = project([x, 1.9, 0.01]);
-            context.beginPath();
-            context.moveTo(start.x, start.y);
-            context.lineTo(end.x, end.y);
-            context.stroke();
+    if (mode === "stucco") {
+        context.globalAlpha = 0.18;
+        for (let index = 0; index < 520; index += 1) {
+            const x = random() * 128;
+            const y = random() * 128;
+            context.fillRect(x, y, 0.7 + random() * 1.5, 0.45);
         }
-        context.restore();
     }
-
-    function drawWorldLine(points, color, width, alpha) {
-        const projected = points.map(project);
-        context.save();
-        context.strokeStyle = color;
-        context.globalAlpha = alpha == null ? 1 : alpha;
-        context.lineWidth = width || 1;
-        context.lineCap = "round";
-        context.lineJoin = "round";
-        context.beginPath();
-        context.moveTo(projected[0].x, projected[0].y);
-        for (let index = 1; index < projected.length; index += 1)
-            context.lineTo(projected[index].x, projected[index].y);
-        context.stroke();
-        context.restore();
-    }
-
-    function mixPoint(start, end, amount) {
-        return [
-            start[0] + (end[0] - start[0]) * amount,
-            start[1] + (end[1] - start[1]) * amount,
-            start[2] + (end[2] - start[2]) * amount
-        ];
-    }
-
-    function drawPanelGrid(points) {
-        [0.33, 0.66].forEach((amount) => {
-            drawWorldLine(
-                [mixPoint(points[0], points[1], amount), mixPoint(points[3], points[2], amount)],
-                "rgba(186,230,253,.42)", 0.7
-            );
-        });
-        drawWorldLine(
-            [mixPoint(points[0], points[3], 0.5), mixPoint(points[1], points[2], 0.5)],
-            "rgba(186,230,253,.42)", 0.7
-        );
-    }
-
-    function drawAudiQ3() {
-        const bodyFaces = cuboidFaces(
-            3.08, -0.02, 1.92, 0.88, 0.13, 0.43,
-            ["rgba(36,123,165,.98)", "rgba(28,94,132,.98)", "rgba(91,181,214,.98)"]
-        );
-        const cabinFront = [
-            [2.48, -0.37, 0.54], [3.63, -0.37, 0.54],
-            [3.39, -0.33, 0.88], [2.72, -0.33, 0.91]
-        ];
-        const cabinBack = cabinFront.map((point) => [point[0], -point[1], point[2]]);
-        const cabinFaces = [
-            { points: cabinFront, fill: "rgba(26,55,72,.98)", stroke: "rgba(148,220,244,.55)" },
-            { points: cabinBack, fill: "rgba(21,45,62,.98)", stroke: "rgba(148,220,244,.42)" },
-            {
-                points: [cabinFront[3], cabinFront[2], cabinBack[2], cabinBack[3]],
-                fill: "rgba(50,118,148,.98)", stroke: "rgba(148,220,244,.5)"
-            },
-            {
-                points: [cabinFront[2], cabinFront[1], cabinBack[1], cabinBack[2]],
-                fill: "rgba(28,63,80,.98)", stroke: "rgba(148,220,244,.48)"
-            },
-            {
-                points: [cabinFront[0], cabinFront[3], cabinBack[3], cabinBack[0]],
-                fill: "rgba(25,55,72,.98)", stroke: "rgba(148,220,244,.4)"
-            }
-        ];
-        drawFaces([...bodyFaces, ...cabinFaces]);
-
-        const wheelPoints = [
-            [2.48, -0.47, 0.22], [3.66, -0.47, 0.22],
-            [2.48, 0.47, 0.22], [3.66, 0.47, 0.22]
-        ];
-        wheelPoints
-            .map((point) => ({ ...project(point), depth: project(point).depth }))
-            .sort((a, b) => a.depth - b.depth)
-            .forEach((wheel) => {
-                context.save();
-                context.fillStyle = "#080b11";
-                context.beginPath();
-                context.arc(wheel.x, wheel.y, state.width < 520 ? 4.2 : 5.2, 0, Math.PI * 2);
-                context.fill();
-                context.fillStyle = "#94a3b8";
-                context.beginPath();
-                context.arc(wheel.x, wheel.y, state.width < 520 ? 1.7 : 2.1, 0, Math.PI * 2);
-                context.fill();
-                context.restore();
-            });
-
-        [[4.04, -0.3, 0.44], [4.04, 0.3, 0.44]].forEach((point) => {
-            const light = project(point);
-            context.save();
-            context.fillStyle = "#dbeafe";
-            context.shadowColor = "#bfdbfe";
-            context.shadowBlur = 7;
-            context.beginPath();
-            context.arc(light.x, light.y, 2.2, 0, Math.PI * 2);
-            context.fill();
-            context.restore();
-        });
-    }
-
-    function drawHouseAndGarage() {
-        const wallFaces = cuboidFaces(
-            -0.35, 0, 3.8, 2.6, 0, 2.05,
-            ["rgba(158,178,196,.91)", "rgba(112,136,157,.9)", "rgba(189,207,220,.9)"]
-        );
-        const garageFaces = cuboidFaces(
-            2.75, 0, 2.55, 2.45, 0, 1.45,
-            ["rgba(128,149,168,.88)", "rgba(91,113,135,.9)", "rgba(157,177,193,.9)"]
-        );
-        // Die Vorderseite bleibt als offenes Garagentor frei, damit der Q3
-        // und die sauber am Boden hereingeführte Ladeleitung sichtbar sind.
-        garageFaces.shift();
-        drawFaces([...wallFaces, ...garageFaces]);
-
-        const roof = [
-            {
-                points: [[-2.25, -1.3, 2.05], [1.55, -1.3, 2.05], [1.55, 0, 2.95], [-2.25, 0, 2.95]],
-                fill: "rgba(33,43,57,.98)"
-            },
-            {
-                points: [[-2.25, 0, 2.95], [1.55, 0, 2.95], [1.55, 1.3, 2.05], [-2.25, 1.3, 2.05]],
-                fill: "rgba(24,34,48,.98)"
-            }
-        ];
-        drawFaces(roof);
-
-        [-1.05, -0.79, -0.53, -0.27].forEach((y) => {
-            const z = 2.95 + y * (0.9 / 1.3) + 0.01;
-            drawWorldLine(
-                [[-2.22, y, z], [1.52, y, z]],
-                "rgba(148,163,184,.2)", 0.75
-            );
-        });
-
-        const facadeY = -1.307;
-        const windows = [
-            [[-1.55, facadeY, 0.7], [-0.78, facadeY, 0.7], [-0.78, facadeY, 1.42], [-1.55, facadeY, 1.42]],
-            [[-0.45, facadeY, 0.82], [0.28, facadeY, 0.82], [0.28, facadeY, 1.47], [-0.45, facadeY, 1.47]]
-        ];
-        windows.forEach((windowFace) => {
-            drawFace(windowFace, "rgba(96,165,250,.46)", "rgba(219,234,254,.78)");
-            drawWorldLine(
-                [mixPoint(windowFace[0], windowFace[1], 0.5), mixPoint(windowFace[3], windowFace[2], 0.5)],
-                "rgba(219,234,254,.65)", 0.8
-            );
-            drawWorldLine(
-                [mixPoint(windowFace[0], windowFace[3], 0.5), mixPoint(windowFace[1], windowFace[2], 0.5)],
-                "rgba(219,234,254,.65)", 0.8
-            );
-        });
-        drawFace(
-            [[0.78, facadeY, 0], [1.32, facadeY, 0], [1.32, facadeY, 1.55], [0.78, facadeY, 1.55]],
-            "rgba(30,41,59,.96)", "rgba(203,213,225,.62)"
-        );
-
-        drawWorldLine(
-            [[1.48, -1.225, 0], [4.02, -1.225, 0], [4.02, -1.225, 1.43], [1.48, -1.225, 1.43], [1.48, -1.225, 0]],
-            "rgba(203,213,225,.72)", 2
-        );
-
-        const panels = [];
-        for (let row = 0; row < 2; row += 1) {
-            for (let column = 0; column < 2; column += 1) {
-                const x1 = -1.8 + column * 1.55;
-                const x2 = x1 + 1.25;
-                const y1 = -1.12 + row * 0.48;
-                const y2 = y1 + 0.38;
-                const roofZ = (y) => 2.95 + y * (0.9 / 1.3) + 0.025;
-                panels.push({
-                    points: [
-                        [x1, y1, roofZ(y1)], [x2, y1, roofZ(y1)],
-                        [x2, y2, roofZ(y2)], [x1, y2, roofZ(y2)]
-                    ],
-                    fill: "rgba(30,98,145,.96)",
-                    stroke: "rgba(125,211,252,.75)"
-                });
-            }
-        }
-        drawFaces(panels);
-        panels.forEach((panel) => drawPanelGrid(panel.points));
-
-        for (let level = 0; level < 3; level += 1) {
-            drawFaces(cuboidFaces(
-                -1.78, -1.40, 0.56, 0.42, 0.06 + level * 0.31, 0.28,
-                ["rgba(35,101,133,.97)", "rgba(24,76,106,.97)", "rgba(79,190,221,.92)"]
-            ));
-        }
-        const batteryLight = project([-1.78, -1.62, 0.86]);
-        context.save();
-        context.fillStyle = "#5eead4";
-        context.shadowColor = "#2dd4bf";
-        context.shadowBlur = 8;
-        context.beginPath();
-        context.arc(batteryLight.x, batteryLight.y, 2.2, 0, Math.PI * 2);
-        context.fill();
-        context.restore();
-
-        drawAudiQ3();
-
-        const garageLabel = project([2.75, 1.23, 1.25]);
-        context.fillStyle = "rgba(226,232,240,.72)";
-        context.font = "800 9px system-ui";
-        context.textAlign = "center";
-        context.fillText("GARAGE", garageLabel.x, garageLabel.y);
-    }
-
-    function drawGridPole() {
-        const bottom = project([-4.22, 0.45, 0]);
-        const top = project([-4.22, 0.45, 1.68]);
-        context.save();
-        context.strokeStyle = "rgba(167,139,250,.78)";
-        context.lineWidth = 3;
-        context.beginPath();
-        context.moveTo(bottom.x, bottom.y);
-        context.lineTo(top.x, top.y);
-        context.stroke();
-        const left = project([-4.22, 0.12, 1.4]);
-        const right = project([-4.22, 0.78, 1.4]);
+    else if (mode === "tiles") {
         context.lineWidth = 2;
-        context.beginPath();
-        context.moveTo(left.x, left.y);
-        context.lineTo(right.x, right.y);
-        context.stroke();
-        context.restore();
-    }
-
-    function drawArrow(from, to, color) {
-        const angle = Math.atan2(to.y - from.y, to.x - from.x);
-        context.save();
-        context.translate(to.x, to.y);
-        context.rotate(angle);
-        context.fillStyle = color;
-        context.beginPath();
-        context.moveTo(0, 0);
-        context.lineTo(-8, -4.5);
-        context.lineTo(-8, 4.5);
-        context.closePath();
-        context.fill();
-        context.restore();
-    }
-
-    function drawFlow(points, color, active, reverse) {
-        const projected = points.map(project);
-        const displayColor = active ? color : palette.inactive;
-        const ordered = reverse ? [...projected].reverse() : projected;
-
-        context.save();
-        context.lineCap = "round";
-        context.lineJoin = "round";
-        context.strokeStyle = "rgba(5,12,24,.72)";
-        context.lineWidth = active ? 7 : 5;
-        context.beginPath();
-        context.moveTo(ordered[0].x, ordered[0].y);
-        for (let index = 1; index < ordered.length; index += 1)
-            context.lineTo(ordered[index].x, ordered[index].y);
-        context.stroke();
-
-        context.strokeStyle = displayColor;
-        context.lineWidth = active ? 3 : 2;
-        context.globalAlpha = active ? 1 : 0.45;
-        context.setLineDash(active ? [8, 7] : [4, 7]);
-        context.lineDashOffset = active ? -state.dash : 0;
-        context.beginPath();
-        context.moveTo(ordered[0].x, ordered[0].y);
-        for (let index = 1; index < ordered.length; index += 1)
-            context.lineTo(ordered[index].x, ordered[index].y);
-        context.stroke();
-        context.setLineDash([]);
-        if (active)
-            drawArrow(ordered[ordered.length - 2], ordered[ordered.length - 1], displayColor);
-        context.restore();
-    }
-
-    function drawPowerFlows(components) {
-        const flows = components.flows;
-        drawFlow(
-            [
-                [-0.2, -0.75, 2.47],
-                [-1.86, -1.18, 2.13],
-                [-1.92, -1.36, 1.05],
-                [-1.78, -1.40, 0.88]
-            ],
-            palette.pv, flows.pv != null && flows.pv >= 5, false
-        );
-        drawFlow(
-            [
-                [-4.22, 0.45, 0.18],
-                [-3.05, -1.55, 0.06],
-                [-2.18, -1.55, 0.06],
-                [-1.78, -1.40, 0.72]
-            ],
-            palette.grid, flows.grid != null && Math.abs(flows.grid) >= 5, flows.grid < 0
-        );
-        drawFlow(
-            [
-                [-1.78, -1.40, 0.72],
-                [-1.78, -1.46, 0.27],
-                [1.52, -1.46, 0.27],
-                [2.02, -1.27, 0.30],
-                [2.62, -0.92, 0.30],
-                [3.25, -0.42, 0.38]
-            ],
-            palette.charging, flows.charging && flows.output != null && flows.output >= 5, false
-        );
-    }
-
-    function drawBadge(component) {
-        const point = project(component.point);
-        const compact = state.width < 520;
-        const width = compact ? 86 : 106;
-        const height = compact ? 41 : 45;
-        const anchors = compact ? {
-            pv: [0.46, 0.10],
-            grid: [0.15, 0.34],
-            battery: [0.18, 0.72],
-            audi: [0.78, 0.72]
-        } : {
-            pv: [0.46, 0.10],
-            grid: [0.10, 0.38],
-            battery: [0.20, 0.76],
-            audi: [0.80, 0.76]
-        };
-        const anchor = anchors[component.id] || [0.5, 0.5];
-        const centerX = anchor[0] * state.width;
-        const centerY = anchor[1] * state.height;
-        const x = Math.max(4, Math.min(state.width - width - 4, centerX - width / 2));
-        const y = Math.max(5, Math.min(state.height - height - 48, centerY - height / 2));
-        const selected = state.selected === component.id;
-
-        context.save();
-        context.strokeStyle = component.active ? component.color + "88" : "rgba(100,116,139,.34)";
-        context.lineWidth = 1;
-        context.setLineDash([3, 4]);
-        context.beginPath();
-        context.moveTo(point.x, point.y);
-        context.lineTo(x + width / 2, y + height / 2);
-        context.stroke();
-        context.setLineDash([]);
-        if (selected) {
-            context.shadowColor = component.color;
-            context.shadowBlur = 12;
-        }
-        roundRect(x, y, width, height, 11);
-        context.fillStyle = component.active ? "rgba(15,31,43,.92)" : "rgba(15,23,42,.86)";
-        context.fill();
-        context.shadowBlur = 0;
-        context.strokeStyle = selected ? component.color :
-            component.active ? component.color + "aa" : "rgba(100,116,139,.6)";
-        context.lineWidth = selected ? 2 : 1;
-        context.stroke();
-
-        context.textAlign = "left";
-        context.textBaseline = "middle";
-        context.font = compact ? "12px system-ui" : "14px system-ui";
-        context.fillStyle = palette.text;
-        context.fillText(component.icon, x + 8, y + height / 2);
-        context.font = "800 " + (compact ? 8 : 9) + "px system-ui";
-        context.fillStyle = palette.sub;
-        context.fillText(component.label, x + (compact ? 26 : 30), y + (compact ? 13 : 15));
-        context.font = "900 " + (compact ? 11 : 13) + "px system-ui";
-        context.fillStyle = palette.text;
-        context.fillText(component.value, x + (compact ? 26 : 30), y + (compact ? 28 : 32));
-        context.restore();
-
-        state.hotspots.push({ id: component.id, x: x + width / 2, y: y + height / 2, radius: Math.max(width, height) * 0.58 });
-    }
-
-    function updateInspector(components) {
-        const component = components[state.selected] || components.battery;
-        inspectorIcon.textContent = component.icon;
-        inspectorLabel.textContent = component.label;
-        inspectorValue.textContent = component.value;
-        inspectorDetail.textContent = component.detail;
-
-        const battery = components.battery.value;
-        liveBadge.textContent = battery === "--" ? "Live wird verbunden" : "LIVE · Solix " + battery;
-    }
-
-    function draw() {
-        context.setTransform(state.ratio, 0, 0, state.ratio, 0, 0);
-        context.clearRect(0, 0, state.width, state.height);
-        drawBackground();
-        drawGround();
-        drawGridPole();
-        drawHouseAndGarage();
-
-        const components = componentData();
-        drawPowerFlows(components);
-        state.hotspots = [];
-        ["grid", "pv", "battery", "audi"]
-            .forEach((id) => drawBadge(components[id]));
-        updateInspector(components);
-    }
-
-    function resize() {
-        const rect = canvas.getBoundingClientRect();
-        state.width = Math.max(1, rect.width);
-        state.height = Math.max(1, rect.height);
-        state.ratio = Math.min(window.devicePixelRatio || 1, 2);
-        canvas.width = Math.round(state.width * state.ratio);
-        canvas.height = Math.round(state.height * state.ratio);
-        draw();
-    }
-
-    function selectAt(clientX, clientY) {
-        const rect = canvas.getBoundingClientRect();
-        const x = clientX - rect.left;
-        const y = clientY - rect.top;
-        let nearest = null;
-        let distance = Infinity;
-        state.hotspots.forEach((hotspot) => {
-            const candidateDistance = Math.hypot(x - hotspot.x, y - hotspot.y);
-            if (candidateDistance <= hotspot.radius && candidateDistance < distance) {
-                nearest = hotspot;
-                distance = candidateDistance;
+        context.globalAlpha = 0.42;
+        for (let y = 0; y < 128; y += 16) {
+            context.beginPath();
+            context.moveTo(0, y);
+            context.lineTo(128, y);
+            context.stroke();
+            for (let x = (y / 16 % 2) * 8; x < 128; x += 16) {
+                context.beginPath();
+                context.moveTo(x, y);
+                context.lineTo(x, y + 16);
+                context.stroke();
             }
+        }
+    }
+    else if (mode === "shingles") {
+        context.lineWidth = 1;
+        context.globalAlpha = 0.5;
+        for (let y = 0; y < 128; y += 12) {
+            context.beginPath();
+            context.moveTo(0, y);
+            context.lineTo(128, y);
+            context.stroke();
+            for (let x = (y / 12 % 2) * 10; x < 128; x += 20) {
+                context.beginPath();
+                context.moveTo(x, y);
+                context.lineTo(x, y + 12);
+                context.stroke();
+            }
+        }
+    }
+    else if (mode === "grass") {
+        context.globalAlpha = 0.33;
+        for (let index = 0; index < 650; index += 1)
+            context.fillRect(random() * 128, random() * 128, 1, 1 + random() * 2);
+    }
+    else if (mode === "pavers") {
+        context.globalAlpha = 0.34;
+        context.lineWidth = 1;
+        for (let y = 0; y < 128; y += 18) {
+            context.beginPath();
+            context.moveTo(0, y);
+            context.lineTo(128, y);
+            context.stroke();
+            for (let x = (y / 18 % 2) * 16; x < 128; x += 32) {
+                context.beginPath();
+                context.moveTo(x, y);
+                context.lineTo(x, y + 18);
+                context.stroke();
+            }
+        }
+    }
+
+    const texture = new THREE.CanvasTexture(textureCanvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(repeatX, repeatY);
+    texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    return texture;
+}
+
+const textures = {
+    wall: makeTexture("#e9e4d8", "#8d887e", "stucco", 5, 8),
+    roof: makeTexture("#a33e2c", "#4d1d18", "tiles", 5, 14),
+    shingle: makeTexture("#4a332b", "#190f0d", "shingles", 5, 9),
+    grass: makeTexture("#496b38", "#9eb36a", "grass", 8, 12),
+    paving: makeTexture("#777a79", "#363a3a", "pavers", 8, 12)
+};
+
+const materials = {
+    wall: new THREE.MeshStandardMaterial({ map: textures.wall, roughness: 0.96 }),
+    roof: new THREE.MeshStandardMaterial({ map: textures.roof, roughness: 0.84 }),
+    shingle: new THREE.MeshStandardMaterial({ map: textures.shingle, roughness: 0.92 }),
+    trim: new THREE.MeshStandardMaterial({ color: 0x8d1922, roughness: 0.68 }),
+    darkTrim: new THREE.MeshStandardMaterial({ color: 0x3b302f, roughness: 0.8 }),
+    glass: new THREE.MeshPhysicalMaterial({
+        color: 0x7997ad,
+        roughness: 0.12,
+        metalness: 0.12,
+        transmission: 0.22,
+        transparent: true,
+        opacity: 0.78,
+        clearcoat: 0.65
+    }),
+    garageRed: new THREE.MeshStandardMaterial({ color: 0xb5141d, roughness: 0.55 }),
+    grass: new THREE.MeshStandardMaterial({ map: textures.grass, roughness: 1 }),
+    paving: new THREE.MeshStandardMaterial({ map: textures.paving, roughness: 0.96 }),
+    wood: new THREE.MeshStandardMaterial({ color: 0x57352a, roughness: 0.9 }),
+    solar: new THREE.MeshPhysicalMaterial({
+        color: 0x091c31,
+        metalness: 0.52,
+        roughness: 0.18,
+        clearcoat: 0.9,
+        clearcoatRoughness: 0.12
+    }),
+    water: new THREE.MeshPhysicalMaterial({
+        color: 0x20b8df,
+        metalness: 0.03,
+        roughness: 0.08,
+        transmission: 0.32,
+        transparent: true,
+        opacity: 0.84,
+        clearcoat: 1
+    })
+};
+
+function addMesh(parent, geometry, material, x, y, z, options = {}) {
+    const object = new THREE.Mesh(geometry, material);
+    object.position.set(x, y, z);
+    object.castShadow = options.castShadow !== false;
+    object.receiveShadow = options.receiveShadow !== false;
+    if (options.rotation)
+        object.rotation.set(...options.rotation);
+    parent.add(object);
+    return object;
+}
+
+function addBox(parent, size, material, position, options = {}) {
+    const radius = options.radius || 0;
+    const geometry = radius > 0 ?
+        new RoundedBoxGeometry(size[0], size[1], size[2], 3, radius) :
+        new THREE.BoxGeometry(...size);
+    return addMesh(parent, geometry, material, ...position, options);
+}
+
+function createWindow(parent, position, size, side = "front") {
+    const group = new THREE.Group();
+    group.position.set(...position);
+    if (side === "side")
+        group.rotation.y = Math.PI / 2;
+    parent.add(group);
+
+    addBox(group, [size[0] + 0.16, size[1] + 0.16, 0.11], materials.darkTrim, [0, 0, 0]);
+    addBox(group, [size[0], size[1], 0.125], materials.glass, [0, 0, 0.015], { castShadow: false });
+    addBox(group, [0.055, size[1], 0.145], materials.darkTrim, [0, 0, 0.04]);
+    addBox(group, [size[0], 0.055, 0.145], materials.darkTrim, [0, 0, 0.04]);
+    addBox(group, [size[0] + 0.26, 0.10, 0.20], materials.darkTrim, [0, -size[1] / 2 - 0.10, 0.02]);
+    return group;
+}
+
+function createRoof(parent) {
+    const slope = Math.atan2(2.15, 3.55);
+    const roofLength = Math.hypot(3.55, 2.15);
+    addBox(parent, [roofLength, 0.20, 10.8], materials.roof, [-1.76, 5.88, 0], {
+        rotation: [0, 0, slope]
+    });
+    addBox(parent, [roofLength, 0.20, 10.8], materials.roof, [1.76, 5.88, 0], {
+        rotation: [0, 0, -slope]
+    });
+    addBox(parent, [0.22, 0.22, 10.9], materials.darkTrim, [0, 7.02, 0], { radius: 0.04 });
+    [-3.30, 3.30].forEach((x) => {
+        addBox(parent, [0.16, 0.24, 10.75], materials.trim, [x, 4.94, 0]);
+        addBox(parent, [0.10, 0.18, 10.78], materials.darkTrim, [x + Math.sign(x) * 0.10, 4.88, 0]);
+    });
+
+    [-2.25, 1.45].forEach((x, index) => {
+        addBox(parent, [0.56, 2.0, 0.72], new THREE.MeshStandardMaterial({ color: 0xa9afb1, roughness: 0.76 }),
+            [x, 7.05, index === 0 ? -1.6 : 2.25]);
+        addBox(parent, [0.72, 0.12, 0.88], materials.darkTrim,
+            [x, 8.07, index === 0 ? -1.6 : 2.25]);
+    });
+}
+
+function createGarageDoors(parent) {
+    const doorWidth = 1.72;
+    [-2.08, 0, 2.08].forEach((x) => {
+        addBox(parent, [doorWidth + 0.18, 2.46, 0.12], new THREE.MeshStandardMaterial({ color: 0xc3a65e, roughness: 0.76 }), [x, 1.45, 5.075]);
+        const door = addBox(parent, [doorWidth, 2.26, 0.15], materials.garageRed, [x, 1.42, 5.16], { radius: 0.035 });
+        for (let row = -4; row <= 4; row += 1)
+            addBox(door, [doorWidth * 0.95, 0.018, 0.025], materials.darkTrim, [0, row * 0.205, 0.085], { castShadow: false });
+        addBox(door, [doorWidth * 0.88, 0.58, 0.035], materials.glass, [0, 0.61, 0.09], { castShadow: false });
+    });
+}
+
+function createGable(parent) {
+    addBox(parent, [6.45, 2.45, 0.18], materials.shingle, [0, 3.72, 5.08]);
+    const shape = new THREE.Shape();
+    shape.moveTo(-3.22, 0);
+    shape.lineTo(0, 2.15);
+    shape.lineTo(3.22, 0);
+    shape.lineTo(-3.22, 0);
+    const geometry = new THREE.ShapeGeometry(shape);
+    const triangle = addMesh(parent, geometry, materials.shingle, 0, 4.93, 5.18);
+    triangle.castShadow = true;
+    createWindow(parent, [-1.25, 4.42, 5.30], [0.72, 1.02]);
+    createWindow(parent, [1.25, 4.42, 5.30], [0.72, 1.02]);
+}
+
+function createBalconyPanels(parent) {
+    const railMaterial = new THREE.MeshStandardMaterial({ color: 0x49332f, roughness: 0.8 });
+    const sets = [1.55, -2.05];
+    sets.forEach((z) => {
+        addBox(parent, [0.82, 0.12, 2.82], materials.darkTrim, [3.52, 2.08, z]);
+        addBox(parent, [0.14, 0.14, 2.65], railMaterial, [3.45, 2.82, z]);
+        [-1.0, 0, 1.0].forEach((offset) =>
+            addBox(parent, [0.08, 1.05, 0.08], railMaterial, [3.45, 2.35, z + offset]));
+        for (let panelIndex = 0; panelIndex < 2; panelIndex += 1) {
+            const panel = addBox(parent, [0.10, 1.12, 1.16], materials.solar,
+                [3.57, 2.36, z - 0.62 + panelIndex * 1.24], { radius: 0.025 });
+            panel.rotation.z = -0.16;
+            for (let row = -1; row <= 1; row += 1)
+                addBox(panel, [0.018, 0.012, 1.05], new THREE.MeshStandardMaterial({ color: 0x6688a2 }), [0.058, row * 0.31, 0], { castShadow: false });
+        }
+    });
+}
+
+function createHouse() {
+    const house = new THREE.Group();
+    world.add(house);
+
+    addBox(house, [6.4, 4.9, 10.0], materials.wall, [0, 2.50, 0]);
+    addBox(house, [6.55, 0.62, 10.12], new THREE.MeshStandardMaterial({ color: 0x89755d, roughness: 0.94 }), [0, 0.31, 0]);
+    createRoof(house);
+    createGarageDoors(house);
+    createGable(house);
+
+    const sideZ = [3.35, 1.2, -1.0, -3.2];
+    sideZ.forEach((z, index) => {
+        createWindow(house, [3.275, 1.55, z], [0.74, 1.18], "side");
+        if (index !== 1)
+            createWindow(house, [3.275, 3.75, z], [0.74, 1.18], "side");
+    });
+    createWindow(house, [-3.275, 1.55, 3.1], [0.82, 1.18], "side");
+    createWindow(house, [-3.275, 3.75, 1.0], [0.82, 1.18], "side");
+
+    addBox(house, [0.14, 1.95, 0.92], materials.darkTrim, [3.30, 1.2, -4.05], { rotation: [0, Math.PI / 2, 0] });
+    addBox(house, [0.12, 1.78, 0.74], materials.glass, [3.38, 1.2, -4.05], { rotation: [0, Math.PI / 2, 0], castShadow: false });
+
+    createBalconyPanels(house);
+    return house;
+}
+
+function createSolarBank() {
+    const bank = new THREE.Group();
+    bank.position.set(3.72, 0, 2.65);
+    world.add(bank);
+    const body = new THREE.MeshStandardMaterial({ color: 0x263a45, metalness: 0.38, roughness: 0.38 });
+    const edge = new THREE.MeshStandardMaterial({ color: 0x0c1820, roughness: 0.5 });
+    for (let level = 0; level < 3; level += 1) {
+        addBox(bank, [0.62, 0.58, 0.72], edge, [0, 0.42 + level * 0.58, 0], { radius: 0.10 });
+        addBox(bank, [0.55, 0.48, 0.64], body, [0.04, 0.43 + level * 0.58, 0], { radius: 0.08 });
+    }
+    const light = new THREE.MeshStandardMaterial({ color: 0x5eead4, emissive: 0x2dd4bf, emissiveIntensity: 4 });
+    addMesh(bank, new THREE.SphereGeometry(0.045, 12, 8), light, 0.36, 1.47, 0.22, { castShadow: false });
+    return bank;
+}
+
+function createCar(color, detailed = false) {
+    const car = new THREE.Group();
+    const paint = new THREE.MeshPhysicalMaterial({
+        color,
+        metalness: 0.72,
+        roughness: 0.20,
+        clearcoat: 1,
+        clearcoatRoughness: 0.1
+    });
+    const black = new THREE.MeshStandardMaterial({ color: 0x07090c, roughness: 0.42 });
+    const rim = new THREE.MeshStandardMaterial({ color: 0x85909a, metalness: 0.86, roughness: 0.25 });
+    addBox(car, [1.72, 0.48, 3.25], paint, [0, 0.54, 0], { radius: 0.18 });
+    addBox(car, [1.48, 0.56, 1.74], materials.glass, [0, 0.94, -0.16], { radius: 0.16, castShadow: false });
+    addBox(car, [1.30, 0.13, 1.50], paint, [0, 1.22, -0.18], { radius: 0.06 });
+
+    [[-0.82, -0.98], [0.82, -0.98], [-0.82, 0.98], [0.82, 0.98]].forEach(([x, z]) => {
+        const wheel = addMesh(car, new THREE.CylinderGeometry(0.31, 0.31, 0.18, 24), black, x, 0.38, z, { rotation: [0, 0, Math.PI / 2] });
+        addMesh(wheel, new THREE.CylinderGeometry(0.15, 0.15, 0.185, 16), rim, 0, 0, 0, { rotation: [0, 0, 0], castShadow: false });
+    });
+
+    const front = new THREE.MeshStandardMaterial({ color: 0xcdf3ff, emissive: 0xa8def7, emissiveIntensity: 1.8 });
+    const rear = new THREE.MeshStandardMaterial({ color: 0xff263c, emissive: 0xb00016, emissiveIntensity: 1.2 });
+    [-0.55, 0.55].forEach((x) => {
+        addBox(car, [0.38, 0.10, 0.05], front, [x, 0.67, 1.64], { radius: 0.025, castShadow: false });
+        addBox(car, [0.38, 0.11, 0.05], rear, [x, 0.67, -1.64], { radius: 0.025, castShadow: false });
+    });
+
+    if (detailed) {
+        addBox(car, [1.05, 0.26, 0.05], black, [0, 0.49, 1.65], { radius: 0.08 });
+        [-0.34, -0.11, 0.11, 0.34].forEach((x) =>
+            addMesh(car, new THREE.TorusGeometry(0.105, 0.018, 8, 18), rim, x, 0.60, 1.69, { rotation: [Math.PI / 2, 0, 0], castShadow: false }));
+        [-0.67, 0.67].forEach((x) =>
+            addBox(car, [0.18, 0.12, 0.28], paint, [x, 1.03, 0.48], { radius: 0.05 }));
+        [-0.56, 0.56].forEach((x) =>
+            addBox(car, [0.045, 0.08, 1.65], rim, [x, 1.38, -0.18], { radius: 0.015 }));
+        addBox(car, [1.20, 0.10, 0.34], paint, [0, 1.28, -1.48], { radius: 0.045 });
+        addBox(car, [0.48, 0.12, 0.045], new THREE.MeshStandardMaterial({ color: 0xe7e7df, roughness: 0.52 }), [0, 0.50, -1.68], { radius: 0.018, castShadow: false });
+    }
+    return car;
+}
+
+function createVehicles() {
+    const audi = createCar(0x008dc8, true);
+    audi.scale.set(1.10, 1.17, 1.08);
+    audi.position.set(4.45, 0.02, 1.0);
+    audi.rotation.y = Math.PI;
+    world.add(audi);
+
+    const suv = createCar(0x11151a);
+    suv.scale.set(1.05, 1.08, 1.12);
+    suv.position.set(-1.75, 0.02, 7.25);
+    world.add(suv);
+
+    const compact = createCar(0x15171b);
+    compact.scale.set(0.92, 0.90, 0.88);
+    compact.position.set(1.25, 0.02, 7.05);
+    compact.rotation.y = -0.08;
+    world.add(compact);
+    return audi;
+}
+
+function createTree(x, z, scale = 1) {
+    const tree = new THREE.Group();
+    tree.position.set(x, 0, z);
+    tree.scale.setScalar(scale);
+    world.add(tree);
+    const trunk = new THREE.MeshStandardMaterial({ color: 0x583728, roughness: 1 });
+    const needles = [0x1d4e33, 0x235b39, 0x17432c].map((color) =>
+        new THREE.MeshStandardMaterial({ color, roughness: 0.98 }));
+    addMesh(tree, new THREE.CylinderGeometry(0.22, 0.34, 3.4, 10), trunk, 0, 1.7, 0);
+    [1.8, 2.55, 3.35, 4.05].forEach((y, index) =>
+        addMesh(tree, new THREE.ConeGeometry(1.55 - index * 0.19, 2.3, 11), needles[index % needles.length], 0, y, 0));
+}
+
+function createGarden() {
+    addBox(world, [15.6, 0.25, 20.0], materials.grass, [0, -0.14, -0.2], { castShadow: false });
+    addBox(world, [7.3, 0.06, 5.3], materials.paving, [0, 0.02, 7.3], { castShadow: false });
+    addBox(world, [2.4, 0.07, 10.0], materials.paving, [4.45, 0.03, 1.8], { castShadow: false });
+
+    const road = new THREE.MeshStandardMaterial({ color: 0x54595d, roughness: 1 });
+    addBox(world, [15.8, 0.12, 2.3], road, [0, -0.02, 10.6], { castShadow: false });
+
+    addBox(world, [4.6, 0.42, 2.85], new THREE.MeshStandardMaterial({ color: 0xddd2bd, roughness: 0.8 }), [-1.45, 0.14, -7.15], { radius: 0.10 });
+    addBox(world, [4.15, 0.12, 2.40], materials.water, [-1.45, 0.42, -7.15], { radius: 0.12, castShadow: false });
+
+    const shed = new THREE.Group();
+    shed.position.set(2.5, 0, -7.1);
+    world.add(shed);
+    addBox(shed, [2.25, 2.0, 2.0], materials.wood, [0, 1.0, 0]);
+    addBox(shed, [2.65, 0.16, 1.38], materials.darkTrim, [-0.62, 2.17, 0], { rotation: [0, 0, 0.48] });
+    addBox(shed, [2.65, 0.16, 1.38], materials.darkTrim, [0.62, 2.17, 0], { rotation: [0, 0, -0.48] });
+    addBox(shed, [0.72, 1.45, 0.10], materials.darkTrim, [0, 0.85, 1.04]);
+
+    createTree(-4.55, -6.15, 1.18);
+    createTree(-5.75, -4.0, 0.72);
+
+    const hedge = new THREE.MeshStandardMaterial({ color: 0x315d31, roughness: 1 });
+    addBox(world, [0.75, 1.75, 8.0], hedge, [-6.25, 0.85, -3.2], { radius: 0.24 });
+    addBox(world, [7.0, 1.5, 0.70], hedge, [-2.6, 0.73, -9.35], { radius: 0.23 });
+
+    const fence = new THREE.MeshStandardMaterial({ color: 0x6a5848, roughness: 1 });
+    for (let x = -6.0; x <= 6.0; x += 0.65)
+        addBox(world, [0.10, 0.82, 0.10], fence, [x, 0.39, 9.35]);
+    addBox(world, [12.2, 0.10, 0.10], fence, [0, 0.25, 9.35]);
+    addBox(world, [12.2, 0.10, 0.10], fence, [0, 0.64, 9.35]);
+}
+
+function createGridBox() {
+    const group = new THREE.Group();
+    group.position.set(-4.65, 0, 7.65);
+    world.add(group);
+    const casing = new THREE.MeshStandardMaterial({ color: 0xd9d9d1, roughness: 0.72 });
+    addBox(group, [0.58, 1.05, 0.42], casing, [0, 0.55, 0], { radius: 0.05 });
+    addBox(group, [0.44, 0.33, 0.025], materials.glass, [0, 0.69, 0.225], { castShadow: false });
+    return group;
+}
+
+createGarden();
+createHouse();
+createSolarBank();
+const audiModel = createVehicles();
+createGridBox();
+
+const hemisphere = new THREE.HemisphereLight(0xd8efff, 0x314129, 2.25);
+scene.add(hemisphere);
+const sun = new THREE.DirectionalLight(0xfff0d2, 4.7);
+sun.position.set(-9, 15, 12);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -16;
+sun.shadow.camera.right = 16;
+sun.shadow.camera.top = 16;
+sun.shadow.camera.bottom = -16;
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far = 45;
+sun.shadow.bias = -0.00025;
+scene.add(sun);
+const fill = new THREE.DirectionalLight(0x84b8ff, 1.15);
+fill.position.set(10, 8, -12);
+scene.add(fill);
+
+const flows = {};
+
+function createFlow(id, points, color) {
+    const curve = new THREE.CatmullRomCurve3(points.map((point) => new THREE.Vector3(...point)), false, "catmullrom", 0.08);
+    const tubeMaterial = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.20,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+    });
+    const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 72, 0.035, 8, false), tubeMaterial);
+    world.add(tube);
+    const pulseMaterial = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+    });
+    const pulses = [];
+    for (let index = 0; index < 4; index += 1) {
+        const pulse = new THREE.Mesh(new THREE.SphereGeometry(0.095, 12, 8), pulseMaterial.clone());
+        pulse.userData.offset = index / 4;
+        world.add(pulse);
+        pulses.push(pulse);
+    }
+    flows[id] = { curve, tube, pulses, active: false, reverse: false };
+}
+
+createFlow("pv", [
+    [3.62, 3.0, -1.7], [3.72, 2.2, -1.7], [3.72, 0.35, -1.7],
+    [3.72, 0.28, 2.0], [3.72, 1.0, 2.65]
+], colors.pv);
+createFlow("grid", [
+    [-4.65, 0.25, 7.65], [-4.65, 0.12, 6.5], [-3.65, 0.12, 5.4],
+    [3.25, 0.12, 5.4], [3.72, 0.25, 2.65], [3.72, 0.75, 2.65]
+], colors.grid);
+createFlow("audi", [
+    [3.72, 0.72, 2.65], [4.05, 0.38, 2.65], [4.05, 0.24, 1.95],
+    [4.28, 0.28, 1.35], [4.45, 0.52, 0.25]
+], colors.audi);
+
+const labelAnchors = {
+    pv: new THREE.Vector3(3.78, 3.35, -1.7),
+    battery: new THREE.Vector3(3.78, 2.10, 2.65),
+    grid: new THREE.Vector3(-4.65, 1.65, 7.65),
+    audi: new THREE.Vector3(4.45, 1.80, 1.0)
+};
+
+const labelElements = {};
+["pv", "battery", "grid", "audi"].forEach((id) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "house-scene-label";
+    button.dataset.component = id;
+    button.addEventListener("click", () => {
+        state.selected = id;
+        updateLiveUi();
+    });
+    stage.appendChild(button);
+    labelElements[id] = button;
+});
+
+function componentData() {
+    const solix = state.data.solix || {};
+    const automation = state.data.automation || {};
+    const audi = state.data.audi || {};
+    const smartPlug = automation.smartplug || {};
+    const pv = numberValue(solix.pv_total);
+    const batterySoc = numberValue(solix.battery_percent) ?? numberValue(automation.solix_battery_percent);
+    const batteryCharge = numberValue(solix.battery_charge_power) ?? 0;
+    const batteryDischarge = numberValue(solix.battery_discharge_power) ??
+        Math.max(0, -(numberValue(solix.battery_power) ?? 0));
+    const output = numberValue(solix.system_output_power) ?? numberValue(solix.home_load);
+    const grid = numberValue(solix.grid_power);
+    const plugPower = numberValue(smartPlug.power_w);
+    const audiPowerKw = numberValue(audi.charging_power_kw);
+    const audiPower = plugPower ?? (audiPowerKw == null ? null : audiPowerKw * 1000);
+    const charging = plugPower != null ? plugPower >= 20 : audi.charging === true;
+
+    return {
+        pv: {
+            id: "pv", label: "BALKON-PV", icon: "☀️", value: formatPower(pv), color: colors.pv,
+            detail: "Die Module an den Balkonen liefern zusammen " + formatPower(pv) + ".",
+            active: pv != null && pv >= 5
+        },
+        battery: {
+            id: "battery", label: "SOLARBANK 4", icon: "🔋", color: colors.battery,
+            value: batterySoc == null ? "--" : Math.round(batterySoc) + " %",
+            detail: "PV-Eingang " + formatPower(pv) + " · " + (
+                batteryCharge >= 5 ? "Akku lädt mit " + formatPower(batteryCharge) + "." :
+                    batteryDischarge >= 5 ? "Akku liefert " + formatPower(batteryDischarge) + "." :
+                        "Akku ist im Bereitschaftsmodus."
+            ),
+            active: batteryCharge >= 5 || batteryDischarge >= 5
+        },
+        grid: {
+            id: "grid", label: "STROMNETZ", icon: "🌐", color: colors.grid,
+            value: formatPower(grid == null ? null : Math.abs(grid)),
+            detail: grid == null ? "Netzwert nicht verfügbar." :
+                grid > 5 ? "Aktueller Netzbezug." :
+                    grid < -5 ? "Aktuelle Netzeinspeisung." : "Aktuell kein Netzfluss.",
+            active: grid != null && Math.abs(grid) >= 5
+        },
+        audi: {
+            id: "audi", label: "AUDI Q3", icon: "🚙", color: colors.audi,
+            value: audi.battery_percent == null ? "--" : audi.battery_percent + " %",
+            detail: charging ? "Der blaue Q3 lädt mit " + formatPower(audiPower) + "." :
+                audi.plug_connected === true ? "Ladestecker verbunden · wartet." :
+                    audi.plug_connected === false ? "Ladestecker ist getrennt." : "Audi-Status wird geprüft.",
+            active: charging
+        },
+        raw: { pv, batterySoc, batteryCharge, batteryDischarge, output, grid, audiPower, charging }
+    };
+}
+
+function setFlowState(flow, active, reverse = false) {
+    flow.active = active;
+    flow.reverse = reverse;
+    flow.tube.material.opacity = active ? 0.72 : 0.14;
+    flow.pulses.forEach((pulse) => {
+        pulse.material.opacity = active ? 1 : 0;
+        pulse.visible = active;
+    });
+}
+
+function updateLiveUi() {
+    const components = componentData();
+    const raw = components.raw;
+    setFlowState(flows.pv, raw.pv != null && raw.pv >= 5);
+    setFlowState(flows.grid, raw.grid != null && Math.abs(raw.grid) >= 5, raw.grid < 0);
+    setFlowState(flows.audi, raw.charging && raw.output != null && raw.output >= 5);
+
+    ["pv", "battery", "grid", "audi"].forEach((id) => {
+        const component = components[id];
+        const element = labelElements[id];
+        element.innerHTML = `<small>${component.icon} ${component.label}</small><strong>${component.value}</strong>`;
+        element.classList.toggle("active", component.active);
+        element.classList.toggle("selected", state.selected === id);
+        element.style.setProperty("--scene-color", component.color);
+        element.setAttribute("aria-label", component.label + ": " + component.value);
+    });
+
+    const selected = components[state.selected] || components.battery;
+    inspectorIcon.textContent = selected.icon;
+    inspectorLabel.textContent = selected.label;
+    inspectorValue.textContent = selected.value;
+    inspectorDetail.textContent = selected.detail;
+    liveBadge.textContent = components.battery.value === "--" ?
+        "Live wird verbunden" : "LIVE · Solix " + components.battery.value;
+}
+
+function updateLabelPositions() {
+    const rect = stage.getBoundingClientRect();
+    const rootPosition = new THREE.Vector3();
+    world.getWorldPosition(rootPosition);
+    const compactPositions = {
+        grid: [0.17, 0.54],
+        pv: [0.79, 0.28],
+        battery: [0.20, 0.72],
+        audi: [0.78, 0.72]
+    };
+    Object.entries(labelAnchors).forEach(([id, localAnchor]) => {
+        const anchor = world.localToWorld(localAnchor.clone());
+        const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
+        const projected = anchor.project(camera);
+        const compact = rect.width < 700;
+        const fixed = compactPositions[id];
+        const x = compact ? fixed[0] * rect.width :
+            THREE.MathUtils.clamp((projected.x * 0.5 + 0.5) * rect.width, 44, rect.width - 44);
+        const y = compact ? fixed[1] * rect.height :
+            THREE.MathUtils.clamp((-projected.y * 0.5 + 0.5) * rect.height, 34, rect.height - 58);
+        const element = labelElements[id];
+        element.style.left = x + "px";
+        element.style.top = y + "px";
+        element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
+    });
+}
+
+function resize() {
+    const rect = canvas.getBoundingClientRect();
+    const width = Math.max(1, rect.width);
+    const height = Math.max(1, rect.height);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(width, height, false);
+    camera.aspect = width / height;
+    camera.fov = width < 520 ? 46 : 39;
+    camera.position.set(width < 520 ? 14.6 : 12.8, width < 520 ? 10.7 : 9.1, width < 520 ? 18.6 : 16.0);
+    camera.lookAt(0, 2.1, 0);
+    camera.updateProjectionMatrix();
+}
+
+canvas.addEventListener("pointerdown", (event) => {
+    state.pointerId = event.pointerId;
+    state.pointerStartX = event.clientX;
+    state.lastPointerX = event.clientX;
+    state.pointerMoved = false;
+    canvas.setPointerCapture(event.pointerId);
+});
+
+canvas.addEventListener("pointermove", (event) => {
+    if (state.pointerId !== event.pointerId)
+        return;
+    const delta = event.clientX - state.lastPointerX;
+    if (Math.abs(event.clientX - state.pointerStartX) > 5)
+        state.pointerMoved = true;
+    state.targetYaw += delta * 0.009;
+    state.lastPointerX = event.clientX;
+});
+
+function finishPointer(event) {
+    if (state.pointerId !== event.pointerId)
+        return;
+    if (canvas.hasPointerCapture(event.pointerId))
+        canvas.releasePointerCapture(event.pointerId);
+    state.pointerId = null;
+}
+
+canvas.addEventListener("pointerup", finishPointer);
+canvas.addEventListener("pointercancel", finishPointer);
+canvas.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight")
+        return;
+    event.preventDefault();
+    state.targetYaw += event.key === "ArrowLeft" ? -0.16 : 0.16;
+});
+
+resetButton.addEventListener("click", () => {
+    state.targetYaw = 0.78;
+    state.selected = "battery";
+    updateLiveUi();
+});
+
+window.addEventListener("solix-dashboard-data", (event) => {
+    state.data = event.detail || state.data;
+    updateLiveUi();
+});
+
+if (window.ResizeObserver) {
+    const observer = new ResizeObserver(resize);
+    observer.observe(stage);
+}
+else {
+    window.addEventListener("resize", resize);
+}
+
+function animate(time) {
+    const seconds = time * 0.001;
+    const delta = Math.min(0.05, (time - state.lastTime) * 0.001 || 0.016);
+    state.lastTime = time;
+    state.yaw = THREE.MathUtils.damp(state.yaw, state.targetYaw, 10, delta);
+    world.rotation.y = state.yaw;
+
+    if (!reduceMotion) {
+        Object.values(flows).forEach((flow) => {
+            if (!flow.active)
+                return;
+            flow.pulses.forEach((pulse) => {
+                let progress = (seconds * 0.24 + pulse.userData.offset) % 1;
+                if (flow.reverse)
+                    progress = 1 - progress;
+                pulse.position.copy(flow.curve.getPointAt(progress));
+                const glow = 0.78 + Math.sin(seconds * 5 + progress * 12) * 0.20;
+                pulse.scale.setScalar(glow);
+            });
         });
-        if (nearest) {
-            state.selected = nearest.id;
-            draw();
-        }
+        materials.water.color.setHSL(0.53 + Math.sin(seconds * 0.7) * 0.008, 0.76, 0.48);
+        audiModel.position.y = 0.02;
     }
 
-    canvas.addEventListener("pointerdown", (event) => {
-        state.pointerId = event.pointerId;
-        state.pointerStartX = event.clientX;
-        state.lastPointerX = event.clientX;
-        state.pointerMoved = false;
-        canvas.setPointerCapture(event.pointerId);
-    });
-
-    canvas.addEventListener("pointermove", (event) => {
-        if (state.pointerId !== event.pointerId)
-            return;
-        const delta = event.clientX - state.lastPointerX;
-        if (Math.abs(event.clientX - state.pointerStartX) > 5)
-            state.pointerMoved = true;
-        state.yaw += delta * 0.009;
-        state.lastPointerX = event.clientX;
-        draw();
-    });
-
-    function finishPointer(event) {
-        if (state.pointerId !== event.pointerId)
-            return;
-        if (!state.pointerMoved)
-            selectAt(event.clientX, event.clientY);
-        if (canvas.hasPointerCapture(event.pointerId))
-            canvas.releasePointerCapture(event.pointerId);
-        state.pointerId = null;
-    }
-
-    canvas.addEventListener("pointerup", finishPointer);
-    canvas.addEventListener("pointercancel", (event) => {
-        if (state.pointerId === event.pointerId)
-            state.pointerId = null;
-    });
-
-    canvas.addEventListener("keydown", (event) => {
-        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight")
-            return;
-        event.preventDefault();
-        state.yaw += event.key === "ArrowLeft" ? -0.12 : 0.12;
-        draw();
-    });
-
-    resetButton.addEventListener("click", () => {
-        state.yaw = -0.58;
-        state.selected = "battery";
-        draw();
-    });
-
-    window.addEventListener("solix-dashboard-data", (event) => {
-        state.data = event.detail || state.data;
-        draw();
-    });
-
-    if (window.ResizeObserver) {
-        const observer = new ResizeObserver(resize);
-        observer.observe(canvas);
-    }
-    else {
-        window.addEventListener("resize", resize);
-    }
-
-    function animate(time) {
-        if (time - state.lastFrame >= 33) {
-            if (!reduceMotion)
-                state.dash = (state.dash + 1.15) % 30;
-            draw();
-            state.lastFrame = time;
-        }
-        window.requestAnimationFrame(animate);
-    }
-
-    resize();
+    updateLabelPositions();
+    renderer.render(scene, camera);
     window.requestAnimationFrame(animate);
-}());
+}
+
+resize();
+updateLiveUi();
+window.requestAnimationFrame(animate);
