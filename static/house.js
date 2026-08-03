@@ -18,12 +18,16 @@ const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").match
 const state = {
     selected: "battery",
     data: window.solixDashboardState || { solix: {}, automation: {}, audi: {} },
-    pointerId: null,
+    pointers: new Map(),
     pointerStartX: 0,
     lastPointerX: 0,
     pointerMoved: false,
+    pinchStartDistance: 0,
+    pinchStartZoom: 1,
     yaw: 0.78,
     targetYaw: 0.78,
+    zoom: 1,
+    targetZoom: 1,
     lastTime: 0
 };
 
@@ -40,7 +44,9 @@ scene.fog = new THREE.FogExp2(0x9dbbd1, 0.019);
 
 const camera = new THREE.PerspectiveCamera(39, 1, 0.1, 100);
 camera.position.set(14.8, 10.6, 18.5);
-camera.lookAt(0, 2.1, 0);
+const cameraTarget = new THREE.Vector3(0, 2.1, 0);
+const cameraBaseOffset = camera.position.clone().sub(cameraTarget);
+camera.lookAt(cameraTarget);
 
 let renderer;
 try {
@@ -244,6 +250,10 @@ function createWindow(parent, position, size, side = "front") {
     group.position.set(...position);
     if (side === "side")
         group.rotation.y = Math.PI / 2;
+    else if (side === "side-back")
+        group.rotation.y = -Math.PI / 2;
+    else if (side === "back")
+        group.rotation.y = Math.PI;
     parent.add(group);
 
     addBox(group, [size[0] + 0.16, size[1] + 0.16, 0.11], materials.darkTrim, [0, 0, 0]);
@@ -254,93 +264,224 @@ function createWindow(parent, position, size, side = "front") {
     return group;
 }
 
+function createDoor(parent, position, size = [0.82, 1.96], side = "front") {
+    const group = new THREE.Group();
+    group.position.set(...position);
+    if (side === "side")
+        group.rotation.y = Math.PI / 2;
+    else if (side === "side-back")
+        group.rotation.y = -Math.PI / 2;
+    else if (side === "back")
+        group.rotation.y = Math.PI;
+    parent.add(group);
+
+    addBox(group, [size[0] + 0.18, size[1] + 0.14, 0.13], materials.darkTrim, [0, 0, 0]);
+    addBox(group, [size[0], size[1], 0.145], materials.glass, [0, 0, 0.025], { castShadow: false });
+    addBox(group, [size[0] * 0.08, size[1], 0.16], materials.darkTrim, [0, 0, 0.05]);
+    addBox(group, [size[0], 0.075, 0.16], materials.darkTrim, [0, size[1] * 0.10, 0.05]);
+    const handle = new THREE.MeshStandardMaterial({ color: 0xb9c1c5, metalness: 0.82, roughness: 0.26 });
+    addMesh(group, new THREE.SphereGeometry(0.035, 10, 8), handle, size[0] * 0.34, -0.13, 0.12, { castShadow: false });
+    return group;
+}
+
+// 20 × 10 m aus den Gebäudemaßen, im Modell auf 12.8 × 6.4 Einheiten skaliert.
+const HOUSE_WIDTH = 6.4;
+const HOUSE_LENGTH = 12.8;
+const GABLE_Z = HOUSE_LENGTH / 2 + 0.08;
+
 function createRoof(parent) {
     const slope = Math.atan2(2.15, 3.55);
     const roofLength = Math.hypot(3.55, 2.15);
-    addBox(parent, [roofLength, 0.20, 10.8], materials.roof, [-1.76, 5.88, 0], {
+    addBox(parent, [roofLength, 0.20, HOUSE_LENGTH + 0.8], materials.roof, [-1.76, 5.88, 0], {
         rotation: [0, 0, slope]
     });
-    addBox(parent, [roofLength, 0.20, 10.8], materials.roof, [1.76, 5.88, 0], {
+    addBox(parent, [roofLength, 0.20, HOUSE_LENGTH + 0.8], materials.roof, [1.76, 5.88, 0], {
         rotation: [0, 0, -slope]
     });
-    addBox(parent, [0.22, 0.22, 10.9], materials.darkTrim, [0, 7.02, 0], { radius: 0.04 });
+    addBox(parent, [0.22, 0.22, HOUSE_LENGTH + 0.9], materials.darkTrim, [0, 7.02, 0], { radius: 0.04 });
     [-3.30, 3.30].forEach((x) => {
-        addBox(parent, [0.16, 0.24, 10.75], materials.trim, [x, 4.94, 0]);
-        addBox(parent, [0.10, 0.18, 10.78], materials.darkTrim, [x + Math.sign(x) * 0.10, 4.88, 0]);
+        addBox(parent, [0.16, 0.24, HOUSE_LENGTH + 0.75], materials.trim, [x, 4.94, 0]);
+        addBox(parent, [0.10, 0.18, HOUSE_LENGTH + 0.78], materials.darkTrim, [x + Math.sign(x) * 0.10, 4.88, 0]);
     });
 
-    [-2.25, 1.45].forEach((x, index) => {
-        addBox(parent, [0.56, 2.0, 0.72], new THREE.MeshStandardMaterial({ color: 0xa9afb1, roughness: 0.76 }),
-            [x, 7.05, index === 0 ? -1.6 : 2.25]);
-        addBox(parent, [0.72, 0.12, 0.88], materials.darkTrim,
-            [x, 8.07, index === 0 ? -1.6 : 2.25]);
+    const chimneyMaterial = new THREE.MeshStandardMaterial({
+        color: 0xaeb6b8,
+        metalness: 0.42,
+        roughness: 0.52
+    });
+    const chimneyPositions = [
+        { x: 1.10, z: -2.75 },
+        { x: 1.24, z: 2.72 },
+        { x: -1.16, z: 0.45 }
+    ];
+    chimneyPositions.forEach(({ x, z }, index) => {
+        const roofSurface = 7.02 - Math.abs(x) * (2.15 / 3.55);
+        const chimneyHeight = index === 1 ? 1.86 : 1.72;
+        addBox(parent, [0.52, chimneyHeight, 0.68], chimneyMaterial,
+            [x, roofSurface + chimneyHeight * 0.42, z]);
+        addBox(parent, [0.66, 0.10, 0.82], materials.darkTrim,
+            [x, roofSurface + chimneyHeight * 0.92, z]);
     });
 }
 
 function createGarageDoors(parent) {
     const doorWidth = 1.72;
     [-2.08, 0, 2.08].forEach((x) => {
-        addBox(parent, [doorWidth + 0.18, 2.46, 0.12], new THREE.MeshStandardMaterial({ color: 0xc3a65e, roughness: 0.76 }), [x, 1.45, 5.075]);
-        const door = addBox(parent, [doorWidth, 2.26, 0.15], materials.garageRed, [x, 1.42, 5.16], { radius: 0.035 });
+        addBox(parent, [doorWidth + 0.18, 2.46, 0.12], new THREE.MeshStandardMaterial({ color: 0xc3a65e, roughness: 0.76 }), [x, 1.45, GABLE_Z - 0.105]);
+        const door = addBox(parent, [doorWidth, 2.26, 0.15], materials.garageRed, [x, 1.42, GABLE_Z], { radius: 0.035 });
         for (let row = -4; row <= 4; row += 1)
             addBox(door, [doorWidth * 0.95, 0.018, 0.025], materials.darkTrim, [0, row * 0.205, 0.085], { castShadow: false });
         addBox(door, [doorWidth * 0.88, 0.58, 0.035], materials.glass, [0, 0.61, 0.09], { castShadow: false });
+        [-0.44, 0, 0.44].forEach((offset) =>
+            addBox(door, [0.028, 0.58, 0.04], materials.garageRed, [offset, 0.61, 0.115], { castShadow: false }));
     });
 }
 
 function createGable(parent) {
-    addBox(parent, [6.45, 2.45, 0.18], materials.shingle, [0, 3.72, 5.08]);
+    addBox(parent, [6.45, 2.45, 0.18], materials.shingle, [0, 3.72, GABLE_Z - 0.10]);
     const shape = new THREE.Shape();
     shape.moveTo(-3.22, 0);
     shape.lineTo(0, 2.15);
     shape.lineTo(3.22, 0);
     shape.lineTo(-3.22, 0);
     const geometry = new THREE.ShapeGeometry(shape);
-    const triangle = addMesh(parent, geometry, materials.shingle, 0, 4.93, 5.18);
+    const triangle = addMesh(parent, geometry, materials.shingle, 0, 4.93, GABLE_Z);
     triangle.castShadow = true;
-    createWindow(parent, [-1.25, 4.42, 5.30], [0.72, 1.02]);
-    createWindow(parent, [1.25, 4.42, 5.30], [0.72, 1.02]);
+
+    [-2.18, -0.73, 0.73, 2.18].forEach((x) =>
+        createWindow(parent, [x, 3.92, GABLE_Z + 0.12], [0.56, 0.78]));
+    [-1.15, 1.15].forEach((x) =>
+        createWindow(parent, [x, 5.20, GABLE_Z + 0.12], [0.58, 0.84]));
+    addBox(parent, [0.48, 0.25, 0.12], materials.darkTrim, [0, 6.36, GABLE_Z + 0.12]);
+
+    const rearGeometry = new THREE.ShapeGeometry(shape);
+    const rearTriangle = addMesh(parent, rearGeometry, materials.wall, 0, 4.93, -GABLE_Z, {
+        rotation: [0, Math.PI, 0]
+    });
+    rearTriangle.castShadow = true;
+    createWindow(parent, [-1.05, 5.25, -GABLE_Z - 0.12], [0.58, 0.82], "back");
+    createWindow(parent, [1.05, 5.25, -GABLE_Z - 0.12], [0.58, 0.82], "back");
 }
+
+const PV_PANEL_Z = [2.42, 4.42, -2.85, -1.45];
 
 function createBalconyPanels(parent) {
     const railMaterial = new THREE.MeshStandardMaterial({ color: 0x49332f, roughness: 0.8 });
-    const sets = [1.55, -2.05];
-    sets.forEach((z) => {
-        addBox(parent, [0.82, 0.12, 2.82], materials.darkTrim, [3.52, 2.08, z]);
-        addBox(parent, [0.14, 0.14, 2.65], railMaterial, [3.45, 2.82, z]);
-        [-1.0, 0, 1.0].forEach((offset) =>
-            addBox(parent, [0.08, 1.05, 0.08], railMaterial, [3.45, 2.35, z + offset]));
-        for (let panelIndex = 0; panelIndex < 2; panelIndex += 1) {
+    const sets = [
+        { z: 3.52, length: 5.62, panelZ: PV_PANEL_Z.slice(0, 2) },
+        { z: -2.15, length: 3.58, panelZ: PV_PANEL_Z.slice(2) }
+    ];
+    sets.forEach((set) => {
+        addBox(parent, [0.82, 0.12, set.length], materials.darkTrim, [3.52, 2.08, set.z]);
+        addBox(parent, [0.14, 0.14, set.length - 0.16], railMaterial, [3.45, 2.82, set.z]);
+        for (let offset = -set.length / 2 + 0.20; offset <= set.length / 2 - 0.20; offset += 0.72)
+            addBox(parent, [0.08, 1.05, 0.08], railMaterial, [3.45, 2.35, set.z + offset]);
+        set.panelZ.forEach((panelZ) => {
             const panel = addBox(parent, [0.10, 1.12, 1.16], materials.solar,
-                [3.57, 2.36, z - 0.62 + panelIndex * 1.24], { radius: 0.025 });
+                [3.57, 2.36, panelZ], { radius: 0.025 });
             panel.rotation.z = -0.16;
             for (let row = -1; row <= 1; row += 1)
                 addBox(panel, [0.018, 0.012, 1.05], new THREE.MeshStandardMaterial({ color: 0x6688a2 }), [0.058, row * 0.31, 0], { castShadow: false });
-        }
+        });
     });
+}
+
+function createBayWindow(parent) {
+    const bay = new THREE.Group();
+    parent.add(bay);
+    const cornerAngle = Math.PI * 0.695;
+
+    // Der Erker läuft sichtbar um die Hausecke: Seitenfläche, breite Schräge und Rückfläche.
+    addBox(bay, [0.68, 2.34, 1.18], materials.wall, [3.49, 3.64, -5.45]);
+    addBox(bay, [1.10, 2.34, 0.44], materials.wall, [3.51, 3.64, -6.39], {
+        rotation: [0, cornerAngle, 0]
+    });
+    addBox(bay, [1.28, 2.34, 0.68], materials.wall, [2.62, 3.64, -6.49]);
+
+    addBox(bay, [0.74, 0.14, 1.24], materials.darkTrim, [3.50, 4.84, -5.45]);
+    addBox(bay, [1.16, 0.14, 0.50], materials.darkTrim, [3.51, 4.84, -6.39], {
+        rotation: [0, cornerAngle, 0]
+    });
+    addBox(bay, [1.34, 0.14, 0.74], materials.darkTrim, [2.62, 4.84, -6.50]);
+
+    createWindow(bay, [3.85, 3.70, -5.45], [0.72, 1.40], "side");
+    const cornerWindow = createWindow(bay, [3.76, 3.70, -6.57], [0.80, 1.40]);
+    cornerWindow.rotation.y = cornerAngle;
+    createWindow(bay, [2.62, 3.70, -6.85], [0.72, 1.40], "back");
+}
+
+function createJulietGuard(parent, z) {
+    const rail = new THREE.MeshStandardMaterial({ color: 0x747d82, metalness: 0.72, roughness: 0.30 });
+    addBox(parent, [0.07, 0.82, 1.30], materials.glass, [-3.57, 3.02, z], {
+        castShadow: false
+    });
+    addBox(parent, [0.10, 0.08, 1.46], rail, [-3.60, 3.45, z]);
+    [-0.68, 0.68].forEach((offset) =>
+        addBox(parent, [0.10, 0.92, 0.10], rail, [-3.60, 3.00, z + offset]));
+}
+
+function createWoodDoorWithCanopy(parent, position) {
+    const group = new THREE.Group();
+    group.position.set(...position);
+    group.rotation.y = -Math.PI / 2;
+    parent.add(group);
+
+    const wood = new THREE.MeshStandardMaterial({ color: 0x5b3424, roughness: 0.86 });
+    const canopyWood = new THREE.MeshStandardMaterial({ color: 0x3f2a20, roughness: 0.90 });
+    const metal = new THREE.MeshStandardMaterial({ color: 0xb9c1c5, metalness: 0.82, roughness: 0.26 });
+    addBox(group, [1.02, 2.12, 0.13], materials.darkTrim, [0, 0, 0]);
+    const door = addBox(group, [0.84, 1.96, 0.15], wood, [0, -0.02, 0.025]);
+    [-0.66, -0.30, 0.08, 0.46].forEach((y) =>
+        addBox(door, [0.76, 0.035, 0.025], canopyWood, [0, y, 0.09], { castShadow: false }));
+    addBox(group, [0.48, 0.42, 0.17], materials.glass, [0, 0.55, 0.05], { castShadow: false });
+    addMesh(group, new THREE.SphereGeometry(0.04, 10, 8), metal, 0.31, -0.12, 0.13, { castShadow: false });
+
+    const canopy = addBox(group, [1.42, 0.14, 0.92], canopyWood, [0, 1.28, 0.37]);
+    canopy.rotation.x = -0.16;
+    [-0.56, 0.56].forEach((x) =>
+        addBox(group, [0.09, 0.72, 0.09], canopyWood, [x, 0.96, 0.56]));
 }
 
 function createHouse() {
     const house = new THREE.Group();
     world.add(house);
 
-    addBox(house, [6.4, 4.9, 10.0], materials.wall, [0, 2.50, 0]);
-    addBox(house, [6.55, 0.62, 10.12], new THREE.MeshStandardMaterial({ color: 0x89755d, roughness: 0.94 }), [0, 0.31, 0]);
+    addBox(house, [HOUSE_WIDTH, 4.9, HOUSE_LENGTH], materials.wall, [0, 2.50, 0]);
+    addBox(house, [HOUSE_WIDTH + 0.15, 0.62, HOUSE_LENGTH + 0.12], new THREE.MeshStandardMaterial({ color: 0x89755d, roughness: 0.94 }), [0, 0.31, 0]);
     createRoof(house);
     createGarageDoors(house);
     createGable(house);
 
-    const sideZ = [3.35, 1.2, -1.0, -3.2];
-    sideZ.forEach((z, index) => {
-        createWindow(house, [3.275, 1.55, z], [0.74, 1.18], "side");
-        if (index !== 1)
-            createWindow(house, [3.275, 3.75, z], [0.74, 1.18], "side");
-    });
-    createWindow(house, [-3.275, 1.55, 3.1], [0.82, 1.18], "side");
-    createWindow(house, [-3.275, 3.75, 1.0], [0.82, 1.18], "side");
+    // Lange Balkonfassade aus IMG_7376/7377: Fenstergruppen und je eine Balkontür.
+    [5.30, 3.20, 1.00, -0.55, -5.25].forEach((z) =>
+        createWindow(house, [3.275, 1.48, z], [0.74, 1.16], "side"));
+    createWindow(house, [3.285, 3.66, 5.45], [1.24, 1.10], "side");
+    createDoor(house, [3.285, 3.58, 4.10], [0.78, 1.86], "side");
+    createWindow(house, [3.285, 3.66, 2.72], [1.24, 1.10], "side");
+    createDoor(house, [3.285, 3.58, 1.45], [0.78, 1.86], "side");
+    createWindow(house, [3.285, 3.66, -1.42], [0.72, 1.10], "side");
+    createDoor(house, [3.285, 3.58, -2.70], [0.78, 1.86], "side");
+    createDoor(house, [3.285, 3.58, -4.06], [0.78, 1.86], "side");
+    createDoor(house, [3.30, 1.35, -3.48], [0.80, 1.92], "side");
+    createBayWindow(house);
 
-    addBox(house, [0.14, 1.95, 0.92], materials.darkTrim, [3.30, 1.2, -4.05], { rotation: [0, Math.PI / 2, 0] });
-    addBox(house, [0.12, 1.78, 0.74], materials.glass, [3.38, 1.2, -4.05], { rotation: [0, Math.PI / 2, 0], castShadow: false });
+    // Gartenfassade aus IMG_7380/7381: unregelmäßige, tatsächlich sichtbare Öffnungen.
+    [5.22, 3.82, 2.42, 0.96, -0.62, -2.12, -5.02].forEach((z) =>
+        createWindow(house, [-3.275, 3.70, z], [z === 3.82 ? 0.92 : 0.72, 1.08], "side-back"));
+    createDoor(house, [-3.285, 3.58, -3.62], [1.18, 1.86], "side-back");
+    createJulietGuard(house, -3.62);
+    [5.12, 3.25, -0.35].forEach((z) =>
+        createWindow(house, [-3.275, 1.46, z], [0.78, 1.14], "side-back"));
+    createWoodDoorWithCanopy(house, [-3.285, 1.34, 1.22]);
+    createDoor(house, [-3.285, 1.34, -2.72], [0.82, 1.92], "side-back");
+    createWindow(house, [-3.275, 1.50, -4.78], [0.62, 0.92], "side-back");
+
+    // Weiße Heckenseite: zwei Fensterreihen; laut Foto gibt es hier keine Tür.
+    [-1.92, 0, 1.92].forEach((x) =>
+        createWindow(house, [x, 3.68, -GABLE_Z - 0.02], [0.72, 1.08], "back"));
+    [-1.90, -0.15].forEach((x) =>
+        createWindow(house, [x, 1.46, -GABLE_Z - 0.02], [0.78, 1.14], "back"));
+    createWindow(house, [1.66, 1.46, -GABLE_Z - 0.02], [0.78, 1.14], "back");
 
     createBalconyPanels(house);
     return house;
@@ -348,7 +489,7 @@ function createHouse() {
 
 function createSolarBank() {
     const bank = new THREE.Group();
-    bank.position.set(3.72, 0, 2.65);
+    bank.position.set(3.75, 2.08, -3.18);
     world.add(bank);
     const body = new THREE.MeshStandardMaterial({ color: 0x263a45, metalness: 0.38, roughness: 0.38 });
     const edge = new THREE.MeshStandardMaterial({ color: 0x0c1820, roughness: 0.5 });
@@ -405,20 +546,21 @@ function createCar(color, detailed = false) {
 function createVehicles() {
     const audi = createCar(0x008dc8, true);
     audi.scale.set(1.10, 1.17, 1.08);
-    audi.position.set(4.45, 0.02, 1.0);
+    audi.position.set(5.00, 0.02, 1.0);
     audi.rotation.y = Math.PI;
     world.add(audi);
 
-    const suv = createCar(0x11151a);
-    suv.scale.set(1.05, 1.08, 1.12);
-    suv.position.set(-1.75, 0.02, 7.25);
-    world.add(suv);
+    // IMG_7378: schwarzer Skoda Yeti mittig, kleiner schwarzer VW Fox ganz rechts.
+    const skodaYeti = createCar(0x11151a);
+    skodaYeti.scale.set(1.04, 1.16, 1.08);
+    skodaYeti.position.set(0, 0.02, 7.72);
+    world.add(skodaYeti);
 
-    const compact = createCar(0x15171b);
-    compact.scale.set(0.92, 0.90, 0.88);
-    compact.position.set(1.25, 0.02, 7.05);
-    compact.rotation.y = -0.08;
-    world.add(compact);
+    const vwFox = createCar(0x15171b);
+    vwFox.scale.set(0.82, 0.88, 0.80);
+    vwFox.position.set(2.10, 0.02, 7.48);
+    vwFox.rotation.y = -0.05;
+    world.add(vwFox);
     return audi;
 }
 
@@ -436,41 +578,42 @@ function createTree(x, z, scale = 1) {
 }
 
 function createGarden() {
-    addBox(world, [15.6, 0.25, 20.0], materials.grass, [0, -0.14, -0.2], { castShadow: false });
+    addBox(world, [23.0, 0.25, 22.8], materials.grass, [-1.50, -0.14, -0.55], { castShadow: false });
     addBox(world, [7.3, 0.06, 5.3], materials.paving, [0, 0.02, 7.3], { castShadow: false });
-    addBox(world, [2.4, 0.07, 10.0], materials.paving, [4.45, 0.03, 1.8], { castShadow: false });
+    addBox(world, [3.2, 0.07, 13.2], materials.paving, [4.80, 0.03, 0.20], { castShadow: false });
 
     const road = new THREE.MeshStandardMaterial({ color: 0x54595d, roughness: 1 });
     addBox(world, [15.8, 0.12, 2.3], road, [0, -0.02, 10.6], { castShadow: false });
 
-    addBox(world, [4.6, 0.42, 2.85], new THREE.MeshStandardMaterial({ color: 0xddd2bd, roughness: 0.8 }), [-1.45, 0.14, -7.15], { radius: 0.10 });
-    addBox(world, [4.15, 0.12, 2.40], materials.water, [-1.45, 0.42, -7.15], { radius: 0.12, castShadow: false });
+    const pool = new THREE.Group();
+    pool.position.set(-7.55, 0, -6.20);
+    pool.rotation.y = -Math.PI / 3;
+    world.add(pool);
+    const poolWall = new THREE.MeshStandardMaterial({ color: 0x374552, metalness: 0.22, roughness: 0.68 });
+    addBox(pool, [3.20, 1.02, 5.00], poolWall, [0, 0.50, 0], { radius: 0.12 });
+    addBox(pool, [2.84, 0.12, 4.64], materials.water, [0, 1.03, 0], { radius: 0.12, castShadow: false });
+    const poolRail = new THREE.MeshStandardMaterial({ color: 0xd7d9d5, roughness: 0.50 });
+    [-1.52, 1.52].forEach((x) => addBox(pool, [0.08, 0.08, 4.86], poolRail, [x, 1.08, 0]));
+    [-2.42, 2.42].forEach((z) => addBox(pool, [3.04, 0.08, 0.08], poolRail, [0, 1.08, z]));
 
-    const shed = new THREE.Group();
-    shed.position.set(2.5, 0, -7.1);
-    world.add(shed);
-    addBox(shed, [2.25, 2.0, 2.0], materials.wood, [0, 1.0, 0]);
-    addBox(shed, [2.65, 0.16, 1.38], materials.darkTrim, [-0.62, 2.17, 0], { rotation: [0, 0, 0.48] });
-    addBox(shed, [2.65, 0.16, 1.38], materials.darkTrim, [0.62, 2.17, 0], { rotation: [0, 0, -0.48] });
-    addBox(shed, [0.72, 1.45, 0.10], materials.darkTrim, [0, 0.85, 1.04]);
+    // Die große Fichte steht laut Fotoreihe auf der gegenüberliegenden Gartenseite.
+    createTree(0.35, -8.65, 0.94);
 
-    createTree(-4.55, -6.15, 1.18);
-    createTree(-5.75, -4.0, 0.72);
-
-    const hedge = new THREE.MeshStandardMaterial({ color: 0x315d31, roughness: 1 });
-    addBox(world, [0.75, 1.75, 8.0], hedge, [-6.25, 0.85, -3.2], { radius: 0.24 });
-    addBox(world, [7.0, 1.5, 0.70], hedge, [-2.6, 0.73, -9.35], { radius: 0.23 });
-
+    // Vor Garage und Autos bleibt die Einfahrt offen; hinten und an der Pool-Längsseite steht Holzzaun.
     const fence = new THREE.MeshStandardMaterial({ color: 0x6a5848, roughness: 1 });
-    for (let x = -6.0; x <= 6.0; x += 0.65)
-        addBox(world, [0.10, 0.82, 0.10], fence, [x, 0.39, 9.35]);
-    addBox(world, [12.2, 0.10, 0.10], fence, [0, 0.25, 9.35]);
-    addBox(world, [12.2, 0.10, 0.10], fence, [0, 0.64, 9.35]);
+    for (let x = -11.70; x <= 4.0; x += 0.70)
+        addBox(world, [0.10, 0.82, 0.10], fence, [x, 0.39, -10.65]);
+    addBox(world, [15.70, 0.10, 0.10], fence, [-3.85, 0.25, -10.65]);
+    addBox(world, [15.70, 0.10, 0.10], fence, [-3.85, 0.64, -10.65]);
+    for (let z = -10.0; z <= 9.0; z += 0.70)
+        addBox(world, [0.10, 0.82, 0.10], fence, [-11.70, 0.39, z]);
+    addBox(world, [0.10, 0.10, 19.2], fence, [-11.70, 0.25, -0.50]);
+    addBox(world, [0.10, 0.10, 19.2], fence, [-11.70, 0.64, -0.50]);
 }
 
 function createGridBox() {
     const group = new THREE.Group();
-    group.position.set(-4.65, 0, 7.65);
+    group.position.set(6.05, 0, -5.20);
     world.add(group);
     const casing = new THREE.MeshStandardMaterial({ color: 0xd9d9d1, roughness: 0.72 });
     addBox(group, [0.58, 1.05, 0.42], casing, [0, 0.55, 0], { radius: 0.05 });
@@ -532,24 +675,34 @@ function createFlow(id, points, color) {
     flows[id] = { curve, tube, pulses, active: false, reverse: false };
 }
 
-createFlow("pv", [
-    [3.62, 3.0, -1.7], [3.72, 2.2, -1.7], [3.72, 0.35, -1.7],
-    [3.72, 0.28, 2.0], [3.72, 1.0, 2.65]
-], colors.pv);
+const pvPanelAnchors = PV_PANEL_Z.map((z, index) => ({
+    id: "pv" + (index + 1),
+    anchor: new THREE.Vector3(3.72, 2.74, z),
+    z,
+    laneY: 2.10 + index * 0.09
+}));
+pvPanelAnchors.forEach((panel) => {
+    createFlow(panel.id, [
+        [3.64, 2.42, panel.z],
+        [3.82, 2.42, panel.z],
+        [3.84, panel.laneY, -3.08],
+        [3.76, 2.72, -3.18]
+    ], colors.pv);
+});
 createFlow("grid", [
-    [-4.65, 0.25, 7.65], [-4.65, 0.12, 6.5], [-3.65, 0.12, 5.4],
-    [3.25, 0.12, 5.4], [3.72, 0.25, 2.65], [3.72, 0.75, 2.65]
+    [6.05, 0.25, -5.20], [5.70, 0.12, -5.20], [4.45, 0.12, -5.20],
+    [4.00, 0.12, -4.30], [3.82, 0.16, -3.18], [3.76, 2.72, -3.18]
 ], colors.grid);
 createFlow("audi", [
-    [3.72, 0.72, 2.65], [4.05, 0.38, 2.65], [4.05, 0.24, 1.95],
-    [4.28, 0.28, 1.35], [4.45, 0.52, 0.25]
+    [3.76, 2.72, -3.18], [3.94, 2.40, -3.18], [3.94, 0.22, -3.18],
+    [4.52, 0.22, -0.45], [5.00, 0.52, 0.25]
 ], colors.audi);
 
 const labelAnchors = {
-    pv: new THREE.Vector3(3.78, 3.35, -1.7),
-    battery: new THREE.Vector3(3.78, 2.10, 2.65),
-    grid: new THREE.Vector3(-4.65, 1.65, 7.65),
-    audi: new THREE.Vector3(4.45, 1.80, 1.0)
+    pv: new THREE.Vector3(3.78, 3.34, 1.0),
+    battery: new THREE.Vector3(3.78, 4.12, -3.18),
+    grid: new THREE.Vector3(6.05, 1.65, -5.20),
+    audi: new THREE.Vector3(5.00, 1.80, 1.0)
 };
 
 const labelElements = {};
@@ -566,12 +719,23 @@ const labelElements = {};
     labelElements[id] = button;
 });
 
+const pvStringElements = {};
+pvPanelAnchors.forEach((panel, index) => {
+    const label = document.createElement("span");
+    label.className = "house-string-label";
+    label.dataset.string = panel.id;
+    label.textContent = "PV" + (index + 1) + " --";
+    stage.appendChild(label);
+    pvStringElements[panel.id] = label;
+});
+
 function componentData() {
     const solix = state.data.solix || {};
     const automation = state.data.automation || {};
     const audi = state.data.audi || {};
     const smartPlug = automation.smartplug || {};
     const pv = numberValue(solix.pv_total);
+    const pvStrings = [1, 2, 3, 4].map((number) => numberValue(solix["pv" + number]));
     const batterySoc = numberValue(solix.battery_percent) ?? numberValue(automation.solix_battery_percent);
     const batteryCharge = numberValue(solix.battery_charge_power) ?? 0;
     const batteryDischarge = numberValue(solix.battery_discharge_power) ??
@@ -586,7 +750,7 @@ function componentData() {
     return {
         pv: {
             id: "pv", label: "BALKON-PV", icon: "☀️", value: formatPower(pv), color: colors.pv,
-            detail: "Die Module an den Balkonen liefern zusammen " + formatPower(pv) + ".",
+            detail: pvStrings.map((value, index) => "PV" + (index + 1) + " " + formatPower(value)).join(" · "),
             active: pv != null && pv >= 5
         },
         battery: {
@@ -615,7 +779,7 @@ function componentData() {
                     audi.plug_connected === false ? "Ladestecker ist getrennt." : "Audi-Status wird geprüft.",
             active: charging
         },
-        raw: { pv, batterySoc, batteryCharge, batteryDischarge, output, grid, audiPower, charging }
+        raw: { pv, pvStrings, batterySoc, batteryCharge, batteryDischarge, output, grid, audiPower, charging }
     };
 }
 
@@ -632,7 +796,13 @@ function setFlowState(flow, active, reverse = false) {
 function updateLiveUi() {
     const components = componentData();
     const raw = components.raw;
-    setFlowState(flows.pv, raw.pv != null && raw.pv >= 5);
+    raw.pvStrings.forEach((power, index) => {
+        const id = "pv" + (index + 1);
+        setFlowState(flows[id], power != null && power >= 5);
+        const label = pvStringElements[id];
+        label.textContent = "PV" + (index + 1) + " " + formatPower(power);
+        label.classList.toggle("active", power != null && power >= 5);
+    });
     setFlowState(flows.grid, raw.grid != null && Math.abs(raw.grid) >= 5, raw.grid < 0);
     setFlowState(flows.audi, raw.charging && raw.output != null && raw.output >= 5);
 
@@ -659,25 +829,37 @@ function updateLabelPositions() {
     const rect = stage.getBoundingClientRect();
     const rootPosition = new THREE.Vector3();
     world.getWorldPosition(rootPosition);
-    const compactPositions = {
-        grid: [0.17, 0.54],
-        pv: [0.79, 0.28],
-        battery: [0.20, 0.72],
-        audi: [0.78, 0.72]
-    };
     Object.entries(labelAnchors).forEach(([id, localAnchor]) => {
         const anchor = world.localToWorld(localAnchor.clone());
         const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
         const projected = anchor.project(camera);
-        const compact = rect.width < 700;
-        const fixed = compactPositions[id];
-        const x = compact ? fixed[0] * rect.width :
-            THREE.MathUtils.clamp((projected.x * 0.5 + 0.5) * rect.width, 44, rect.width - 44);
-        const y = compact ? fixed[1] * rect.height :
-            THREE.MathUtils.clamp((-projected.y * 0.5 + 0.5) * rect.height, 34, rect.height - 58);
+        const x = THREE.MathUtils.clamp(
+            (projected.x * 0.5 + 0.5) * rect.width,
+            rect.width < 520 ? 34 : 44,
+            rect.width - (rect.width < 520 ? 34 : 44)
+        );
+        const y = THREE.MathUtils.clamp(
+            (-projected.y * 0.5 + 0.5) * rect.height,
+            28,
+            rect.height - 48
+        );
         const element = labelElements[id];
         element.style.left = x + "px";
         element.style.top = y + "px";
+        element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
+        element.style.setProperty("--scene-label-scale", THREE.MathUtils.clamp(0.36 + state.zoom * 0.24, 0.56, 1.04));
+    });
+
+    pvPanelAnchors.forEach((panel) => {
+        const anchor = world.localToWorld(panel.anchor.clone());
+        const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
+        const projected = anchor.project(camera);
+        const x = THREE.MathUtils.clamp((projected.x * 0.5 + 0.5) * rect.width, 30, rect.width - 30);
+        const y = THREE.MathUtils.clamp((-projected.y * 0.5 + 0.5) * rect.height, 24, rect.height - 42);
+        const element = pvStringElements[panel.id];
+        element.style.left = x + "px";
+        element.style.top = y + "px";
+        element.style.setProperty("--string-label-scale", THREE.MathUtils.clamp(0.34 + state.zoom * 0.22, 0.52, 1.02));
         element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
     });
 }
@@ -690,22 +872,53 @@ function resize() {
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
     camera.fov = width < 520 ? 46 : 39;
-    camera.position.set(width < 520 ? 14.6 : 12.8, width < 520 ? 10.7 : 9.1, width < 520 ? 18.6 : 16.0);
-    camera.lookAt(0, 2.1, 0);
+    const basePosition = new THREE.Vector3(
+        width < 520 ? 14.6 : 12.8,
+        width < 520 ? 10.7 : 9.1,
+        width < 520 ? 18.6 : 16.0
+    );
+    cameraBaseOffset.copy(basePosition).sub(cameraTarget);
+    camera.position.copy(cameraTarget).addScaledVector(cameraBaseOffset, 1 / state.zoom);
+    camera.lookAt(cameraTarget);
     camera.updateProjectionMatrix();
 }
 
+function pointerDistance() {
+    const pointers = Array.from(state.pointers.values());
+    if (pointers.length < 2)
+        return 0;
+    return Math.hypot(pointers[0].x - pointers[1].x, pointers[0].y - pointers[1].y);
+}
+
 canvas.addEventListener("pointerdown", (event) => {
-    state.pointerId = event.pointerId;
-    state.pointerStartX = event.clientX;
-    state.lastPointerX = event.clientX;
-    state.pointerMoved = false;
+    state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     canvas.setPointerCapture(event.pointerId);
+    if (state.pointers.size === 1) {
+        state.pointerStartX = event.clientX;
+        state.lastPointerX = event.clientX;
+        state.pointerMoved = false;
+    }
+    else if (state.pointers.size === 2) {
+        state.pinchStartDistance = pointerDistance();
+        state.pinchStartZoom = state.targetZoom;
+    }
 });
 
 canvas.addEventListener("pointermove", (event) => {
-    if (state.pointerId !== event.pointerId)
+    if (!state.pointers.has(event.pointerId))
         return;
+    state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (state.pointers.size >= 2) {
+        const distance = pointerDistance();
+        if (state.pinchStartDistance > 0)
+            state.targetZoom = THREE.MathUtils.clamp(
+                state.pinchStartZoom * distance / state.pinchStartDistance,
+                0.72,
+                2.45
+            );
+        state.pointerMoved = true;
+        return;
+    }
     const delta = event.clientX - state.lastPointerX;
     if (Math.abs(event.clientX - state.pointerStartX) > 5)
         state.pointerMoved = true;
@@ -714,16 +927,42 @@ canvas.addEventListener("pointermove", (event) => {
 });
 
 function finishPointer(event) {
-    if (state.pointerId !== event.pointerId)
+    if (!state.pointers.has(event.pointerId))
         return;
     if (canvas.hasPointerCapture(event.pointerId))
         canvas.releasePointerCapture(event.pointerId);
-    state.pointerId = null;
+    state.pointers.delete(event.pointerId);
+    if (state.pointers.size === 1) {
+        const remaining = Array.from(state.pointers.values())[0];
+        state.pointerStartX = remaining.x;
+        state.lastPointerX = remaining.x;
+    }
+    else {
+        state.pinchStartDistance = 0;
+    }
 }
 
 canvas.addEventListener("pointerup", finishPointer);
 canvas.addEventListener("pointercancel", finishPointer);
+canvas.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    state.targetZoom = THREE.MathUtils.clamp(
+        state.targetZoom * Math.exp(-event.deltaY * 0.0012),
+        0.72,
+        2.45
+    );
+}, { passive: false });
 canvas.addEventListener("keydown", (event) => {
+    if (event.key === "+" || event.key === "=") {
+        event.preventDefault();
+        state.targetZoom = Math.min(2.45, state.targetZoom + 0.16);
+        return;
+    }
+    if (event.key === "-" || event.key === "_") {
+        event.preventDefault();
+        state.targetZoom = Math.max(0.72, state.targetZoom - 0.16);
+        return;
+    }
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight")
         return;
     event.preventDefault();
@@ -732,6 +971,7 @@ canvas.addEventListener("keydown", (event) => {
 
 resetButton.addEventListener("click", () => {
     state.targetYaw = 0.78;
+    state.targetZoom = 1;
     state.selected = "battery";
     updateLiveUi();
 });
@@ -754,7 +994,10 @@ function animate(time) {
     const delta = Math.min(0.05, (time - state.lastTime) * 0.001 || 0.016);
     state.lastTime = time;
     state.yaw = THREE.MathUtils.damp(state.yaw, state.targetYaw, 10, delta);
+    state.zoom = THREE.MathUtils.damp(state.zoom, state.targetZoom, 10, delta);
     world.rotation.y = state.yaw;
+    camera.position.copy(cameraTarget).addScaledVector(cameraBaseOffset, 1 / state.zoom);
+    camera.lookAt(cameraTarget);
 
     if (!reduceMotion) {
         Object.values(flows).forEach((flow) => {

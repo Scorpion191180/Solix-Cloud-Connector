@@ -247,7 +247,7 @@ header p{
     height:100%;
     outline:none;
     cursor:grab;
-    touch-action:pan-y;
+    touch-action:none;
     user-select:none;
     -webkit-user-select:none;
 }
@@ -263,8 +263,8 @@ header p{
 .house-scene-label{
     position:absolute;
     z-index:4;
-    min-width:82px;
-    padding:7px 10px 8px;
+    min-width:66px;
+    padding:5px 7px 6px;
     border:1px solid rgba(148,163,184,.38);
     border-radius:12px;
     background:rgba(7,16,29,.82);
@@ -276,21 +276,21 @@ header p{
     line-height:1.05;
     text-align:left;
     pointer-events:auto;
-    transform:translate(-50%,-50%);
+    transform:translate(-50%,-50%) scale(var(--scene-label-scale,.84));
     transition:border-color .2s ease,box-shadow .2s ease,opacity .2s ease;
 }
 
 .house-scene-label small{
     display:block;
-    margin-bottom:4px;
+    margin-bottom:3px;
     color:#94a3b8;
-    font-size:7px;
+    font-size:6px;
     font-weight:900;
     letter-spacing:.09em;
 }
 
 .house-scene-label strong{
-    font-size:11px;
+    font-size:9px;
     font-weight:900;
     white-space:nowrap;
 }
@@ -306,6 +306,34 @@ header p{
 
 .house-scene-label.behind{
     opacity:.46;
+}
+
+.house-string-label{
+    position:absolute;
+    z-index:3;
+    padding:3px 5px;
+    border:1px solid rgba(250,204,21,.32);
+    border-radius:7px;
+    background:rgba(7,16,29,.76);
+    box-shadow:0 4px 12px rgba(2,8,23,.25);
+    color:#fde68a;
+    font-size:7px;
+    font-weight:850;
+    line-height:1;
+    white-space:nowrap;
+    pointer-events:none;
+    transform:translate(-50%,-50%) scale(var(--string-label-scale,.84));
+    transform-origin:center;
+    transition:opacity .2s ease,border-color .2s ease;
+}
+
+.house-string-label.active{
+    border-color:#facc15;
+    color:#fff7c2;
+}
+
+.house-string-label.behind{
+    opacity:.28;
 }
 
 .house-gesture,
@@ -1169,8 +1197,8 @@ header{
 }
 
 .house-scene-label{
-    min-width:72px;
-    padding:6px 8px 7px;
+    min-width:62px;
+    padding:5px 6px;
     border-radius:10px;
 }
 
@@ -1179,7 +1207,11 @@ header{
 }
 
 .house-scene-label strong{
-    font-size:10px;
+    font-size:9px;
+}
+
+.house-string-label{
+    font-size:6px;
 }
 
 .house-gesture{
