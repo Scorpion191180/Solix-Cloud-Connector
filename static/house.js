@@ -1126,7 +1126,7 @@ function loadDetailedVehicles(vehicles) {
     loadVehicleAsset(vehicles.audi, {
         name: "Audi Q3",
         url: "/static/models/audi-q3.glb",
-        length: 3.86,
+        length: 3.95,
         width: 1.84,
         paint: 0x008dc8
     });
@@ -1144,8 +1144,10 @@ function loadDetailedVehicles(vehicles) {
     loadVehicleAsset(vehicles.fox, {
         name: "Volkswagen Fox",
         url: "/static/models/vw-fox.glb",
-        length: 2.52,
-        width: 1.46,
+        // Maßstab passend zum 3,72 langen Yeti: Der echte Fox ist nur
+        // rund zehn Prozent kürzer, nicht ein Drittel.
+        length: 3.38,
+        width: 1.68,
         paint: 0x191d20
     });
 }

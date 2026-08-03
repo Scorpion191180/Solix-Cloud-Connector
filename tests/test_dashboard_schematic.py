@@ -21,9 +21,9 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260803-16", dashboard)
-        self.assertIn("house.js?v=20260803-16", dashboard)
-        self.assertIn("app.js?v=20260803-16", dashboard)
+        self.assertIn("style.css?v=20260803-18", dashboard)
+        self.assertIn("house.js?v=20260803-18", dashboard)
+        self.assertIn("app.js?v=20260803-18", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
 
@@ -122,6 +122,8 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("/static/models/vw-fox.glb", script)
         self.assertIn("function loadDetailedVehicles", script)
         self.assertIn("orientation: { x: -Math.PI }", script)
+        self.assertIn("length: 3.95", script)
+        self.assertIn("length: 3.38", script)
         self.assertIn("vehicle-credits", dashboard)
         self.assertIn('stage.classList.add("is-interacting")', script)
         self.assertIn('state.pointerMode === "pan"', script)
