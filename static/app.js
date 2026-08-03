@@ -8,6 +8,8 @@ let thresholdBusy = false;
 let thresholdDirty = false;
 let thresholdControlAvailable = false;
 let activeStartThreshold = 30;
+let latestAutomationData = null;
+let latestAudiData = null;
 
 const automationReasons = {
     automation_disabled: "Die Ladeautomatik ist deaktiviert.",
@@ -45,6 +47,118 @@ function getAutomationReason(data) {
         return "Solix-Akku zwischen " + stop + " % und " + start + " %: aktueller Zustand bleibt bestehen.";
 
     return automationReasons[data.reason] || "Automatik wartet auf neue Daten.";
+}
+
+function numericValue(value) {
+    if (value == null || typeof value === "boolean")
+        return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+}
+
+function formatChargingPower(watts) {
+    if (watts == null)
+        return "--";
+    if (Math.abs(watts) >= 1000)
+        return (watts / 1000).toLocaleString("de-DE", {
+            minimumFractionDigits: 1,
+            maximumFractionDigits: 2
+        }) + " kW";
+    return Math.round(watts).toLocaleString("de-DE") + " W";
+}
+
+function renderChargingFlow() {
+    const automation = latestAutomationData || {};
+    const audi = latestAudiData || {};
+    const smartPlug = automation.smartplug || {};
+    const smartPlugPower = numericValue(smartPlug.power_w);
+    const audiPowerKw = numericValue(audi.charging_power_kw);
+    const audiPower = audiPowerKw == null ? null : audiPowerKw * 1000;
+    const displayedPower = smartPlugPower ?? audiPower;
+    const current = numericValue(smartPlug.current_a);
+    const voltage = numericValue(smartPlug.voltage_v);
+    const audiStale = audi.stale === true || automation.audi_data_stale === true;
+    const cableConnected = audi.available === true ?
+        audi.plug_connected : automation.audi_plug_connected;
+    const measuredFlow = smartPlugPower == null ? null : smartPlugPower >= 20;
+    const audiReportsFlow = !audiStale && (
+        audi.charging === true || (audiPower != null && audiPower >= 20)
+    );
+    const flowing = measuredFlow == null ? audiReportsFlow : measuredFlow;
+
+    let stateClass = "unknown";
+    let stateLabel = "Wird geprüft";
+    let detail = "Audi- und Smart-Plug-Daten werden verbunden.";
+    let ticker = "--";
+
+    if (flowing) {
+        stateClass = "charging";
+        stateLabel = "Strom fließt in den Audi";
+        detail = smartPlugPower != null ?
+            "Direkt am Anker Smart Plug gemessen." :
+            "Der Ladevorgang wird von Audi Connect gemeldet.";
+        ticker = displayedPower == null ? "Lädt" : formatChargingPower(displayedPower);
+    }
+    else if (audiStale && smartPlugPower == null) {
+        stateLabel = "Audi-Daten veraltet";
+        detail = "Ohne aktuellen Leistungswert ist der Stromfluss nicht sicher feststellbar.";
+        ticker = "Unbekannt";
+    }
+    else if (cableConnected === false) {
+        stateClass = "off";
+        stateLabel = "Nicht verbunden";
+        detail = "Der Audi-Ladestecker ist nicht angeschlossen.";
+        ticker = "Getrennt";
+    }
+    else if (smartPlug.state === false) {
+        stateClass = "off";
+        stateLabel = "Kein Stromfluss";
+        detail = "Der Smart Plug ist ausgeschaltet.";
+        ticker = "Aus";
+    }
+    else if (smartPlug.state === true) {
+        stateClass = "standby";
+        stateLabel = "Kein Ladestrom";
+        detail = smartPlugPower != null && smartPlugPower > 0 ?
+            "Nur geringer Standby-Verbrauch – der Audi lädt nicht." :
+            "Smart Plug ist an, der Audi zieht aber keinen Ladestrom.";
+        ticker = "Kein Ladestrom";
+    }
+    else if (cableConnected === true) {
+        stateLabel = "Stecker verbunden";
+        detail = "Smart-Plug-Zustand und Ladeleistung werden noch geprüft.";
+        ticker = "Warte";
+    }
+
+    const visual = document.getElementById("chargingVisual");
+    visual.className = "charging-visual " + stateClass;
+    document.getElementById("chargePower").innerText =
+        formatChargingPower(displayedPower);
+    document.getElementById("chargeSourceSoc").innerText =
+        automation.solix_battery_percent == null ? "--" :
+        automation.solix_battery_percent + " %";
+    document.getElementById("chargeAudiSoc").innerText =
+        audi.battery_percent == null ? "--" : audi.battery_percent + " %";
+    document.getElementById("chargeFlowState").innerText = stateLabel;
+    document.getElementById("chargeFlowDetail").innerText = detail;
+    document.getElementById("tickerCharging").innerText = ticker;
+
+    let measurement = "Kein Leistungswert gemeldet";
+    if (smartPlugPower != null) {
+        measurement = "Anker-Messwert";
+        if (current != null)
+            measurement += " · " + current.toLocaleString("de-DE", {
+                maximumFractionDigits: 2
+            }) + " A";
+        if (voltage != null)
+            measurement += " · " + voltage.toLocaleString("de-DE", {
+                maximumFractionDigits: 1
+            }) + " V";
+    }
+    else if (audiPower != null) {
+        measurement = "Audi-Connect-Messwert";
+    }
+    document.getElementById("chargeMeasurement").innerText = measurement;
 }
 
 function refreshThresholdControls() {
@@ -228,6 +342,8 @@ async function updateAutomation() {
             throw new Error("Automation API: HTTP " + response.status);
 
         const data = await response.json();
+        latestAutomationData = data;
+        renderChargingFlow();
         const badge = document.getElementById("automationStatus");
 
         badge.className = "automation-badge";
@@ -292,6 +408,8 @@ async function updateAutomation() {
     }
     catch (e) {
 
+        latestAutomationData = null;
+        renderChargingFlow();
         const badge = document.getElementById("automationStatus");
         badge.className = "automation-badge error";
         badge.innerText = "Fehler";
@@ -370,6 +488,8 @@ async function updateAudi() {
             throw new Error("Audi API: HTTP " + response.status);
 
         const data = await response.json();
+        latestAudiData = data;
+        renderChargingFlow();
         if (!data.available)
             throw new Error(data.error || "Audi-Daten sind nicht verfügbar");
 
@@ -392,6 +512,8 @@ async function updateAudi() {
             data.electric_range_km + " km elektrisch";
     }
     catch (e) {
+        latestAudiData = null;
+        renderChargingFlow();
         document.getElementById("audiBattery").innerText = "nicht verfügbar";
         document.getElementById("tickerAudiBattery").innerText = "--";
         document.getElementById("audiRange").innerText = "Audi-Verbindung prüfen";

@@ -41,6 +41,7 @@
 <div class="live-ticker-values">
 <span>🔋 Akku <strong id="tickerBattery">--</strong></span>
 <span>🚗 Audi <strong id="tickerAudiBattery">--</strong></span>
+<span>⚡ Audi-Ladung <strong id="tickerCharging">--</strong></span>
 <span>☀️ PV <strong id="tickerPV">--</strong></span>
 <span>🏠 Haus <strong id="tickerHouse">--</strong></span>
 <span>📡 <strong id="tickerSource">Quelle wird geprüft</strong></span>
@@ -210,6 +211,41 @@ Signalstärke
 <h2>Audi über Solarbank laden</h2>
 </div>
 <span class="automation-badge pending" id="automationStatus">wird geprüft</span>
+</div>
+
+<div class="charging-visual unknown" id="chargingVisual" role="status" aria-live="polite">
+<div class="charging-flow-main">
+<div class="charging-device source">
+<span class="charging-device-icon">🔆</span>
+<small>Solarbank 4</small>
+<strong id="chargeSourceSoc">--</strong>
+</div>
+
+<div class="charging-bridge">
+<div class="charging-track" aria-hidden="true">
+<span></span>
+<span></span>
+<span></span>
+</div>
+<div class="charging-reading">
+<small>Ladeleistung</small>
+<strong id="chargePower">--</strong>
+<span id="chargeMeasurement">Messwert wird geladen</span>
+</div>
+</div>
+
+<div class="charging-device destination">
+<span class="charging-device-icon">🚙</span>
+<small>Audi Q3</small>
+<strong id="chargeAudiSoc">--</strong>
+</div>
+</div>
+
+<div class="charging-flow-status">
+<span class="charging-state-dot" aria-hidden="true"></span>
+<strong id="chargeFlowState">Wird geprüft</strong>
+<span id="chargeFlowDetail">Audi- und Smart-Plug-Daten werden verbunden.</span>
+</div>
 </div>
 
 <div class="automation-grid">
