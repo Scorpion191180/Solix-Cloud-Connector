@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 import os
 import ssl
@@ -17,6 +18,9 @@ from anker_solix_api.api import AnkerSolixApi
 
 DEFAULT_CACHE_SECONDS = 60
 MIN_CACHE_SECONDS = 30
+SMARTPLUG_TELEMETRY_WAIT_SECONDS = 1.0
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _integer_setting(name: str, default: int, minimum: int, maximum: int) -> int:
@@ -45,6 +49,7 @@ class SolixClient:
             "SMARTPLUG_COMMAND_TIMEOUT_SECONDS", 45, 10, 90
         )
         self._last_smartplug_state: bool | None = None
+        self._last_smartplug_telemetry_request = 0.0
         self._last_refresh_at: datetime | None = None
 
     async def _ensure_api_locked(self) -> None:
@@ -351,10 +356,56 @@ class SolixClient:
             "measurement_source": measurement_source,
         }
 
+    async def _request_smartplug_telemetry_locked(
+        self, serial: str, device: dict[str, Any]
+    ) -> None:
+        """Ask A17X8 for live measurements without changing its output."""
+        if (
+            device.get("mqtt_supported") is not True
+            or self.api is None
+            or not hasattr(self.api, "startMqttSession")
+        ):
+            return
+
+        request_age = time.monotonic() - self._last_smartplug_telemetry_request
+        if request_age < max(MIN_CACHE_SECONDS, self._cache_seconds):
+            return
+        self._last_smartplug_telemetry_request = time.monotonic()
+
+        try:
+            from anker_solix_api.mqtt_factory import SolixMqttDeviceFactory
+
+            mqtt_device = SolixMqttDeviceFactory(
+                api_instance=self.api, device_sn=serial
+            ).create_device()
+            if mqtt_device is None or not hasattr(mqtt_device, "status_request"):
+                return
+
+            mqtt_session = await self.api.startMqttSession()
+            if mqtt_session is None or not mqtt_session.is_connected():
+                return
+
+            topic = f"{mqtt_session.get_topic_prefix(deviceDict=device)}#"
+            mqtt_session.subscribe(topic)
+            published = await mqtt_device.status_request()
+            if published is None:
+                return
+
+            # The reply arrives on the MQTT callback thread. Give it a short
+            # window, then merge the latest cache once before returning.
+            await asyncio.sleep(SMARTPLUG_TELEMETRY_WAIT_SECONDS)
+            self.api.update_device_mqtt()
+        except Exception:
+            # Missing live telemetry must never interrupt the charging policy.
+            _LOGGER.warning(
+                "Smart-plug live telemetry request failed", exc_info=True
+            )
+
     async def get_smartplug_status(self) -> dict[str, Any]:
         await self.refresh()
         async with self._lock:
-            _, device = self._select_smartplug_locked()
+            serial, device = self._select_smartplug_locked()
+            await self._request_smartplug_telemetry_locked(serial, device)
             return self._smartplug_status_locked(device)
 
     async def set_smartplug_power(self, enabled: bool) -> dict[str, Any]:

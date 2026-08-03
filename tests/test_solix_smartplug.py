@@ -3,7 +3,7 @@ import time
 import unittest
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from solix.client import SolixClient
 
@@ -33,6 +33,46 @@ class FakeRefreshApi:
 
     async def update_device_energy(self):
         self.calls.append("device_energy")
+
+
+class FakeTelemetrySession:
+    def __init__(self):
+        self.topics = []
+
+    def is_connected(self):
+        return True
+
+    def get_topic_prefix(self, deviceDict):
+        return "dt/app/A17X8/SECRET-SERIAL/"
+
+    def subscribe(self, topic):
+        self.topics.append(topic)
+
+
+class FakeTelemetryApi:
+    def __init__(self, devices):
+        self.devices = devices
+        self.mqttsession = FakeTelemetrySession()
+        self.merged = 0
+
+    async def startMqttSession(self):
+        return self.mqttsession
+
+    def update_device_mqtt(self):
+        self.merged += 1
+
+
+class FakeTelemetryDevice:
+    def __init__(self, device):
+        self.device = device
+        self.requests = 0
+
+    async def status_request(self):
+        self.requests += 1
+        self.device.setdefault("mqtt_data", {}).update(
+            {"power": 2318.4, "current": 10.08, "voltage": 230.0}
+        )
+        return {}
 
 
 class SolixSmartPlugTests(unittest.IsolatedAsyncioTestCase):
@@ -111,6 +151,38 @@ class SolixSmartPlugTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(status["power_w"], 2300)
         self.assertEqual(status["measurement_source"], "cloud")
+
+    async def test_smartplug_requests_non_switching_live_telemetry(self):
+        device = {
+            "type": "smartplug",
+            "device_pn": "A17X8",
+            "device_sn": "SECRET-SERIAL",
+            "mqtt_supported": True,
+            "mqtt_data": {"ac_output_switch": 1},
+        }
+        client = SolixClient()
+        client.api = FakeTelemetryApi({"SECRET-SERIAL": device})
+        client._last_refresh = time.monotonic()
+        telemetry_device = FakeTelemetryDevice(device)
+
+        with (
+            patch(
+                "anker_solix_api.mqtt_factory.SolixMqttDeviceFactory"
+            ) as factory,
+            patch("solix.client.asyncio.sleep", new=AsyncMock()),
+        ):
+            factory.return_value.create_device.return_value = telemetry_device
+            status = await client.get_smartplug_status()
+
+        self.assertEqual(telemetry_device.requests, 1)
+        self.assertEqual(
+            client.api.mqttsession.topics,
+            ["dt/app/A17X8/SECRET-SERIAL/#"],
+        )
+        self.assertEqual(client.api.merged, 1)
+        self.assertEqual(status["power_w"], 2318.4)
+        self.assertEqual(status["current_a"], 10.08)
+        self.assertEqual(status["voltage_v"], 230)
 
     async def test_set_power_uses_supported_mqtt_device(self):
         client = self.make_client(
