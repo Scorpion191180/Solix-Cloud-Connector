@@ -353,14 +353,15 @@ function createRoof(parent) {
         roughness: 0.34
     });
     [
-        [-1.62, -2.72, 0.58, 0.76],
-        [-1.48, 2.34, 0.72, 0.92]
-    ].forEach(([x, z, width, length]) => {
+        [-1.62, -2.72, 0.58, 0.76, slope],
+        [-1.48, 2.34, 0.72, 0.92, slope],
+        [1.58, 4.48, 0.68, 0.86, -slope]
+    ].forEach(([x, z, width, length, tilt]) => {
         const roofY = 7.06 - Math.abs(x) * (2.15 / 3.55);
         addBox(parent, [width + 0.12, 0.08, length + 0.12], skylightFrame,
-            [x, roofY + 0.045, z], { rotation: [0, 0, slope] });
+            [x, roofY + 0.045, z], { rotation: [0, 0, tilt] });
         addBox(parent, [width, 0.09, length], materials.glass,
-            [x - 0.015, roofY + 0.085, z], { rotation: [0, 0, slope], castShadow: false });
+            [x - Math.sign(x) * 0.015, roofY + 0.085, z], { rotation: [0, 0, tilt], castShadow: false });
     });
 
     const chimneyMaterial = new THREE.MeshStandardMaterial({
@@ -502,6 +503,25 @@ function createWoodDoorWithCanopy(parent, position) {
         addBox(group, [0.09, 0.72, 0.09], canopyWood, [x, 0.96, 0.56]));
 }
 
+function createFrontWoodDoor(parent, position) {
+    const group = new THREE.Group();
+    group.position.set(...position);
+    group.rotation.y = Math.PI / 2;
+    parent.add(group);
+
+    const doorWood = new THREE.MeshStandardMaterial({ color: 0x4c2e25, roughness: 0.84 });
+    const panelWood = new THREE.MeshStandardMaterial({ color: 0x2f1d19, roughness: 0.90 });
+    const hardware = new THREE.MeshStandardMaterial({ color: 0xb9c1c5, metalness: 0.82, roughness: 0.24 });
+    addBox(group, [1.00, 2.10, 0.13], materials.darkTrim, [0, 0, 0]);
+    const door = addBox(group, [0.84, 1.96, 0.15], doorWood, [0, -0.02, 0.025]);
+    [-0.62, -0.27, 0.16, 0.52].forEach((y) =>
+        addBox(door, [0.72, 0.045, 0.025], panelWood, [0, y, 0.09], { castShadow: false }));
+    addBox(group, [0.46, 0.38, 0.17], materials.glass, [0, 0.56, 0.05], { castShadow: false });
+    addBox(group, [0.36, 0.055, 0.035], hardware, [0, -0.18, 0.13], { castShadow: false });
+    addMesh(group, new THREE.SphereGeometry(0.04, 10, 8), hardware,
+        0.31, -0.08, 0.13, { castShadow: false });
+}
+
 function createHouse() {
     const house = new THREE.Group();
     world.add(house);
@@ -513,7 +533,7 @@ function createHouse() {
     createGable(house);
 
     // Lange Balkonfassade aus IMG_7376/7377: Fenstergruppen und je eine Balkontür.
-    [5.30, 3.20, 1.00, -0.55, -5.25].forEach((z) =>
+    [4.90, 0.42, -0.55, -2.12, -5.20].forEach((z) =>
         createWindow(house, [3.275, 1.48, z], [0.74, 1.16], "side"));
     createWindow(house, [3.285, 3.66, 5.45], [1.24, 1.10], "side");
     createDoor(house, [3.285, 3.58, 4.10], [0.78, 1.86], "side");
@@ -523,7 +543,8 @@ function createHouse() {
     createWindow(house, [3.285, 3.66, -1.42], [0.72, 1.10], "side");
     createDoor(house, [3.285, 3.58, -2.70], [0.78, 1.86], "side");
     createDoor(house, [3.285, 3.58, -4.06], [0.78, 1.86], "side");
-    createDoor(house, [3.30, 1.35, -3.48], [0.80, 1.92], "side");
+    createFrontWoodDoor(house, [3.30, 1.35, -3.32]);
+    createDoor(house, [3.30, 1.35, -4.43], [0.80, 1.92], "side");
     createBayWindow(house);
 
     // Gartenfassade aus IMG_7397: dunkler Garagenabschnitt und acht Öffnungen in Fotoreihenfolge.
