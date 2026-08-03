@@ -464,6 +464,23 @@ header p{
     font-weight:700;
 }
 
+.vehicle-credits{
+    margin:10px 2px 0;
+    color:#64748b;
+    font-size:8px;
+    line-height:1.5;
+}
+
+.vehicle-credits a{
+    color:#94a3b8;
+    text-decoration:none;
+}
+
+.vehicle-credits a:hover{
+    color:#cbd5e1;
+    text-decoration:underline;
+}
+
 .container:not(.technical-open) .technical-panel{
     display:none;
 }

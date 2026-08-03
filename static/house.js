@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 
 const canvas = document.getElementById("houseCanvas");
 const stage = document.getElementById("houseStage");
@@ -985,24 +987,164 @@ function createCar(color, model = "generic") {
 }
 
 function createVehicles() {
-    const audi = createCar(0x008dc8, "audi-q3");
-    audi.scale.set(1.10, 1.17, 1.08);
-    audi.position.set(5.00, 0.02, 1.0);
-    audi.rotation.y = Math.PI;
-    world.add(audi);
+    const audiSlot = new THREE.Group();
+    audiSlot.position.set(5.00, 0.02, 1.0);
+    audiSlot.rotation.y = Math.PI;
+    world.add(audiSlot);
+    const audiFallback = createCar(0x008dc8, "audi-q3");
+    audiFallback.scale.set(1.10, 1.17, 1.08);
+    audiSlot.add(audiFallback);
 
     // IMG_7378: schwarzer Skoda Yeti mittig, kleiner schwarzer VW Fox ganz rechts.
-    const skodaYeti = createCar(0x1b2329, "skoda-yeti");
-    skodaYeti.scale.set(1.04, 1.16, 1.08);
-    skodaYeti.position.set(0, 0.02, 8.72);
-    world.add(skodaYeti);
+    const yetiSlot = new THREE.Group();
+    yetiSlot.position.set(0, 0.02, 8.72);
+    world.add(yetiSlot);
+    const yetiFallback = createCar(0x1b2329, "skoda-yeti");
+    yetiFallback.scale.set(1.04, 1.16, 1.08);
+    yetiSlot.add(yetiFallback);
 
-    const vwFox = createCar(0x202327, "vw-fox");
-    vwFox.scale.set(0.82, 0.88, 0.80);
-    vwFox.position.set(2.10, 0.02, 8.45);
-    vwFox.rotation.y = -0.05;
-    world.add(vwFox);
-    return audi;
+    const foxSlot = new THREE.Group();
+    foxSlot.position.set(2.10, 0.02, 8.45);
+    foxSlot.rotation.y = -0.05;
+    world.add(foxSlot);
+    const foxFallback = createCar(0x202327, "vw-fox");
+    foxFallback.scale.set(0.82, 0.88, 0.80);
+    foxSlot.add(foxFallback);
+
+    return {
+        audi: { slot: audiSlot, fallback: audiFallback },
+        yeti: { slot: yetiSlot, fallback: yetiFallback },
+        fox: { slot: foxSlot, fallback: foxFallback }
+    };
+}
+
+const vehicleLoader = new GLTFLoader();
+vehicleLoader.setMeshoptDecoder(MeshoptDecoder);
+
+function tuneVehicleMaterials(model, paintColor) {
+    model.traverse((object) => {
+        if (!object.isMesh)
+            return;
+        object.castShadow = true;
+        object.receiveShadow = true;
+        const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
+        const tunedMaterials = sourceMaterials.map((source) => {
+            const material = source.clone();
+            const name = (material.name || "").toLowerCase();
+            const isGlass = name.includes("window") || name.includes("glass");
+            if (name.includes("carpaint") || name === "body") {
+                material.color.setHex(paintColor);
+                material.metalness = 0.70;
+                material.roughness = 0.20;
+            }
+            if (isGlass) {
+                material.transparent = true;
+                material.opacity = Math.min(material.opacity ?? 1, 0.72);
+                material.depthWrite = false;
+                object.castShadow = false;
+            }
+            else {
+                // Einige frei verfügbare Fahrzeugdateien markieren selbst Lack,
+                // Reifen und Innenraum fälschlich als transparent (z. B. 25 %).
+                material.transparent = false;
+                material.opacity = 1;
+                material.depthWrite = true;
+                material.alphaTest = 0;
+            }
+            if (name.includes("light") && material.color) {
+                material.emissive = material.color.clone().multiplyScalar(0.32);
+                material.emissiveIntensity = 0.72;
+            }
+            material.needsUpdate = true;
+            return material;
+        });
+        object.material = Array.isArray(object.material) ? tunedMaterials : tunedMaterials[0];
+    });
+}
+
+function normalizeVehicleModel(model, targetLength, paintColor, orientation = {}) {
+    model.updateMatrixWorld(true);
+    let bounds = new THREE.Box3().setFromObject(model);
+    const initialSize = bounds.getSize(new THREE.Vector3());
+    const longestAxis = [
+        ["x", initialSize.x],
+        ["y", initialSize.y],
+        ["z", initialSize.z]
+    ].sort((a, b) => b[1] - a[1])[0][0];
+    // Sketchfab-Dateien können ihre Fahrzeuglänge auf X, Y oder Z ablegen.
+    // Die längste Achse wird deshalb zuerst zuverlässig auf unsere Z-Achse gelegt.
+    if (longestAxis === "x")
+        model.rotation.y += Math.PI / 2;
+    else if (longestAxis === "y")
+        model.rotation.x += Math.PI / 2;
+    model.rotation.x += orientation.x || 0;
+    model.rotation.y += orientation.y || 0;
+    model.rotation.z += orientation.z || 0;
+    model.updateMatrixWorld(true);
+    bounds = new THREE.Box3().setFromObject(model);
+    const orientedSize = bounds.getSize(new THREE.Vector3());
+    const horizontalLength = Math.max(orientedSize.x, orientedSize.z);
+    model.scale.multiplyScalar(targetLength / Math.max(horizontalLength, 0.001));
+    model.updateMatrixWorld(true);
+    bounds = new THREE.Box3().setFromObject(model);
+    const center = bounds.getCenter(new THREE.Vector3());
+    model.position.x -= center.x;
+    model.position.y -= bounds.min.y;
+    model.position.z -= center.z;
+    tuneVehicleMaterials(model, paintColor);
+}
+
+function loadVehicleAsset(vehicle, config) {
+    vehicleLoader.load(config.url, (gltf) => {
+        const model = gltf.scene;
+        model.name = config.name;
+        normalizeVehicleModel(model, config.length, config.paint, config.orientation);
+        vehicle.slot.add(model);
+
+        const shadowMaterial = new THREE.MeshBasicMaterial({
+            color: 0x050708,
+            transparent: true,
+            opacity: 0.30,
+            depthWrite: false
+        });
+        const shadow = addMesh(vehicle.slot, new THREE.CircleGeometry(1, 40), shadowMaterial,
+            0, 0.015, 0, {
+                rotation: [-Math.PI / 2, 0, 0],
+                castShadow: false,
+                receiveShadow: false
+            });
+        shadow.scale.set(config.width * 0.46, config.length * 0.46, 1);
+        vehicle.slot.remove(vehicle.fallback);
+        vehicle.slot.userData.assetLoaded = true;
+    }, undefined, () => {
+        // Bei einem Netzfehler bleibt das vorhandene prozedurale Fahrzeug sichtbar.
+        vehicle.slot.userData.assetLoaded = false;
+    });
+}
+
+function loadDetailedVehicles(vehicles) {
+    loadVehicleAsset(vehicles.audi, {
+        name: "Audi Q3",
+        url: "/static/models/audi-q3.glb",
+        length: 3.86,
+        width: 1.84,
+        paint: 0x008dc8
+    });
+    loadVehicleAsset(vehicles.yeti, {
+        name: "Skoda Yeti",
+        url: "/static/models/skoda-yeti.glb",
+        length: 3.72,
+        width: 1.78,
+        paint: 0x161d22,
+        orientation: { z: Math.PI }
+    });
+    loadVehicleAsset(vehicles.fox, {
+        name: "Volkswagen Fox",
+        url: "/static/models/vw-fox.glb",
+        length: 2.52,
+        width: 1.46,
+        paint: 0x191d20
+    });
 }
 
 function createTree(x, z, scale = 1) {
@@ -1135,7 +1277,9 @@ function createGridBox() {
 createGarden();
 createHouse();
 createSolarBank();
-const audiModel = createVehicles();
+const vehicleModels = createVehicles();
+const audiModel = vehicleModels.audi.slot;
+loadDetailedVehicles(vehicleModels);
 createGridBox();
 
 const hemisphere = new THREE.HemisphereLight(0xd9efff, 0x34452d, 1.58);

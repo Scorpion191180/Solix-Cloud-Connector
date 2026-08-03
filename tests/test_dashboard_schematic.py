@@ -21,9 +21,9 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260803-13", dashboard)
-        self.assertIn("house.js?v=20260803-13", dashboard)
-        self.assertIn("app.js?v=20260803-13", dashboard)
+        self.assertIn("style.css?v=20260803-15", dashboard)
+        self.assertIn("house.js?v=20260803-15", dashboard)
+        self.assertIn("app.js?v=20260803-15", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
 
@@ -87,8 +87,8 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertNotIn("createTree(1.10, -8.55, 0.72)", script)
         self.assertIn("[10.05, 0.07, 6.1]", script)
         self.assertIn("[3.2, 0.07, 13.2]", script)
-        self.assertIn("skodaYeti.position.set(0, 0.02, 8.72)", script)
-        self.assertIn("vwFox.position.set(2.10, 0.02, 8.45)", script)
+        self.assertIn("yetiSlot.position.set(0, 0.02, 8.72)", script)
+        self.assertIn("foxSlot.position.set(2.10, 0.02, 8.45)", script)
         self.assertIn("group.position.set(6.05, 0, -5.20)", script)
         self.assertIn("new THREE.Vector3(6.05, 1.65, -5.20)", script)
         self.assertIn("function createCableCurve", script)
@@ -115,6 +115,14 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('createCar(0x202327, "vw-fox")', script)
         self.assertIn("function createCarBodyShell", script)
         self.assertIn("function createDetailedWheel", script)
+        self.assertIn("GLTFLoader", script)
+        self.assertIn("MeshoptDecoder", script)
+        self.assertIn("/static/models/audi-q3.glb", script)
+        self.assertIn("/static/models/skoda-yeti.glb", script)
+        self.assertIn("/static/models/vw-fox.glb", script)
+        self.assertIn("function loadDetailedVehicles", script)
+        self.assertIn("orientation: { z: Math.PI }", script)
+        self.assertIn("vehicle-credits", dashboard)
         self.assertIn('stage.classList.add("is-interacting")', script)
         self.assertIn('state.pointerMode === "pan"', script)
         self.assertIn('addEventListener("contextmenu"', script)
@@ -132,6 +140,19 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn(".energy-diagram", stylesheet)
         self.assertIn("min-width:0", stylesheet)
         self.assertIn(".container:not(.technical-open) .technical-panel", stylesheet)
+
+    def test_vehicle_assets_are_web_optimized_and_attributed(self) -> None:
+        dashboard = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+        attributions = (ROOT / "static" / "models" / "ATTRIBUTIONS.md").read_text(encoding="utf-8")
+
+        for filename in ("audi-q3.glb", "skoda-yeti.glb", "vw-fox.glb"):
+            asset = ROOT / "static" / "models" / filename
+            self.assertTrue(asset.exists())
+            self.assertLess(asset.stat().st_size, 2_000_000)
+
+        self.assertIn("2023 Audi Q3 40 TFSI", dashboard)
+        self.assertIn("Ddiaz Design", dashboard)
+        self.assertIn("CC BY-NC-SA 4.0", attributions)
 
 
 if __name__ == "__main__":
