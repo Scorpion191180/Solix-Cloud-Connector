@@ -192,6 +192,13 @@ class SolixClient:
             if configured_capacity
             else to_int(solarbank.get("battery_energy"))
         )
+        battery_charge_power = to_int(solarbank.get("bat_charge_power"))
+        battery_discharge_power = to_int(solarbank.get("bat_discharge_power"))
+        battery_power = (
+            battery_charge_power
+            if battery_charge_power > 0
+            else -battery_discharge_power
+        )
 
         return {
             "status": solarbank.get("status_desc"),
@@ -201,7 +208,18 @@ class SolixClient:
             "battery_capacity_source": (
                 "configured" if configured_capacity else "cloud"
             ),
-            "battery_power": to_int(solarbank.get("bat_charge_power")),
+            "battery_power": battery_power,
+            "battery_charge_power": battery_charge_power,
+            "battery_discharge_power": battery_discharge_power,
+            "battery_flow_direction": (
+                "charging"
+                if battery_charge_power > 0
+                else "discharging"
+                if battery_discharge_power > 0
+                else "idle"
+            ),
+            "system_output_power": to_int(solarbank.get("output_power")),
+            "charging_status": solarbank.get("charging_status_desc"),
             "pv_total": sum(
                 to_int(solarbank.get(f"solar_power_{number}"))
                 for number in range(1, 5)

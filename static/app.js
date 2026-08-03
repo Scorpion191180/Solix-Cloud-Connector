@@ -8,6 +8,7 @@ let thresholdBusy = false;
 let thresholdDirty = false;
 let thresholdControlAvailable = false;
 let activeStartThreshold = 30;
+let latestSolixData = null;
 let latestAutomationData = null;
 let latestAudiData = null;
 
@@ -65,6 +66,192 @@ function formatChargingPower(watts) {
             maximumFractionDigits: 2
         }) + " kW";
     return Math.round(watts).toLocaleString("de-DE") + " W";
+}
+
+function setDiagramText(id, value) {
+    const element = document.getElementById(id);
+    if (element)
+        element.textContent = value;
+}
+
+function setDiagramLink(id, active, reverse = false) {
+    const link = document.getElementById(id);
+    if (!link)
+        return;
+    link.classList.toggle("active", active);
+    link.classList.toggle("reverse", active && reverse);
+}
+
+function setDiagramNode(id, state) {
+    const node = document.getElementById(id);
+    if (!node)
+        return;
+    node.classList.remove("active", "charging", "standby", "offline");
+    node.classList.add(state);
+}
+
+function formatRemainingTime(minutes) {
+    const value = numericValue(minutes);
+    if (value == null || value <= 0)
+        return null;
+    const hours = Math.floor(value / 60);
+    const rest = Math.round(value % 60);
+    if (hours === 0)
+        return rest + " Min.";
+    return hours + " Std." + (rest ? " " + rest + " Min." : "");
+}
+
+function renderEnergyDiagram() {
+    const solix = latestSolixData || {};
+    const automation = latestAutomationData || {};
+    const audi = latestAudiData || {};
+    const smartPlug = automation.smartplug || {};
+
+    const pvTotal = numericValue(solix.pv_total);
+    const batterySoc = numericValue(solix.battery_percent) ??
+        numericValue(automation.solix_battery_percent);
+    const batteryCharge = numericValue(solix.battery_charge_power) ?? 0;
+    const batteryDischarge = numericValue(solix.battery_discharge_power) ??
+        Math.max(0, -(numericValue(solix.battery_power) ?? 0));
+    const systemOutput = numericValue(solix.system_output_power) ??
+        numericValue(solix.home_load);
+    const homeLoad = numericValue(solix.home_load);
+    const gridPower = numericValue(solix.grid_power);
+    const smartPlugPower = numericValue(smartPlug.power_w);
+    const audiPowerKw = numericValue(audi.charging_power_kw);
+    const audiPower = smartPlugPower ??
+        (audiPowerKw == null ? null : audiPowerKw * 1000);
+    const audiStale = audi.stale === true || automation.audi_data_stale === true;
+    const cableConnected = audi.available === true ?
+        audi.plug_connected : automation.audi_plug_connected;
+    const measuredCharging = smartPlugPower == null ? null : smartPlugPower >= 20;
+    const charging = measuredCharging ?? (
+        !audiStale && (audi.charging === true || (audiPower != null && audiPower >= 20))
+    );
+    const otherLoad = homeLoad == null ? null :
+        Math.max(0, homeLoad - (smartPlugPower ?? 0));
+
+    setDiagramText("diagramPvTotal", formatChargingPower(pvTotal));
+    for (let number = 1; number <= 4; number += 1)
+        setDiagramText(
+            "diagramPv" + number,
+            formatChargingPower(numericValue(solix["pv" + number]))
+        );
+
+    setDiagramText(
+        "diagramBatterySoc",
+        batterySoc == null ? "--" : Math.round(batterySoc) + " %"
+    );
+    let batteryState = "Akku im Bereitschaftsmodus";
+    let batteryPowerText = "0 W Akku-Leistung";
+    if (batteryCharge >= 5) {
+        batteryState = "Akku wird geladen";
+        batteryPowerText = formatChargingPower(batteryCharge) + " in den Akku";
+    }
+    else if (batteryDischarge >= 5) {
+        batteryState = "Akku liefert Energie";
+        batteryPowerText = formatChargingPower(batteryDischarge) + " aus dem Akku";
+    }
+    setDiagramText("diagramBatteryState", batteryState);
+    setDiagramText("diagramBatteryPower", batteryPowerText);
+
+    setDiagramText("diagramGridPower", formatChargingPower(
+        gridPower == null ? null : Math.abs(gridPower)
+    ));
+    setDiagramText(
+        "diagramGridState",
+        gridPower == null ? "Wert nicht verfügbar" :
+        gridPower > 5 ? "Netzbezug" :
+        gridPower < -5 ? "Netzeinspeisung" : "Kein Netzfluss"
+    );
+    setDiagramText("diagramHomePower", formatChargingPower(homeLoad));
+    setDiagramText("diagramOtherPower", formatChargingPower(otherLoad));
+
+    const current = numericValue(smartPlug.current_a);
+    setDiagramText("diagramPlugPower", formatChargingPower(smartPlugPower));
+    setDiagramText(
+        "diagramPlugState",
+        smartPlug.state === true ?
+            "Eingeschaltet" + (current == null ? "" : " · " +
+                current.toLocaleString("de-DE", { maximumFractionDigits: 2 }) + " A") :
+        smartPlug.state === false ? "Ausgeschaltet" :
+        smartPlug.available ? "Bereit" : "Nicht gefunden"
+    );
+
+    setDiagramText(
+        "diagramAudiSoc",
+        audi.battery_percent == null ? "--" : audi.battery_percent + " %"
+    );
+    const remaining = formatRemainingTime(audi.remaining_charging_minutes);
+    let audiState = "Status wird geprüft";
+    if (audiStale)
+        audiState = "Audi-Daten veraltet";
+    else if (charging)
+        audiState = "Lädt" + (remaining ? " · noch " + remaining : "");
+    else if (cableConnected === true)
+        audiState = "Stecker verbunden · wartet";
+    else if (cableConnected === false)
+        audiState = "Ladestecker getrennt";
+    setDiagramText("diagramAudiState", audiState);
+
+    setDiagramText("diagramPvLink", formatChargingPower(pvTotal));
+    setDiagramText("diagramSolixLink", formatChargingPower(systemOutput));
+    setDiagramText("diagramGridLink", formatChargingPower(
+        gridPower == null ? null : Math.abs(gridPower)
+    ));
+    setDiagramText("diagramOtherLink", formatChargingPower(otherLoad));
+    setDiagramText("diagramPlugLink", formatChargingPower(audiPower));
+    setDiagramText("diagramAudiLink", formatChargingPower(audiPower));
+
+    setDiagramLink("diagramLinkPv", pvTotal != null && pvTotal >= 5);
+    setDiagramLink("diagramLinkSolix", systemOutput != null && systemOutput >= 5);
+    setDiagramLink("diagramLinkGrid", gridPower != null && Math.abs(gridPower) >= 5, gridPower < 0);
+    setDiagramLink("diagramLinkOther", otherLoad != null && otherLoad >= 5);
+    setDiagramLink("diagramLinkPlug", charging);
+    setDiagramLink("diagramLinkAudi", charging);
+
+    setDiagramNode("diagramNodePv", pvTotal != null && pvTotal >= 5 ? "active" : "standby");
+    setDiagramNode(
+        "diagramNodeSolix",
+        batteryCharge >= 5 ? "charging" :
+        batteryDischarge >= 5 || (systemOutput != null && systemOutput >= 5) ? "active" : "standby"
+    );
+    setDiagramNode("diagramNodeGrid", gridPower != null && Math.abs(gridPower) >= 5 ? "active" : "offline");
+    setDiagramNode("diagramNodeHome", homeLoad != null && homeLoad >= 5 ? "active" : "standby");
+    setDiagramNode("diagramNodeOther", otherLoad != null && otherLoad >= 5 ? "active" : "offline");
+    setDiagramNode(
+        "diagramNodePlug",
+        charging ? "charging" : smartPlug.state === true ? "standby" : "offline"
+    );
+    setDiagramNode(
+        "diagramNodeAudi",
+        charging ? "charging" : cableConnected === true ? "standby" : "offline"
+    );
+
+    if (latestSolixData) {
+        const updateTime = solix.last_update ? new Date(solix.last_update) : null;
+        setDiagramText(
+            "diagramUpdate",
+            updateTime && !Number.isNaN(updateTime.getTime()) ?
+                "Live-Stand " + updateTime.toLocaleTimeString("de-DE") : "Live verbunden"
+        );
+    }
+
+    const summaryParts = [];
+    if (pvTotal != null)
+        summaryParts.push("PV " + formatChargingPower(pvTotal));
+    if (batteryDischarge >= 5)
+        summaryParts.push("Akku liefert " + formatChargingPower(batteryDischarge));
+    else if (batteryCharge >= 5)
+        summaryParts.push("Akku lädt mit " + formatChargingPower(batteryCharge));
+    if (systemOutput != null)
+        summaryParts.push("Solarbank-Ausgang " + formatChargingPower(systemOutput));
+    if (charging && audiPower != null)
+        summaryParts.push("Audi-Ladung " + formatChargingPower(audiPower));
+    setDiagramText(
+        "diagramSummary",
+        summaryParts.length ? summaryParts.join(" · ") : "Live-Energiefluss wird aufgebaut …"
+    );
 }
 
 function renderChargingFlow() {
@@ -236,6 +423,8 @@ async function updateDashboard() {
         const data =
             await response.json();
 
+        latestSolixData = data;
+
         const cloudTime = data.last_update ? new Date(data.last_update) : new Date();
         lastRefresh = Number.isNaN(cloudTime.getTime()) ? new Date() : cloudTime;
         refreshIntervalSeconds = data.refresh_interval_seconds || 30;
@@ -263,18 +452,6 @@ async function updateDashboard() {
 
         document.getElementById("wifi").innerText =
             data.wifi_signal + " %";
-
-        document.getElementById("flowPV").innerText =
-            data.pv_total + " W";
-
-        document.getElementById("flowBattery").innerText =
-            data.battery_percent + " %";
-
-        document.getElementById("flowHouse").innerText =
-            data.home_load + " W";
-
-        document.getElementById("flowGrid").innerText =
-            data.grid_power + " W";
 
         document.getElementById("pv1").innerText =
             data.pv1 + " W";
@@ -310,10 +487,13 @@ async function updateDashboard() {
         setPVBar("pv2bar", data.pv2);
         setPVBar("pv3bar", data.pv3);
         setPVBar("pv4bar", data.pv4);
+        renderEnergyDiagram();
 
     }
     catch (e) {
 
+        latestSolixData = null;
+        renderEnergyDiagram();
         document.getElementById("liveState").innerText = "FEHLER";
         document.querySelector(".status").classList.add("error");
         console.log(e);
@@ -344,6 +524,7 @@ async function updateAutomation() {
         const data = await response.json();
         latestAutomationData = data;
         renderChargingFlow();
+        renderEnergyDiagram();
         const badge = document.getElementById("automationStatus");
 
         badge.className = "automation-badge";
@@ -410,6 +591,7 @@ async function updateAutomation() {
 
         latestAutomationData = null;
         renderChargingFlow();
+        renderEnergyDiagram();
         const badge = document.getElementById("automationStatus");
         badge.className = "automation-badge error";
         badge.innerText = "Fehler";
@@ -490,6 +672,7 @@ async function updateAudi() {
         const data = await response.json();
         latestAudiData = data;
         renderChargingFlow();
+        renderEnergyDiagram();
         if (!data.available)
             throw new Error(data.error || "Audi-Daten sind nicht verfügbar");
 
@@ -514,6 +697,7 @@ async function updateAudi() {
     catch (e) {
         latestAudiData = null;
         renderChargingFlow();
+        renderEnergyDiagram();
         document.getElementById("audiBattery").innerText = "nicht verfügbar";
         document.getElementById("tickerAudiBattery").innerText = "--";
         document.getElementById("audiRange").innerText = "Audi-Verbindung prüfen";
