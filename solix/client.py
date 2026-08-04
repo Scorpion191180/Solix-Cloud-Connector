@@ -14,10 +14,12 @@ from typing import Any
 import aiohttp
 import certifi
 from anker_solix_api.api import AnkerSolixApi
+from anker_solix_api.errors import AuthorizationError
 
 
 DEFAULT_CACHE_SECONDS = 60
 MIN_CACHE_SECONDS = 30
+DEFAULT_FAILURE_RETRY_SECONDS = 120
 SMARTPLUG_TELEMETRY_WAIT_SECONDS = 1.0
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,6 +41,12 @@ class SolixClient:
         self._cache_seconds = _integer_setting(
             "SOLIX_CACHE_SECONDS", DEFAULT_CACHE_SECONDS, MIN_CACHE_SECONDS, 3600
         )
+        self._failure_retry_seconds = _integer_setting(
+            "SOLIX_FAILURE_RETRY_SECONDS",
+            DEFAULT_FAILURE_RETRY_SECONDS,
+            MIN_CACHE_SECONDS,
+            900,
+        )
         self._solarbank_pn = os.getenv("SOLIX_SOLARBANK_PN", "").strip().upper()
         self._solarbank_sn = os.getenv("SOLIX_SOLARBANK_SN", "").strip().upper()
         self._battery_capacity_wh = _integer_setting(
@@ -51,6 +59,9 @@ class SolixClient:
         self._last_smartplug_state: bool | None = None
         self._last_smartplug_telemetry_request = 0.0
         self._last_refresh_at: datetime | None = None
+        self._last_refresh_attempt = 0.0
+        self._last_refresh_error: str | None = None
+        self._last_live_payload: dict[str, Any] | None = None
 
     async def _ensure_api_locked(self) -> None:
         if self.api is not None:
@@ -67,21 +78,69 @@ class SolixClient:
             websession=self._session,
         )
 
-    async def _refresh_locked(self, force: bool = False) -> None:
-        cache_age = time.monotonic() - self._last_refresh
-        if self.api is not None and not force and cache_age < self._cache_seconds:
-            return
+    async def _discard_api_locked(self) -> None:
+        """Close a rejected Anker session so the next request logs in cleanly."""
+        if self.api is not None:
+            self.api.stopMqttSession()
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+        self._session = None
+        self.api = None
+        self._last_smartplug_telemetry_request = 0.0
 
-        await self._ensure_api_locked()
+    async def _poll_cloud_locked(self) -> None:
         assert self.api is not None
         await self.api.update_sites()
         await self.api.update_site_details()
         await self.api.update_device_details()
+
+    async def _refresh_locked(self, force: bool = False) -> None:
+        now = time.monotonic()
+        cache_age = now - self._last_refresh
+        if self.api is not None and not force and cache_age < self._cache_seconds:
+            return
+
+        failure_age = now - self._last_refresh_attempt
+        if (
+            not force
+            and self._last_refresh_error is not None
+            and failure_age < self._failure_retry_seconds
+        ):
+            raise RuntimeError("Solix-Cloud-Aktualisierung wartet auf erneuten Versuch")
+
+        await self._ensure_api_locked()
+        assert self.api is not None
+        self._last_refresh_attempt = now
+        try:
+            await self._poll_cloud_locked()
+        except AuthorizationError:
+            # Anker invalidates access tokens independently of their nominal
+            # lifetime. Reusing the same API instance then produces permanent
+            # HTTP 401 responses. A completely new session performs a fresh
+            # password login and recovers without a Render restart.
+            _LOGGER.warning(
+                "Anker rejected the cached Solix token; rebuilding the session"
+            )
+            await self._discard_api_locked()
+            await self._ensure_api_locked()
+            try:
+                await self._poll_cloud_locked()
+            except Exception as exc:
+                self._last_refresh_error = type(exc).__name__
+                raise
+        except Exception as exc:
+            self._last_refresh_error = type(exc).__name__
+            raise
+        else:
+            self._last_refresh_error = None
+
         # The dashboard only uses current device values. Energy-history
         # requests are comparatively expensive and caused Anker's
         # energy_analysis endpoint to throttle a single live refresh.
         self._last_refresh = time.monotonic()
+        self._last_refresh_attempt = self._last_refresh
         self._last_refresh_at = datetime.now(timezone.utc)
+        self._last_refresh_error = None
 
     async def connect(self) -> AnkerSolixApi:
         async with self._lock:
@@ -170,7 +229,29 @@ class SolixClient:
             return 0
 
     async def get_live(self) -> dict[str, Any]:
-        await self.refresh()
+        try:
+            await self.refresh()
+        except Exception:
+            if self._last_live_payload is None:
+                raise
+            payload = dict(self._last_live_payload)
+            payload.update(
+                {
+                    "stale": True,
+                    "error": "Solix-Cloud vorübergehend nicht erreichbar",
+                    "data_age_seconds": max(
+                        0, int(time.monotonic() - self._last_refresh)
+                    ),
+                    "refresh_retry_seconds": max(
+                        0,
+                        int(
+                            self._failure_retry_seconds
+                            - (time.monotonic() - self._last_refresh_attempt)
+                        ),
+                    ),
+                }
+            )
+            return payload
         assert self.api is not None
 
         solarbank, selection, solarbank_count = self._select_solarbank_locked()
@@ -200,7 +281,7 @@ class SolixClient:
             else -battery_discharge_power
         )
 
-        return {
+        payload = {
             "status": solarbank.get("status_desc"),
             "battery_percent": battery_percent,
             "battery_energy_wh": battery_energy_wh,
@@ -242,7 +323,12 @@ class SolixClient:
                 0, int(time.monotonic() - self._last_refresh)
             ),
             "refresh_interval_seconds": self._cache_seconds,
+            "refresh_retry_seconds": 0,
+            "stale": False,
+            "error": None,
         }
+        self._last_live_payload = dict(payload)
+        return payload
 
     def _select_smartplug_locked(self) -> tuple[str, dict[str, Any]]:
         assert self.api is not None
@@ -453,9 +539,4 @@ class SolixClient:
 
     async def close(self) -> None:
         async with self._lock:
-            if self.api is not None:
-                self.api.stopMqttSession()
-            if self._session is not None and not self._session.closed:
-                await self._session.close()
-            self._session = None
-            self.api = None
+            await self._discard_api_locked()

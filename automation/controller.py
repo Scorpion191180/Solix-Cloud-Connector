@@ -77,6 +77,7 @@ class ChargingAutomation:
         )
         self._last_error: str | None = None
         self._last_battery_percent: int | float | None = None
+        self._last_solix_stale = False
         self._last_cable_connected: bool | None = None
         self._last_audi_stale = False
         self._last_audi_error: str | None = None
@@ -145,8 +146,11 @@ class ChargingAutomation:
                 and not self._last_audi_stale
                 else None
             )
-            self._last_battery_percent = self._number(
-                solix_data.get("battery_percent")
+            self._last_solix_stale = solix_data.get("stale") is True
+            self._last_battery_percent = (
+                None
+                if self._last_solix_stale
+                else self._number(solix_data.get("battery_percent"))
             )
 
             plug_status = await self._solix.get_smartplug_status()
@@ -232,6 +236,7 @@ class ChargingAutomation:
             "audi_data_stale": self._last_audi_stale,
             "audi_error": self._last_audi_error,
             "solix_battery_percent": self._last_battery_percent,
+            "solix_data_stale": self._last_solix_stale,
             "smartplug": dict(self._smartplug),
         }
 

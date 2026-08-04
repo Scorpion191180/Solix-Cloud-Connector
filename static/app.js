@@ -233,7 +233,8 @@ function renderEnergyDiagram() {
         setDiagramText(
             "diagramUpdate",
             updateTime && !Number.isNaN(updateTime.getTime()) ?
-                "Live-Stand " + updateTime.toLocaleTimeString("de-DE") : "Live verbunden"
+                (solix.stale === true ? "Letzter gültiger Stand " : "Live-Stand ") +
+                    updateTime.toLocaleTimeString("de-DE") : "Live verbunden"
         );
     }
 
@@ -405,8 +406,9 @@ function updateLastRefresh() {
     document.getElementById("tickerCloudTime").innerText =
         lastRefresh.toLocaleTimeString("de-DE") + " · " + seconds + " Sek. alt";
 
-    const delayed = seconds > refreshIntervalSeconds + 20;
-    document.getElementById("liveState").innerText = delayed ? "VERZÖGERT" : "LIVE";
+    const stale = latestSolixData && latestSolixData.stale === true;
+    const delayed = stale || seconds > refreshIntervalSeconds + 20;
+    document.getElementById("liveState").innerText = stale ? "LETZTER STAND" : delayed ? "VERZÖGERT" : "LIVE";
     document.querySelector(".status").classList.toggle("delayed", delayed);
 }
 
@@ -482,6 +484,9 @@ async function updateDashboard() {
         document.getElementById("tickerSource").innerText =
             data.solarbank_model === "AE103" ?
             "Solarbank 4 (AE103)" : "Solarbank " + (data.solarbank_model || "unbekannt");
+
+        if (data.stale === true)
+            document.getElementById("tickerSource").innerText += " · letzter gültiger Stand";
 
         document.querySelector(".status").classList.remove("error");
         updateLastRefresh();

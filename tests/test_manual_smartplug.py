@@ -89,6 +89,30 @@ class ManualSmartPlugTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(error.exception.status_code, 409)
         set_power.assert_not_awaited()
 
+    async def test_on_is_blocked_when_solix_data_is_stale(self):
+        with (
+            self.settings(),
+            patch.object(
+                audi_client,
+                "get_live",
+                AsyncMock(return_value={"available": True, "plug_connected": True}),
+            ),
+            patch.object(
+                client,
+                "get_live",
+                AsyncMock(return_value={"battery_percent": 80, "stale": True}),
+            ),
+            patch.object(client, "set_smartplug_power", AsyncMock()) as set_power,
+        ):
+            with self.assertRaises(HTTPException) as error:
+                await manual_smartplug(
+                    ManualSmartPlugCommand(enabled=True), "correct-secret"
+                )
+
+        self.assertEqual(error.exception.status_code, 409)
+        self.assertIn("veralteten", error.exception.detail)
+        set_power.assert_not_awaited()
+
     async def test_off_is_always_allowed_with_correct_code(self):
         result = {
             "available": True,

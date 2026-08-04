@@ -130,13 +130,18 @@ async def manual_smartplug(
         solix_data = await client.get_live()
         battery_percent = solix_data.get("battery_percent")
         if (
-            isinstance(battery_percent, bool)
+            solix_data.get("stale") is True
+            or isinstance(battery_percent, bool)
             or not isinstance(battery_percent, (int, float))
             or battery_percent < 10
         ):
             raise HTTPException(
                 status_code=409,
-                detail="Einschalten ist unter 10 % Solix-Ladestand gesperrt",
+                detail=(
+                    "Einschalten ist bei veralteten Solix-Daten gesperrt"
+                    if solix_data.get("stale") is True
+                    else "Einschalten ist unter 10 % Solix-Ladestand gesperrt"
+                ),
             )
 
     try:

@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from anker_solix_api.errors import AuthorizationError
+
 from solix.client import SolixClient
 
 
@@ -33,6 +35,18 @@ class FakeRefreshApi:
 
     async def update_device_energy(self):
         self.calls.append("device_energy")
+
+
+class AuthorizationFailingApi(FakeRefreshApi):
+    async def update_sites(self):
+        self.calls.append("sites")
+        raise AuthorizationError("(401) token error")
+
+
+class CloudFailingApi(FakeRefreshApi):
+    async def update_sites(self):
+        self.calls.append("sites")
+        raise RuntimeError("cloud offline")
 
 
 class FakeTelemetrySession:
@@ -227,6 +241,61 @@ class SolixSmartPlugTests(unittest.IsolatedAsyncioTestCase):
             client.api.calls,
             ["sites", "site_details", "device_details"],
         )
+
+    async def test_rejected_token_rebuilds_session_and_retries_once(self):
+        client = SolixClient()
+        rejected = AuthorizationFailingApi()
+        recovered = FakeRefreshApi()
+        client.api = rejected
+
+        async def discard():
+            client.api = None
+
+        async def ensure():
+            if client.api is None:
+                client.api = recovered
+
+        with (
+            patch.object(client, "_discard_api_locked", AsyncMock(side_effect=discard)),
+            patch.object(client, "_ensure_api_locked", AsyncMock(side_effect=ensure)),
+        ):
+            await client.refresh(force=True)
+
+        self.assertEqual(rejected.calls, ["sites"])
+        self.assertEqual(
+            recovered.calls,
+            ["sites", "site_details", "device_details"],
+        )
+        self.assertIsNone(client._last_refresh_error)
+
+    async def test_failed_refresh_returns_last_valid_live_payload(self):
+        devices = {
+            "MAIN-SECRET": {
+                "type": "solarbank",
+                "device_pn": "AE103",
+                "battery_soc": "42",
+                "battery_energy": "4368",
+                "battery_capacity": "10400",
+                "solar_power_1": "210",
+            }
+        }
+        client = self.make_client(devices)
+        client._last_refresh_at = datetime.now(timezone.utc)
+        fresh = await client.get_live()
+        failing = CloudFailingApi()
+        client.api = failing
+        client._last_refresh = 0
+
+        stale = await client.get_live()
+        cached_again = await client.get_live()
+
+        self.assertFalse(fresh["stale"])
+        self.assertTrue(stale["stale"])
+        self.assertEqual(stale["battery_percent"], 42)
+        self.assertEqual(stale["pv1"], 210)
+        self.assertIn("vorübergehend", stale["error"])
+        self.assertEqual(failing.calls, ["sites"])
+        self.assertTrue(cached_again["stale"])
 
     async def test_configured_model_selects_solarbank_4(self):
         devices = {

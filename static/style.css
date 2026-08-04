@@ -287,45 +287,52 @@ header p{
 .house-scene-label{
     position:absolute;
     z-index:4;
-    min-width:78px;
-    padding:7px 9px 8px;
-    border:1px solid rgba(148,163,184,.38);
-    border-radius:12px;
-    background:rgba(7,16,29,.82);
-    box-shadow:0 8px 24px rgba(2,8,23,.32),inset 0 1px rgba(255,255,255,.05);
-    backdrop-filter:blur(9px);
-    -webkit-backdrop-filter:blur(9px);
+    min-width:0;
+    padding:3px 5px;
+    appearance:none;
+    border:0;
+    border-radius:0;
+    background:transparent;
+    box-shadow:none;
+    backdrop-filter:none;
+    -webkit-backdrop-filter:none;
     color:#f8fafc;
     font:inherit;
     line-height:1.05;
-    text-align:left;
+    text-align:center;
+    text-shadow:
+        0 2px 4px rgba(2,6,23,1),
+        1px 0 rgba(2,6,23,.95),
+        -1px 0 rgba(2,6,23,.95),
+        0 1px rgba(2,6,23,.95),
+        0 -1px rgba(2,6,23,.95);
     pointer-events:auto;
     transform:translate(-50%,-50%) scale(var(--scene-label-scale,1));
-    transition:border-color .2s ease,box-shadow .2s ease,opacity .2s ease;
+    transition:filter .2s ease,opacity .2s ease;
 }
 
 .house-scene-label small{
     display:block;
     margin-bottom:3px;
-    color:#94a3b8;
-    font-size:7.5px;
+    color:#dbeafe;
+    font-size:8px;
     font-weight:900;
     letter-spacing:.09em;
 }
 
 .house-scene-label strong{
-    font-size:12px;
+    color:white;
+    font-size:14px;
     font-weight:900;
     white-space:nowrap;
 }
 
 .house-scene-label.active{
-    border-color:var(--scene-color,#5eead4);
-    box-shadow:0 8px 24px rgba(2,8,23,.38),0 0 16px rgba(94,234,212,.24);
+    filter:drop-shadow(0 0 5px var(--scene-color,#5eead4));
 }
 
 .house-scene-label.selected{
-    border-width:2px;
+    filter:drop-shadow(0 0 7px var(--scene-color,#5eead4));
 }
 
 .house-scene-label.behind{
@@ -335,25 +342,31 @@ header p{
 .house-string-label{
     position:absolute;
     z-index:3;
-    padding:4px 7px;
-    border:1px solid rgba(250,204,21,.32);
-    border-radius:7px;
-    background:rgba(7,16,29,.76);
-    box-shadow:0 4px 12px rgba(2,8,23,.25);
-    color:#fde68a;
-    font-size:10px;
-    font-weight:850;
+    padding:2px 4px;
+    border:0;
+    border-radius:0;
+    background:transparent;
+    box-shadow:none;
+    color:#fff4a8;
+    font-size:12px;
+    font-weight:900;
     line-height:1;
     white-space:nowrap;
     pointer-events:none;
-    transform:translate(-50%,-50%) scale(var(--string-label-scale,.88));
+    transform:translate(-50%,-50%) rotate(var(--string-label-angle,0deg)) scale(var(--string-label-scale,.88));
     transform-origin:center;
-    transition:opacity .2s ease,border-color .2s ease;
+    text-shadow:
+        0 2px 4px rgba(2,6,23,1),
+        1px 0 rgba(2,6,23,1),
+        -1px 0 rgba(2,6,23,1),
+        0 1px rgba(2,6,23,1),
+        0 -1px rgba(2,6,23,1);
+    transition:opacity .2s ease,filter .2s ease;
 }
 
 .house-string-label.active{
-    border-color:#facc15;
     color:#fff7c2;
+    filter:drop-shadow(0 0 5px #facc15);
 }
 
 .house-string-label.behind{
@@ -1282,9 +1295,8 @@ body{
 }
 
 .house-scene-label{
-    min-width:70px;
-    padding:6px 7px;
-    border-radius:10px;
+    min-width:0;
+    padding:3px 4px;
 }
 
 .house-scene-label small{
@@ -1292,11 +1304,11 @@ body{
 }
 
 .house-scene-label strong{
-    font-size:11px;
+    font-size:13px;
 }
 
 .house-string-label{
-    font-size:9px;
+    font-size:11px;
 }
 
 .house-gesture{
