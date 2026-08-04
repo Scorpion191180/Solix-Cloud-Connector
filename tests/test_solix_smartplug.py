@@ -313,6 +313,46 @@ class SolixSmartPlugTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(failing.calls, ["sites"])
         self.assertTrue(cached_again["stale"])
 
+    async def test_initial_failed_refresh_returns_safe_unavailable_payload(self):
+        client = SolixClient()
+        failing = CloudFailingApi()
+        client.api = failing
+
+        result = await client.get_live()
+
+        self.assertTrue(result["stale"])
+        self.assertIsNone(result["battery_percent"])
+        self.assertIsNone(result["pv_total"])
+        self.assertEqual(result["battery_flow_direction"], "unknown")
+        self.assertIn("vorübergehend", result["error"])
+        self.assertEqual(failing.calls, ["sites"])
+
+    async def test_failed_fresh_login_uses_long_backoff_without_retries(self):
+        client = SolixClient()
+        rejected = AuthorizationFailingApi()
+        fresh_login_rejected = AuthorizationFailingApi()
+        client.api = rejected
+
+        async def discard():
+            client.api = None
+
+        async def ensure():
+            if client.api is None:
+                client.api = fresh_login_rejected
+
+        with (
+            patch.object(client, "_discard_api_locked", AsyncMock(side_effect=discard)),
+            patch.object(client, "_ensure_api_locked", AsyncMock(side_effect=ensure)),
+        ):
+            first = await client.get_live()
+            second = await client.get_live()
+
+        self.assertTrue(first["stale"])
+        self.assertTrue(second["stale"])
+        self.assertGreater(first["refresh_retry_seconds"], 5 * 60)
+        self.assertEqual(rejected.calls, ["sites"])
+        self.assertEqual(fresh_login_rejected.calls, ["sites"])
+
     async def test_configured_model_selects_solarbank_4(self):
         devices = {
             "SMALL-SECRET": {

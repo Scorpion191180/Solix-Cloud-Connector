@@ -21,6 +21,7 @@ from anker_solix_api.errors import AuthorizationError
 DEFAULT_CACHE_SECONDS = 60
 MIN_CACHE_SECONDS = 30
 DEFAULT_FAILURE_RETRY_SECONDS = 120
+DEFAULT_AUTH_FAILURE_RETRY_SECONDS = 30 * 60
 SMARTPLUG_TELEMETRY_WAIT_SECONDS = 1.0
 
 _LOGGER = logging.getLogger(__name__)
@@ -48,6 +49,13 @@ class SolixClient:
             MIN_CACHE_SECONDS,
             900,
         )
+        self._auth_failure_retry_seconds = _integer_setting(
+            "SOLIX_AUTH_FAILURE_RETRY_SECONDS",
+            DEFAULT_AUTH_FAILURE_RETRY_SECONDS,
+            5 * 60,
+            60 * 60,
+        )
+        self._active_failure_retry_seconds = self._failure_retry_seconds
         self._solarbank_pn = os.getenv("SOLIX_SOLARBANK_PN", "").strip().upper()
         self._solarbank_sn = os.getenv("SOLIX_SOLARBANK_SN", "").strip().upper()
         self._battery_capacity_wh = _integer_setting(
@@ -115,7 +123,7 @@ class SolixClient:
         if (
             not force
             and self._last_refresh_error is not None
-            and failure_age < self._failure_retry_seconds
+            and failure_age < self._active_failure_retry_seconds
         ):
             raise RuntimeError("Solix-Cloud-Aktualisierung wartet auf erneuten Versuch")
 
@@ -132,17 +140,25 @@ class SolixClient:
             _LOGGER.warning(
                 "Anker rejected the cached Solix token; rebuilding the session"
             )
+            # If the fresh password login below is also rejected, stop trying
+            # for a longer period. Anker temporarily locks an account after a
+            # handful of unsuccessful sign-ins, so the generic two-minute
+            # cloud backoff is unsafe for authentication failures.
+            self._active_failure_retry_seconds = self._auth_failure_retry_seconds
             await self._discard_api_locked()
             await self._ensure_api_locked()
             try:
                 await self._poll_cloud_locked()
             except Exception as exc:
                 self._last_refresh_error = type(exc).__name__
+                await self._discard_api_locked()
                 raise
         except Exception as exc:
+            self._active_failure_retry_seconds = self._failure_retry_seconds
             self._last_refresh_error = type(exc).__name__
             raise
         else:
+            self._active_failure_retry_seconds = self._failure_retry_seconds
             self._last_refresh_error = None
 
         # The dashboard only uses current device values. Energy-history
@@ -244,7 +260,7 @@ class SolixClient:
             await self.refresh()
         except Exception:
             if self._last_live_payload is None:
-                raise
+                return self._unavailable_live_payload()
             payload = dict(self._last_live_payload)
             payload.update(
                 {
@@ -256,7 +272,7 @@ class SolixClient:
                     "refresh_retry_seconds": max(
                         0,
                         int(
-                            self._failure_retry_seconds
+                            self._active_failure_retry_seconds
                             - (time.monotonic() - self._last_refresh_attempt)
                         ),
                     ),
@@ -340,6 +356,51 @@ class SolixClient:
         }
         self._last_live_payload = dict(payload)
         return payload
+
+    def _unavailable_live_payload(self) -> dict[str, Any]:
+        """Return a truthful, automation-safe first-start outage payload."""
+        retry_seconds = max(
+            0,
+            int(
+                self._active_failure_retry_seconds
+                - (time.monotonic() - self._last_refresh_attempt)
+            ),
+        )
+        return {
+            "status": None,
+            "battery_percent": None,
+            "battery_energy_wh": None,
+            "battery_capacity_wh": (
+                self._battery_capacity_wh if self._battery_capacity_wh > 0 else None
+            ),
+            "battery_capacity_source": (
+                "configured" if self._battery_capacity_wh > 0 else None
+            ),
+            "battery_power": None,
+            "battery_charge_power": None,
+            "battery_discharge_power": None,
+            "battery_flow_direction": "unknown",
+            "system_output_power": None,
+            "charging_status": None,
+            "pv_total": None,
+            "pv1": None,
+            "pv2": None,
+            "pv3": None,
+            "pv4": None,
+            "home_load": None,
+            "grid_power": None,
+            "firmware": None,
+            "wifi_signal": None,
+            "solarbank_model": None,
+            "solarbank_count": 0,
+            "selection": None,
+            "last_update": None,
+            "data_age_seconds": None,
+            "refresh_interval_seconds": self._cache_seconds,
+            "refresh_retry_seconds": retry_seconds,
+            "stale": True,
+            "error": "Solix-Anmeldung vorübergehend nicht verfügbar",
+        }
 
     def _select_smartplug_locked(self) -> tuple[str, dict[str, Any]]:
         assert self.api is not None
