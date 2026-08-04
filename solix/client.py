@@ -14,6 +14,7 @@ from typing import Any
 import aiohttp
 import certifi
 from anker_solix_api.api import AnkerSolixApi
+from anker_solix_api.apitypes import API_HEADERS
 from anker_solix_api.errors import AuthorizationError
 
 
@@ -84,6 +85,16 @@ class SolixClient:
             self.api.stopMqttSession()
         if self._session is not None and not self._session.closed:
             await self._session.close()
+
+        # anker-solix-api currently builds request headers by mutating its
+        # module-level API_HEADERS dictionary. Once a token was used, the
+        # rejected x-auth-token/gtoken therefore survive async_authenticate's
+        # restart and are accidentally sent with the fresh login request. The
+        # Anker endpoint answers that otherwise valid password login with
+        # ``401 token error``. Remove only those two volatile values while the
+        # client lock is held; the next session can then authenticate cleanly.
+        API_HEADERS.pop("x-auth-token", None)
+        API_HEADERS.pop("gtoken", None)
         self._session = None
         self.api = None
         self._last_smartplug_telemetry_request = 0.0

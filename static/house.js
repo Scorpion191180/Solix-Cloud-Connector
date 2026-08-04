@@ -753,15 +753,81 @@ function createHouse() {
 function createSolarBank() {
     const bank = new THREE.Group();
     bank.position.set(3.75, 2.08, -3.18);
+    bank.rotation.y = -Math.PI / 2;
     world.add(bank);
-    const body = new THREE.MeshStandardMaterial({ color: 0x263a45, metalness: 0.38, roughness: 0.38 });
-    const edge = new THREE.MeshStandardMaterial({ color: 0x0c1820, roughness: 0.5 });
-    for (let level = 0; level < 3; level += 1) {
-        addBox(bank, [0.62, 0.58, 0.72], edge, [0, 0.42 + level * 0.58, 0], { radius: 0.10 });
-        addBox(bank, [0.55, 0.48, 0.64], body, [0.04, 0.43 + level * 0.58, 0], { radius: 0.08 });
+    const silver = new THREE.MeshPhysicalMaterial({
+        color: 0x879198,
+        metalness: 0.72,
+        roughness: 0.27,
+        clearcoat: 0.48,
+        clearcoatRoughness: 0.22
+    });
+    const graphite = new THREE.MeshStandardMaterial({ color: 0x172027, metalness: 0.48, roughness: 0.34 });
+    const edge = new THREE.MeshStandardMaterial({ color: 0x0b1115, metalness: 0.35, roughness: 0.48 });
+    const display = new THREE.MeshPhysicalMaterial({
+        color: 0x071116,
+        metalness: 0.18,
+        roughness: 0.08,
+        transmission: 0.06,
+        clearcoat: 1
+    });
+    const cyan = new THREE.MeshStandardMaterial({
+        color: 0x6ee7f5,
+        emissive: 0x22d3ee,
+        emissiveIntensity: 4.2,
+        roughness: 0.25
+    });
+
+    // Zwei BP2700-Erweiterungsakkus bilden den realen Unterbau. Eingezogene
+    // Seiten, umlaufende Schattenfugen und die abgeschrägte Front vermeiden
+    // den bisherigen Eindruck eines einfachen gestapelten Kastens.
+    for (let level = 0; level < 2; level += 1) {
+        const y = 0.28 + level * 0.48;
+        addBox(bank, [0.94, 0.44, 0.64], edge, [0, y, 0], { radius: 0.075 });
+        addBox(bank, [0.88, 0.37, 0.59], graphite, [0, y + 0.01, -0.015], { radius: 0.06 });
+        addBox(bank, [0.76, 0.018, 0.63], silver, [0, y + 0.105, -0.315], {
+            rotation: [-0.13, 0, 0],
+            castShadow: false
+        });
+        for (let rib = -3; rib <= 3; rib += 1)
+            addBox(bank, [0.055, 0.018, 0.44], edge, [rib * 0.105, y + 0.225, 0.01], { castShadow: false });
+        addMesh(bank, new THREE.RingGeometry(0.030, 0.041, 18), silver,
+            0.31, y + 0.02, -0.326, { castShadow: false });
     }
-    const light = new THREE.MeshStandardMaterial({ color: 0x5eead4, emissive: 0x2dd4bf, emissiveIntensity: 4 });
-    addMesh(bank, new THREE.SphereGeometry(0.045, 12, 8), light, 0.36, 1.47, 0.22, { castShadow: false });
+
+    // Solarbank 4 E5000 Pro nach der offiziellen Produktansicht: breite
+    // silberne Front, dunkle trapezförmige Anzeige und belüftete Oberseite.
+    const mainY = 1.30;
+    addBox(bank, [1.02, 0.64, 0.70], edge, [0, mainY, 0], { radius: 0.085 });
+    addBox(bank, [0.96, 0.58, 0.64], silver, [0, mainY - 0.015, -0.015], { radius: 0.065 });
+    const faceShape = new THREE.Shape();
+    faceShape.moveTo(-0.43, -0.19);
+    faceShape.lineTo(0.43, -0.19);
+    faceShape.lineTo(0.34, 0.18);
+    faceShape.lineTo(-0.34, 0.18);
+    faceShape.closePath();
+    addMesh(bank, new THREE.ShapeGeometry(faceShape), silver, 0, mainY - 0.065, -0.342, {
+        rotation: [0, Math.PI, 0],
+        castShadow: false
+    });
+    const displayShape = new THREE.Shape();
+    displayShape.moveTo(-0.43, -0.085);
+    displayShape.lineTo(0.43, -0.085);
+    displayShape.lineTo(0.35, 0.105);
+    displayShape.lineTo(-0.35, 0.105);
+    displayShape.closePath();
+    addMesh(bank, new THREE.ShapeGeometry(displayShape), display, 0, mainY + 0.175, -0.346, {
+        rotation: [0, Math.PI, 0],
+        castShadow: false
+    });
+    addBox(bank, [0.35, 0.014, 0.012], cyan, [0, mainY + 0.125, -0.354], { castShadow: false });
+    for (let index = -5; index <= 5; index += 1)
+        addBox(bank, [0.055, 0.025, 0.49], edge, [index * 0.078, mainY + 0.325, 0.02], { castShadow: false });
+    addMesh(bank, new THREE.RingGeometry(0.052, 0.069, 24), edge,
+        0.515, mainY - 0.08, 0.04, { rotation: [0, Math.PI / 2, 0] });
+    [-0.31, 0.31].forEach((x) =>
+        addMesh(bank, new THREE.CylinderGeometry(0.024, 0.024, 0.035, 18), cyan,
+            x, mainY + 0.175, -0.354, { rotation: [Math.PI / 2, 0, 0], castShadow: false }));
     return bank;
 }
 
@@ -1313,26 +1379,20 @@ scene.add(warmBounce);
 const flows = {};
 
 function createCableCurve(points) {
-    return new THREE.CatmullRomCurve3(
-        points.map((point) => new THREE.Vector3(...point)),
-        false,
-        "centripetal",
-        0.34
-    );
+    const path = new THREE.CurvePath();
+    const vectors = points.map((point) => new THREE.Vector3(...point));
+    for (let index = 1; index < vectors.length; index += 1)
+        path.add(new THREE.LineCurve3(vectors[index - 1], vectors[index]));
+    return path;
 }
 
 function createFlow(id, points, color) {
     const curve = createCableCurve(points);
-    const segments = Math.max(64, (points.length - 1) * 24);
     const cableMaterial = new THREE.MeshStandardMaterial({
         color: 0x26323b,
         roughness: 0.64,
         metalness: 0.18
     });
-    const cable = new THREE.Mesh(new THREE.TubeGeometry(curve, segments, 0.043, 10, false), cableMaterial);
-    cable.castShadow = true;
-    cable.receiveShadow = true;
-    world.add(cable);
     const tubeMaterial = new THREE.MeshBasicMaterial({
         color,
         transparent: true,
@@ -1340,14 +1400,34 @@ function createFlow(id, points, color) {
         blending: THREE.AdditiveBlending,
         depthWrite: false
     });
-    const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, segments, 0.064, 10, false), tubeMaterial);
-    tube.renderOrder = 2;
-    world.add(tube);
-    points.slice(1, -1).forEach((point) => {
-        const sleeve = addMesh(world, new THREE.SphereGeometry(0.065, 12, 8), cableMaterial,
-            point[0], point[1], point[2], { castShadow: false });
-        sleeve.renderOrder = 1;
-    });
+    const cable = new THREE.Group();
+    const tube = new THREE.Group();
+    world.add(cable, tube);
+    const up = new THREE.Vector3(0, 1, 0);
+    for (let index = 1; index < points.length; index += 1) {
+        const start = new THREE.Vector3(...points[index - 1]);
+        const end = new THREE.Vector3(...points[index]);
+        const direction = end.clone().sub(start);
+        const length = direction.length();
+        const midpoint = start.clone().add(end).multiplyScalar(0.5);
+        const quaternion = new THREE.Quaternion().setFromUnitVectors(up, direction.clone().normalize());
+        const cableSegment = new THREE.Mesh(new THREE.CylinderGeometry(0.043, 0.043, length, 10), cableMaterial);
+        cableSegment.position.copy(midpoint);
+        cableSegment.quaternion.copy(quaternion);
+        cableSegment.castShadow = true;
+        cableSegment.receiveShadow = true;
+        cable.add(cableSegment);
+        const lightSegment = new THREE.Mesh(new THREE.CylinderGeometry(0.064, 0.064, length, 10), tubeMaterial);
+        lightSegment.position.copy(midpoint);
+        lightSegment.quaternion.copy(quaternion);
+        lightSegment.renderOrder = 2;
+        tube.add(lightSegment);
+        if (index < points.length - 1) {
+            const sleeve = addMesh(world, new THREE.SphereGeometry(0.066, 12, 8), cableMaterial,
+                end.x, end.y, end.z, { castShadow: false });
+            sleeve.renderOrder = 1;
+        }
+    }
     const pulseMaterial = new THREE.MeshBasicMaterial({
         color,
         transparent: true,
@@ -1363,40 +1443,36 @@ function createFlow(id, points, color) {
         world.add(pulse);
         pulses.push(pulse);
     }
-    flows[id] = { curve, cable, tube, pulses, active: false, reverse: false };
+    flows[id] = { curve, cable, tube, tubeMaterial, pulses, active: false, reverse: false };
 }
 
 const pvPanelAnchors = PV_PANEL_Z.map((z, index) => ({
     id: "pv" + (index + 1),
     anchor: new THREE.Vector3(),
     z,
-    labelProgress: [0.28, 0.16, 0.44, 0.20][index]
+    labelProgress: [0.49, 0.48, 0.42, 0.43][index]
 }));
 
-// Jeder PV-Strang verlässt sein eigenes Panel sichtbar, läuft in einem
-// sanften Bogen außen an der Balkonfassade entlang und trifft erst direkt
-// vor der Solarbank auf die anderen Leitungen. So bleiben Herkunft und Ziel
-// auch bei gedrehter Ansicht eindeutig ablesbar.
+// Jeder PV-Strang verlässt sein eigenes Panel sichtbar und folgt einer
+// separaten 90-Grad-Trasse entlang der Balkonfassade. Es gibt bewusst keine
+// diagonalen Abkürzungen: horizontale und vertikale Abschnitte machen Quelle,
+// Kabelweg und separaten Eingang an der Solarbank eindeutig nachvollziehbar.
 const pvRoutes = [
     [
-        [4.01, 2.42, 2.42], [4.16, 2.18, 2.18], [4.28, 1.42, 1.52],
-        [4.34, 1.30, -0.30], [4.30, 1.48, -2.18], [4.10, 2.28, -2.92],
-        [3.76, 2.72, -3.18]
+        [4.01, 2.42, 2.42], [4.16, 2.42, 2.42], [4.16, 1.52, 2.42],
+        [4.16, 1.52, -3.18], [4.16, 3.22, -3.18], [4.10, 3.22, -3.18]
     ],
     [
-        [4.01, 2.42, 4.42], [4.22, 2.22, 4.08], [4.48, 1.64, 3.12],
-        [4.55, 1.52, 0.58], [4.48, 1.66, -2.06], [4.15, 2.34, -2.84],
-        [3.76, 2.72, -3.18]
+        [4.01, 2.42, 4.42], [4.28, 2.42, 4.42], [4.28, 1.66, 4.42],
+        [4.28, 1.66, -3.18], [4.28, 3.34, -3.18], [4.10, 3.34, -3.18]
     ],
     [
-        [4.01, 2.42, -2.85], [4.18, 2.20, -2.78], [4.38, 1.96, -2.70],
-        [4.42, 1.78, -2.92], [4.25, 2.08, -3.04], [4.02, 2.48, -3.12],
-        [3.76, 2.72, -3.18]
+        [4.01, 2.42, -2.85], [4.40, 2.42, -2.85], [4.40, 1.80, -2.85],
+        [4.40, 1.80, -3.18], [4.40, 3.46, -3.18], [4.10, 3.46, -3.18]
     ],
     [
-        [4.01, 2.42, -1.45], [4.18, 2.16, -1.62], [4.40, 1.82, -1.96],
-        [4.43, 1.68, -2.46], [4.30, 1.92, -2.82], [4.08, 2.40, -3.08],
-        [3.76, 2.72, -3.18]
+        [4.01, 2.42, -1.45], [4.52, 2.42, -1.45], [4.52, 1.94, -1.45],
+        [4.52, 1.94, -3.18], [4.52, 3.58, -3.18], [4.10, 3.58, -3.18]
     ]
 ];
 pvPanelAnchors.forEach((panel, index) => {
@@ -1419,7 +1495,7 @@ function flowLabelAnchor(flowId, progress, offset = [0, 0, 0]) {
 }
 
 const labelAnchors = {
-    pv: flowLabelAnchor("pv1", 0.89, [-0.16, 0.28, -0.10]),
+    pv: flowLabelAnchor("pv1", 0.72, [-0.16, 0.28, -0.10]),
     battery: new THREE.Vector3(3.72, 3.62, -3.18),
     grid: flowLabelAnchor("grid", 0.30, [0, 0.30, 0]),
     audi: flowLabelAnchor("audi", 0.76, [0, 0.30, 0])
@@ -1507,7 +1583,7 @@ function componentData() {
 function setFlowState(flow, active, reverse = false) {
     flow.active = active;
     flow.reverse = reverse;
-    flow.tube.material.opacity = active ? 0.98 : 0.46;
+    flow.tubeMaterial.opacity = active ? 0.98 : 0.46;
     flow.pulses.forEach((pulse) => {
         pulse.material.opacity = active ? 1 : 0;
         pulse.visible = active;

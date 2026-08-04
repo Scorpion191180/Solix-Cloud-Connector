@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from anker_solix_api.apitypes import API_HEADERS
 from anker_solix_api.errors import AuthorizationError
 
 from solix.client import SolixClient
@@ -267,6 +268,21 @@ class SolixSmartPlugTests(unittest.IsolatedAsyncioTestCase):
             ["sites", "site_details", "device_details"],
         )
         self.assertIsNone(client._last_refresh_error)
+
+    async def test_discard_removes_rejected_tokens_from_library_headers(self):
+        client = SolixClient()
+        client.api = None
+        client._session = None
+
+        with patch.dict(
+            API_HEADERS,
+            {"x-auth-token": "REJECTED", "gtoken": "REJECTED-HASH"},
+            clear=False,
+        ):
+            await client._discard_api_locked()
+
+            self.assertNotIn("x-auth-token", API_HEADERS)
+            self.assertNotIn("gtoken", API_HEADERS)
 
     async def test_failed_refresh_returns_last_valid_live_payload(self):
         devices = {
