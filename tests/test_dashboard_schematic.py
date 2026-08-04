@@ -91,7 +91,7 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("foxSlot.position.set(2.10, 0.02, 8.45)", script)
         self.assertIn("foxSlot.rotation.y = Math.PI", script)
         self.assertIn("karoqSlot.position.set(-2.10, 0.02, 8.72)", script)
-        self.assertIn("karoqSlot.rotation.y = Math.PI", script)
+        self.assertIn("karoqSlot.rotation.y = 0", script)
         self.assertIn("group.position.set(6.05, 0, -5.20)", script)
         self.assertIn('grid: flowLabelAnchor("grid", 0.30', script)
         self.assertIn("function createCableCurve", script)

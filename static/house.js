@@ -1084,7 +1084,9 @@ function createVehicles() {
     // prozeduraler SUV als ausfallsicherer Platzhalter sichtbar.
     const karoqSlot = new THREE.Group();
     karoqSlot.position.set(-2.10, 0.02, 8.72);
-    karoqSlot.rotation.y = Math.PI;
+    // Das Karoq-Quellmodell definiert die Front entgegengesetzt zu den anderen
+    // Fahrzeugdateien. Ohne zusätzliche Halbdrehung zeigt seine Haube zur Garage.
+    karoqSlot.rotation.y = 0;
     world.add(karoqSlot);
     const karoqFallback = createCar(0x14191d, "skoda-yeti");
     karoqFallback.scale.set(1.12, 1.14, 1.14);
