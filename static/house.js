@@ -1313,14 +1313,12 @@ scene.add(warmBounce);
 const flows = {};
 
 function createCableCurve(points) {
-    const path = new THREE.CurvePath();
-    for (let index = 1; index < points.length; index += 1) {
-        path.add(new THREE.LineCurve3(
-            new THREE.Vector3(...points[index - 1]),
-            new THREE.Vector3(...points[index])
-        ));
-    }
-    return path;
+    return new THREE.CatmullRomCurve3(
+        points.map((point) => new THREE.Vector3(...point)),
+        false,
+        "centripetal",
+        0.34
+    );
 }
 
 function createFlow(id, points, color) {
@@ -1331,18 +1329,18 @@ function createFlow(id, points, color) {
         roughness: 0.64,
         metalness: 0.18
     });
-    const cable = new THREE.Mesh(new THREE.TubeGeometry(curve, segments, 0.036, 10, false), cableMaterial);
+    const cable = new THREE.Mesh(new THREE.TubeGeometry(curve, segments, 0.043, 10, false), cableMaterial);
     cable.castShadow = true;
     cable.receiveShadow = true;
     world.add(cable);
     const tubeMaterial = new THREE.MeshBasicMaterial({
         color,
         transparent: true,
-        opacity: 0.34,
+        opacity: 0.46,
         blending: THREE.AdditiveBlending,
         depthWrite: false
     });
-    const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, segments, 0.054, 10, false), tubeMaterial);
+    const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, segments, 0.064, 10, false), tubeMaterial);
     tube.renderOrder = 2;
     world.add(tube);
     points.slice(1, -1).forEach((point) => {
@@ -1370,21 +1368,40 @@ function createFlow(id, points, color) {
 
 const pvPanelAnchors = PV_PANEL_Z.map((z, index) => ({
     id: "pv" + (index + 1),
-    anchor: new THREE.Vector3(4.08, 2.74, z),
+    anchor: new THREE.Vector3(),
     z,
-    laneX: 4.08 + index * 0.055,
-    laneY: 1.82 + index * 0.085
+    labelProgress: [0.28, 0.16, 0.44, 0.20][index]
 }));
-pvPanelAnchors.forEach((panel, index) => {
-    const bankLaneZ = -3.06 + index * 0.055;
-    createFlow(panel.id, [
-        [4.01, 2.42, panel.z],
-        [panel.laneX, 2.42, panel.z],
-        [panel.laneX, panel.laneY, panel.z],
-        [panel.laneX, panel.laneY, bankLaneZ],
-        [panel.laneX, 2.72, bankLaneZ],
+
+// Jeder PV-Strang verlässt sein eigenes Panel sichtbar, läuft in einem
+// sanften Bogen außen an der Balkonfassade entlang und trifft erst direkt
+// vor der Solarbank auf die anderen Leitungen. So bleiben Herkunft und Ziel
+// auch bei gedrehter Ansicht eindeutig ablesbar.
+const pvRoutes = [
+    [
+        [4.01, 2.42, 2.42], [4.16, 2.18, 2.18], [4.28, 1.42, 1.52],
+        [4.34, 1.30, -0.30], [4.30, 1.48, -2.18], [4.10, 2.28, -2.92],
         [3.76, 2.72, -3.18]
-    ], colors.pv);
+    ],
+    [
+        [4.01, 2.42, 4.42], [4.22, 2.22, 4.08], [4.48, 1.64, 3.12],
+        [4.55, 1.52, 0.58], [4.48, 1.66, -2.06], [4.15, 2.34, -2.84],
+        [3.76, 2.72, -3.18]
+    ],
+    [
+        [4.01, 2.42, -2.85], [4.18, 2.20, -2.78], [4.38, 1.96, -2.70],
+        [4.42, 1.78, -2.92], [4.25, 2.08, -3.04], [4.02, 2.48, -3.12],
+        [3.76, 2.72, -3.18]
+    ],
+    [
+        [4.01, 2.42, -1.45], [4.18, 2.16, -1.62], [4.40, 1.82, -1.96],
+        [4.43, 1.68, -2.46], [4.30, 1.92, -2.82], [4.08, 2.40, -3.08],
+        [3.76, 2.72, -3.18]
+    ]
+];
+pvPanelAnchors.forEach((panel, index) => {
+    createFlow(panel.id, pvRoutes[index], colors.pv);
+    panel.anchor.copy(flows[panel.id].curve.getPointAt(panel.labelProgress));
 });
 createFlow("grid", [
     [6.05, 0.58, -5.20], [6.05, 0.16, -5.20], [6.05, 0.16, -3.55],
@@ -1397,11 +1414,15 @@ createFlow("audi", [
     [5.00, 0.52, 0.25]
 ], colors.audi);
 
+function flowLabelAnchor(flowId, progress, offset = [0, 0, 0]) {
+    return flows[flowId].curve.getPointAt(progress).add(new THREE.Vector3(...offset));
+}
+
 const labelAnchors = {
-    pv: new THREE.Vector3(3.78, 3.34, 1.0),
-    battery: new THREE.Vector3(3.78, 4.12, -3.18),
-    grid: new THREE.Vector3(6.05, 1.65, -5.20),
-    audi: new THREE.Vector3(5.00, 1.80, 1.0)
+    pv: flowLabelAnchor("pv1", 0.89, [-0.16, 0.28, -0.10]),
+    battery: new THREE.Vector3(3.72, 3.62, -3.18),
+    grid: flowLabelAnchor("grid", 0.30, [0, 0.30, 0]),
+    audi: flowLabelAnchor("audi", 0.76, [0, 0.30, 0])
 };
 
 const labelElements = {};
@@ -1433,6 +1454,7 @@ function componentData() {
     const automation = state.data.automation || {};
     const audi = state.data.audi || {};
     const smartPlug = automation.smartplug || {};
+    const solixStale = solix.stale === true || automation.solix_data_stale === true;
     const pv = numberValue(solix.pv_total);
     const pvStrings = [1, 2, 3, 4].map((number) => numberValue(solix["pv" + number]));
     const batterySoc = numberValue(solix.battery_percent) ?? numberValue(automation.solix_battery_percent);
@@ -1478,14 +1500,14 @@ function componentData() {
                     audi.plug_connected === false ? "Ladestecker ist getrennt." : "Audi-Status wird geprüft.",
             active: charging
         },
-        raw: { pv, pvStrings, batterySoc, batteryCharge, batteryDischarge, output, grid, audiPower, charging }
+        raw: { pv, pvStrings, batterySoc, batteryCharge, batteryDischarge, output, grid, audiPower, charging, solixStale }
     };
 }
 
 function setFlowState(flow, active, reverse = false) {
     flow.active = active;
     flow.reverse = reverse;
-    flow.tube.material.opacity = active ? 0.94 : 0.34;
+    flow.tube.material.opacity = active ? 0.98 : 0.46;
     flow.pulses.forEach((pulse) => {
         pulse.material.opacity = active ? 1 : 0;
         pulse.visible = active;
@@ -1521,7 +1543,9 @@ function updateLiveUi() {
     inspectorValue.textContent = selected.value;
     inspectorDetail.textContent = selected.detail;
     liveBadge.textContent = components.battery.value === "--" ?
-        "Live wird verbunden" : "LIVE · Solix " + components.battery.value;
+        "Live wird verbunden" : raw.solixStale ?
+            "LETZTER STAND · Solix " + components.battery.value :
+            "LIVE · Solix " + components.battery.value;
 }
 
 function updateLabelPositions() {
@@ -1551,13 +1575,25 @@ function updateLabelPositions() {
 
     pvPanelAnchors.forEach((panel) => {
         const anchor = world.localToWorld(panel.anchor.clone());
+        const tangentAnchor = world.localToWorld(
+            flows[panel.id].curve.getPointAt(Math.min(0.98, panel.labelProgress + 0.025))
+        );
         const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
         const projected = anchor.project(camera);
+        const tangentProjected = tangentAnchor.project(camera);
         const x = THREE.MathUtils.clamp((projected.x * 0.5 + 0.5) * rect.width, 30, rect.width - 30);
         const y = THREE.MathUtils.clamp((-projected.y * 0.5 + 0.5) * rect.height, 24, rect.height - 42);
+        const tangentX = (tangentProjected.x * 0.5 + 0.5) * rect.width;
+        const tangentY = (-tangentProjected.y * 0.5 + 0.5) * rect.height;
+        let angle = Math.atan2(tangentY - y, tangentX - x) * 180 / Math.PI;
+        if (angle > 90)
+            angle -= 180;
+        else if (angle < -90)
+            angle += 180;
         const element = pvStringElements[panel.id];
         element.style.left = x + "px";
         element.style.top = y + "px";
+        element.style.setProperty("--string-label-angle", angle.toFixed(1) + "deg");
         element.style.setProperty("--string-label-scale", THREE.MathUtils.clamp(0.72 + state.zoom * 0.33, 0.98, 1.56));
         element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
     });

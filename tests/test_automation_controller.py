@@ -21,13 +21,14 @@ class FakeAudiClient:
 
 
 class FakeSolixClient:
-    def __init__(self, battery_percent, state=False):
+    def __init__(self, battery_percent, state=False, stale=False):
         self.battery_percent = battery_percent
         self.state = state
+        self.stale = stale
         self.commands = []
 
     async def get_live(self):
-        return {"battery_percent": self.battery_percent}
+        return {"battery_percent": self.battery_percent, "stale": self.stale}
 
     async def get_smartplug_status(self):
         return {
@@ -107,6 +108,17 @@ class ChargingAutomationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(status["audi_data_stale"])
         self.assertIsNone(status["audi_plug_connected"])
         self.assertEqual(status["reason"], "cable_not_connected")
+
+    async def test_stale_solix_data_cannot_keep_plug_on(self):
+        solix = FakeSolixClient(80, state=True, stale=True)
+        controller = self.make_controller(solix, FakeAudiClient(True))
+
+        status = await controller.evaluate()
+
+        self.assertEqual(solix.commands, [False])
+        self.assertTrue(status["solix_data_stale"])
+        self.assertIsNone(status["solix_battery_percent"])
+        self.assertEqual(status["reason"], "solix_soc_unknown")
 
     async def test_hysteresis_does_not_send_a_command(self):
         solix = FakeSolixClient(20, state=True)
