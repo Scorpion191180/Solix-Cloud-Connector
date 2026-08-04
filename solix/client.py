@@ -113,6 +113,18 @@ class SolixClient:
         await self.api.update_site_details()
         await self.api.update_device_details()
 
+    def _login_token_available_locked(self) -> bool | None:
+        """Report whether the upstream client completed password login."""
+        if self.api is None:
+            return False
+        apisession = getattr(self.api, "apisession", None)
+        get_login_info = getattr(apisession, "get_login_info", None)
+        if not callable(get_login_info):
+            # Small test doubles and older library variants cannot expose the
+            # distinction; preserve the normal transient-cloud backoff.
+            return None
+        return bool(get_login_info("auth_token"))
+
     async def _refresh_locked(self, force: bool = False) -> None:
         now = time.monotonic()
         cache_age = now - self._last_refresh
@@ -154,7 +166,17 @@ class SolixClient:
                 await self._discard_api_locked()
                 raise
         except Exception as exc:
-            self._active_failure_retry_seconds = self._failure_retry_seconds
+            if self._login_token_available_locked() is False:
+                # The Anker login endpoint sometimes reports code 26161
+                # (RequestError) instead of AuthorizationError. With no login
+                # token ever issued, it is still an authentication attempt and
+                # must use the long lockout-safe delay.
+                self._active_failure_retry_seconds = (
+                    self._auth_failure_retry_seconds
+                )
+                await self._discard_api_locked()
+            else:
+                self._active_failure_retry_seconds = self._failure_retry_seconds
             self._last_refresh_error = type(exc).__name__
             raise
         else:

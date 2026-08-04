@@ -50,6 +50,12 @@ class CloudFailingApi(FakeRefreshApi):
         raise RuntimeError("cloud offline")
 
 
+class LoginFailingApi(CloudFailingApi):
+    def __init__(self):
+        super().__init__()
+        self.apisession = SimpleNamespace(get_login_info=lambda _key: None)
+
+
 class FakeTelemetrySession:
     def __init__(self):
         self.topics = []
@@ -352,6 +358,21 @@ class SolixSmartPlugTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(first["refresh_retry_seconds"], 5 * 60)
         self.assertEqual(rejected.calls, ["sites"])
         self.assertEqual(fresh_login_rejected.calls, ["sites"])
+
+    async def test_login_request_error_without_token_uses_long_backoff(self):
+        client = SolixClient()
+        failing = LoginFailingApi()
+        client.api = failing
+
+        with patch.object(client, "_discard_api_locked", AsyncMock()) as discard:
+            first = await client.get_live()
+            second = await client.get_live()
+
+        self.assertTrue(first["stale"])
+        self.assertTrue(second["stale"])
+        self.assertGreater(first["refresh_retry_seconds"], 5 * 60)
+        self.assertEqual(failing.calls, ["sites"])
+        discard.assert_awaited_once()
 
     async def test_configured_model_selects_solarbank_4(self):
         devices = {
