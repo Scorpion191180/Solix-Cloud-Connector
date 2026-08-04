@@ -1071,16 +1071,30 @@ function createVehicles() {
 
     const foxSlot = new THREE.Group();
     foxSlot.position.set(2.10, 0.02, 8.45);
-    foxSlot.rotation.y = -0.05;
+    // Die Garagentore liegen aus Sicht des Stellplatzes in negativer Z-Richtung.
+    // Eine halbe Drehung stellt deshalb den Fox mit der Motorhaube zur Garage.
+    foxSlot.rotation.y = Math.PI;
     world.add(foxSlot);
     const foxFallback = createCar(0x202327, "vw-fox");
     foxFallback.scale.set(0.82, 0.88, 0.80);
     foxSlot.add(foxFallback);
 
+    // Vor dem linken Tor steht der schwarze Karoq ebenfalls mit seiner Front
+    // zum Gebäude. Bis das Detailmodell geladen ist, bleibt ein gleich großer
+    // prozeduraler SUV als ausfallsicherer Platzhalter sichtbar.
+    const karoqSlot = new THREE.Group();
+    karoqSlot.position.set(-2.10, 0.02, 8.72);
+    karoqSlot.rotation.y = Math.PI;
+    world.add(karoqSlot);
+    const karoqFallback = createCar(0x14191d, "skoda-yeti");
+    karoqFallback.scale.set(1.12, 1.14, 1.14);
+    karoqSlot.add(karoqFallback);
+
     return {
         audi: { slot: audiSlot, fallback: audiFallback },
         yeti: { slot: yetiSlot, fallback: yetiFallback },
-        fox: { slot: foxSlot, fallback: foxFallback }
+        fox: { slot: foxSlot, fallback: foxFallback },
+        karoq: { slot: karoqSlot, fallback: karoqFallback }
     };
 }
 
@@ -1098,7 +1112,9 @@ function tuneVehicleMaterials(model, paintColor) {
             const material = source.clone();
             const name = (material.name || "").toLowerCase();
             const isGlass = name.includes("window") || name.includes("glass");
-            if (name.includes("carpaint") || name === "body") {
+            const isPaint = name.includes("carpaint") || name === "body" ||
+                name.startsWith("body.") || name === "primary";
+            if (isPaint) {
                 material.color.setHex(paintColor);
                 material.metalness = 0.70;
                 material.roughness = 0.20;
@@ -1215,6 +1231,15 @@ function loadDetailedVehicles(vehicles) {
         length: 3.38,
         width: 1.68,
         paint: 0x191d20
+    });
+    loadVehicleAsset(vehicles.karoq, {
+        name: "Skoda Karoq",
+        url: "/static/models/skoda-karoq.glb",
+        // Gemeinsamer Szenenmaßstab: real 4,39 m gegenüber 4,22 m beim Yeti.
+        // Der Karoq ist deshalb im Modell nur rund vier Prozent länger.
+        length: 3.87,
+        width: 1.84,
+        paint: 0x12171b
     });
 }
 
@@ -1449,35 +1474,44 @@ function createFlow(id, points, color) {
 const pvPanelAnchors = PV_PANEL_Z.map((z, index) => ({
     id: "pv" + (index + 1),
     anchor: new THREE.Vector3(),
+    tangentAnchor: new THREE.Vector3(),
     z,
-    labelProgress: [0.49, 0.48, 0.42, 0.43][index]
+    cableX: [4.58, 4.72, 4.86, 5.00][index]
 }));
 
 // Jeder PV-Strang verlässt sein eigenes Panel sichtbar und folgt einer
-// separaten 90-Grad-Trasse entlang der Balkonfassade. Es gibt bewusst keine
-// diagonalen Abkürzungen: horizontale und vertikale Abschnitte machen Quelle,
-// Kabelweg und separaten Eingang an der Solarbank eindeutig nachvollziehbar.
+// separaten 90-Grad-Trasse entlang der Balkonfassade. Statt direkt zur nahen
+// Solarbank abzukürzen, laufen alle vier Leitungen erst getrennt bis zum Ende
+// des Balkons und anschließend in vier eigenen Kabelkanälen zurück. Dadurch
+// bleiben Quelle und Ziel jedes Strangs fast über die gesamte Strecke sichtbar.
 const pvRoutes = [
     [
-        [4.01, 2.42, 2.42], [4.16, 2.42, 2.42], [4.16, 1.52, 2.42],
-        [4.16, 1.52, -3.18], [4.16, 3.22, -3.18], [4.10, 3.22, -3.18]
+        [4.01, 2.42, 2.42], [4.58, 2.42, 2.42], [4.58, 1.38, 2.42],
+        [4.58, 1.38, 5.72], [4.66, 1.38, 5.72], [4.66, 1.38, -3.18],
+        [4.66, 3.22, -3.18], [4.10, 3.22, -3.18]
     ],
     [
-        [4.01, 2.42, 4.42], [4.28, 2.42, 4.42], [4.28, 1.66, 4.42],
-        [4.28, 1.66, -3.18], [4.28, 3.34, -3.18], [4.10, 3.34, -3.18]
+        [4.01, 2.42, 4.42], [4.72, 2.42, 4.42], [4.72, 1.54, 4.42],
+        [4.72, 1.54, 5.52], [4.82, 1.54, 5.52], [4.82, 1.54, -3.18],
+        [4.82, 3.34, -3.18], [4.10, 3.34, -3.18]
     ],
     [
-        [4.01, 2.42, -2.85], [4.40, 2.42, -2.85], [4.40, 1.80, -2.85],
-        [4.40, 1.80, -3.18], [4.40, 3.46, -3.18], [4.10, 3.46, -3.18]
+        [4.01, 2.42, -2.85], [4.86, 2.42, -2.85], [4.86, 1.70, -2.85],
+        [4.86, 1.70, 5.32], [4.98, 1.70, 5.32], [4.98, 1.70, -3.18],
+        [4.98, 3.46, -3.18], [4.10, 3.46, -3.18]
     ],
     [
-        [4.01, 2.42, -1.45], [4.52, 2.42, -1.45], [4.52, 1.94, -1.45],
-        [4.52, 1.94, -3.18], [4.52, 3.58, -3.18], [4.10, 3.58, -3.18]
+        [4.01, 2.42, -1.45], [5.00, 2.42, -1.45], [5.00, 1.86, -1.45],
+        [5.00, 1.86, 5.12], [5.14, 1.86, 5.12], [5.14, 1.86, -3.18],
+        [5.14, 3.58, -3.18], [4.10, 3.58, -3.18]
     ]
 ];
 pvPanelAnchors.forEach((panel, index) => {
     createFlow(panel.id, pvRoutes[index], colors.pv);
-    panel.anchor.copy(flows[panel.id].curve.getPointAt(panel.labelProgress));
+    // Die Stringwerte sitzen auf dem ersten waagerechten Kabelstück direkt
+    // neben dem zugehörigen Modul und sind damit sofort zuzuordnen.
+    panel.anchor.set((4.01 + panel.cableX) * 0.5, 2.42, panel.z);
+    panel.tangentAnchor.copy(panel.anchor).add(new THREE.Vector3(0.18, 0, 0));
 });
 createFlow("grid", [
     [6.05, 0.58, -5.20], [6.05, 0.16, -5.20], [6.05, 0.16, -3.55],
@@ -1524,6 +1558,36 @@ pvPanelAnchors.forEach((panel, index) => {
     stage.appendChild(label);
     pvStringElements[panel.id] = label;
 });
+
+const objectBatteryAnchors = {
+    battery: new THREE.Vector3(3.62, 4.18, -3.18),
+    audi: new THREE.Vector3(5.00, 2.18, 1.00)
+};
+const objectBatteryElements = {};
+Object.keys(objectBatteryAnchors).forEach((id) => {
+    const indicator = document.createElement("span");
+    indicator.className = "house-object-battery unknown";
+    indicator.dataset.component = id;
+    indicator.dataset.flow = "idle";
+    indicator.setAttribute("role", "img");
+    indicator.innerHTML = '<span class="house-object-battery-shell"><span class="house-object-battery-fill"></span></span><strong>--</strong>';
+    stage.appendChild(indicator);
+    objectBatteryElements[id] = indicator;
+});
+
+function setObjectBattery(id, percent, flowMode) {
+    const indicator = objectBatteryElements[id];
+    const numericPercent = numberValue(percent);
+    const known = numericPercent != null;
+    const level = THREE.MathUtils.clamp(numericPercent ?? 0, 0, 100);
+    indicator.style.setProperty("--object-battery-level", level.toFixed(1) + "%");
+    indicator.dataset.flow = known ? flowMode : "idle";
+    indicator.classList.toggle("unknown", !known);
+    indicator.querySelector("strong").textContent = known ? Math.round(level) + " %" : "--";
+    const label = id === "battery" ? "Solarbank" : "Audi";
+    const motion = flowMode === "charging" ? " lädt" : flowMode === "discharging" ? " entlädt" : "";
+    indicator.setAttribute("aria-label", label + ": " + (known ? Math.round(level) + " Prozent" + motion : "Ladestand unbekannt"));
+}
 
 function componentData() {
     const solix = state.data.solix || {};
@@ -1602,6 +1666,10 @@ function updateLiveUi() {
     });
     setFlowState(flows.grid, raw.grid != null && Math.abs(raw.grid) >= 5, raw.grid < 0);
     setFlowState(flows.audi, raw.charging && raw.audiPower != null && raw.audiPower >= 5);
+    setObjectBattery("battery", raw.batterySoc,
+        raw.batteryCharge >= 5 ? "charging" : raw.batteryDischarge >= 5 ? "discharging" : "idle");
+    setObjectBattery("audi", numberValue((state.data.audi || {}).battery_percent),
+        raw.charging ? "charging" : "idle");
 
     ["pv", "battery", "grid", "audi"].forEach((id) => {
         const component = components[id];
@@ -1651,9 +1719,7 @@ function updateLabelPositions() {
 
     pvPanelAnchors.forEach((panel) => {
         const anchor = world.localToWorld(panel.anchor.clone());
-        const tangentAnchor = world.localToWorld(
-            flows[panel.id].curve.getPointAt(Math.min(0.98, panel.labelProgress + 0.025))
-        );
+        const tangentAnchor = world.localToWorld(panel.tangentAnchor.clone());
         const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
         const projected = anchor.project(camera);
         const tangentProjected = tangentAnchor.project(camera);
@@ -1671,6 +1737,19 @@ function updateLabelPositions() {
         element.style.top = y + "px";
         element.style.setProperty("--string-label-angle", angle.toFixed(1) + "deg");
         element.style.setProperty("--string-label-scale", THREE.MathUtils.clamp(0.72 + state.zoom * 0.33, 0.98, 1.56));
+        element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
+    });
+
+    Object.entries(objectBatteryAnchors).forEach(([id, localAnchor]) => {
+        const anchor = world.localToWorld(localAnchor.clone());
+        const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
+        const projected = anchor.project(camera);
+        const x = THREE.MathUtils.clamp((projected.x * 0.5 + 0.5) * rect.width, 26, rect.width - 26);
+        const y = THREE.MathUtils.clamp((-projected.y * 0.5 + 0.5) * rect.height, 38, rect.height - 48);
+        const element = objectBatteryElements[id];
+        element.style.left = x + "px";
+        element.style.top = y + "px";
+        element.style.setProperty("--object-battery-scale", THREE.MathUtils.clamp(0.76 + state.zoom * 0.34, 1.0, 1.62));
         element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
     });
 }

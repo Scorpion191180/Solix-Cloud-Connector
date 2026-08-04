@@ -373,8 +373,101 @@ header p{
     opacity:.28;
 }
 
+.house-object-battery{
+    position:absolute;
+    z-index:5;
+    display:flex;
+    align-items:center;
+    gap:7px;
+    color:#f8fafc;
+    font-size:12px;
+    font-weight:900;
+    pointer-events:none;
+    transform:translate(-50%,-50%) scale(var(--object-battery-scale,1));
+    transform-origin:center;
+    text-shadow:0 2px 4px rgba(2,6,23,1),1px 0 rgba(2,6,23,1),-1px 0 rgba(2,6,23,1);
+    transition:opacity .2s ease;
+}
+
+.house-object-battery-shell{
+    position:relative;
+    display:flex;
+    align-items:flex-end;
+    width:22px;
+    height:37px;
+    padding:2px;
+    overflow:visible;
+    border:2px solid rgba(248,250,252,.96);
+    border-radius:4px;
+    background:rgba(2,6,23,.72);
+    box-shadow:0 0 9px rgba(56,189,248,.38),0 2px 5px rgba(2,6,23,.75);
+}
+
+.house-object-battery-shell::before{
+    position:absolute;
+    top:-5px;
+    left:6px;
+    width:9px;
+    height:4px;
+    border-radius:2px 2px 0 0;
+    background:#f8fafc;
+    content:"";
+}
+
+.house-object-battery-fill{
+    width:100%;
+    height:var(--object-battery-level,0%);
+    min-height:2px;
+    border-radius:1px;
+    background:
+        repeating-linear-gradient(to top,rgba(255,255,255,.72) 0 3px,rgba(255,255,255,.08) 3px 7px),
+        linear-gradient(180deg,#67e8f9,#0284c7);
+    background-size:100% 7px,100% 100%;
+    box-shadow:0 0 8px rgba(34,211,238,.75);
+    transition:height .65s ease,background-color .25s ease;
+}
+
+.house-object-battery[data-flow="charging"] .house-object-battery-fill{
+    background-image:
+        repeating-linear-gradient(to top,rgba(255,255,255,.82) 0 3px,rgba(255,255,255,.08) 3px 7px),
+        linear-gradient(180deg,#86efac,#16a34a);
+    box-shadow:0 0 10px rgba(34,197,94,.9);
+    animation:object-battery-flow-up .55s linear infinite;
+}
+
+.house-object-battery[data-flow="discharging"] .house-object-battery-fill{
+    background-image:
+        repeating-linear-gradient(to top,rgba(255,255,255,.78) 0 3px,rgba(255,255,255,.06) 3px 7px),
+        linear-gradient(180deg,#fde68a,#f97316);
+    box-shadow:0 0 10px rgba(249,115,22,.88);
+    animation:object-battery-flow-down .55s linear infinite;
+}
+
+.house-object-battery.unknown{
+    opacity:.58;
+}
+
+.house-object-battery.unknown .house-object-battery-fill{
+    height:5%!important;
+    background:#64748b;
+    box-shadow:none;
+}
+
+.house-object-battery.behind{
+    opacity:.34;
+}
+
+@keyframes object-battery-flow-up{
+    to{background-position:0 -7px,0 0;}
+}
+
+@keyframes object-battery-flow-down{
+    to{background-position:0 7px,0 0;}
+}
+
 .house-stage.is-interacting .house-scene-label,
 .house-stage.is-interacting .house-string-label,
+.house-stage.is-interacting .house-object-battery,
 .house-stage.is-interacting .house-gesture,
 .house-stage.is-interacting .house-reset{
     opacity:0!important;
@@ -1407,7 +1500,8 @@ body{
 
 @media(prefers-reduced-motion:reduce){
     .charging-visual.charging .charging-track span,
-    .diagram-link.active{
+    .diagram-link.active,
+    .house-object-battery-fill{
         animation:none;
         opacity:.8;
     }

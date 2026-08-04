@@ -13,6 +13,9 @@ original downloads.
 - **Volkswagen Fox** — based on [“Volkswagen Fox”](https://sketchfab.com/3d-models/volkswagen-fox-d14e7efcd07546739c7671f1657f8191)
   by [iori308408](https://sketchfab.com/iori308408), licensed under
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+- **Skoda Karoq 2019** — based on [“2019 Skoda Karoq”](https://sketchfab.com/3d-models/2019-skoda-karoq-7e359874ebe744158eddc37c9da8f487)
+  by [BHP3D](https://sketchfab.com/BHP3D), licensed under
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 The optimized files use meshoptimizer compression. meshoptimizer/gltfpack is
 licensed under the [MIT License](https://github.com/zeux/meshoptimizer).
