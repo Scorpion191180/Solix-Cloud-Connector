@@ -92,6 +92,13 @@ const world = new THREE.Group();
 world.rotation.y = state.yaw;
 scene.add(world);
 
+let exteriorHouse = null;
+let interiorHouse = null;
+let pergolaModel = null;
+let solarBankModel = null;
+let solarBankBatteryVisual = null;
+let audiBatteryVisual = null;
+
 function numberValue(value) {
     if (value == null || typeof value === "boolean")
         return null;
@@ -586,36 +593,129 @@ function createGable(parent) {
     createWindow(parent, [1.05, 5.25, -GABLE_Z - 0.12], [0.58, 0.82], "back");
 }
 
-const PV_PANEL_Z = [2.42, 4.42, -2.85, -1.45];
+const PV_MODULE_LENGTH = 1.906;
+const PV_MODULE_WIDTH = 1.134;
+const PV_MODULE_HEIGHT = 0.030;
+const PV_MODULE_VMP = 36.79;
+// Die Pergola steht auf der Audi-Seite in der hinteren rechten Zaunecke.
+// Der Abstand lässt Pfosten, Dachkante und beide Zaunseiten klar getrennt.
+const PERGOLA_CENTER = new THREE.Vector3(8.10, 0, -8.50);
+const PERGOLA_ROOF_Y = 2.62;
+const PERGOLA_ROOF_PITCH = THREE.MathUtils.degToRad(12);
+const PERGOLA_PANEL_LAYOUT = [
+    [-0.61, -1.00],
+    [0.61, -1.00],
+    [-0.61, 1.00],
+    [0.61, 1.00]
+];
+// Die Solarbank steht auf dem rechten Balkon wandnah unter dem einzelnen
+// Fenster (z = -1,42). So bleiben beide Balkontüren und das Geländer frei.
+const SOLARBANK_POSITION = new THREE.Vector3(3.50, 2.14, -1.42);
+// Der Hausanschluss steht am rechten Längszaun zwischen Audi-Stellplatz
+// und Pergola. Die Vorderseite zeigt zur Einfahrt beziehungsweise zum Haus.
+const GRID_BOX_POSITION = new THREE.Vector3(9.20, 0, -4.20);
 
-function createBalconyPanels(parent) {
+function createBalconies(parent) {
     const railMaterial = new THREE.MeshStandardMaterial({ color: 0x49332f, roughness: 0.8 });
     const sets = [
-        { z: 3.00, length: 6.65, panelZ: PV_PANEL_Z.slice(0, 2) },
-        { z: -2.15, length: 3.58, panelZ: PV_PANEL_Z.slice(2) }
+        { z: 3.00, length: 6.65, depth: 1.34, floorX: 3.82, railX: 4.43 },
+        // Beide Balkone reichen gleich weit nach außen; auf dem rechten steht
+        // die maßstäbliche Solarbank vollständig hinter dem Geländer.
+        { z: -2.15, length: 3.58, depth: 1.34, floorX: 3.82, railX: 4.43 }
     ];
     sets.forEach((set) => {
-        addBox(parent, [0.82, 0.12, set.length], materials.darkTrim, [3.52, 2.08, set.z]);
-        // Geländer und PV sitzen an der äußeren Balkonkante, mit Abstand zur Hauswand.
-        addBox(parent, [0.18, 0.16, set.length - 0.12], railMaterial, [3.88, 2.84, set.z], { radius: 0.025 });
-        addBox(parent, [0.12, 0.12, set.length - 0.18], railMaterial, [3.88, 2.06, set.z]);
+        addBox(parent, [set.depth, 0.12, set.length], materials.darkTrim, [set.floorX, 2.08, set.z]);
+        addBox(parent, [0.18, 0.16, set.length - 0.12], railMaterial, [set.railX, 2.84, set.z], { radius: 0.025 });
+        addBox(parent, [0.12, 0.12, set.length - 0.18], railMaterial, [set.railX, 2.06, set.z]);
         for (let offset = -set.length / 2 + 0.16; offset <= set.length / 2 - 0.16; offset += 0.27) {
             const slat = addBox(parent, [0.11, 0.78, 0.12], railMaterial,
-                [3.88, 2.43, set.z + offset], { radius: 0.018 });
+                [set.railX, 2.43, set.z + offset], { radius: 0.018 });
             slat.rotation.x = Math.sin(offset * 2.3) * 0.018;
         }
+        const endRailLength = set.railX - 3.24;
+        const endRailX = (set.railX + 3.24) / 2;
         [-set.length / 2 + 0.12, set.length / 2 - 0.12].forEach((endOffset) => {
-            addBox(parent, [0.70, 0.16, 0.14], railMaterial, [3.56, 2.84, set.z + endOffset]);
-            addBox(parent, [0.10, 0.96, 0.14], railMaterial, [3.88, 2.37, set.z + endOffset]);
-        });
-        set.panelZ.forEach((panelZ) => {
-            const panel = addBox(parent, [0.10, 1.12, 1.16], materials.solar,
-                [3.96, 2.36, panelZ], { radius: 0.025 });
-            panel.rotation.z = -0.16;
-            for (let row = -1; row <= 1; row += 1)
-                addBox(panel, [0.018, 0.012, 1.05], new THREE.MeshStandardMaterial({ color: 0x6688a2 }), [0.058, row * 0.31, 0], { castShadow: false });
+            addBox(parent, [endRailLength, 0.16, 0.14], railMaterial,
+                [endRailX, 2.84, set.z + endOffset]);
+            addBox(parent, [0.10, 0.96, 0.14], railMaterial,
+                [set.railX, 2.37, set.z + endOffset]);
         });
     });
+}
+
+function createPergolaPanels() {
+    const pergola = new THREE.Group();
+    pergola.position.copy(PERGOLA_CENTER);
+    world.add(pergola);
+
+    const postMaterial = new THREE.MeshStandardMaterial({
+        color: 0x5a3929,
+        roughness: 0.88
+    });
+    const beamMaterial = new THREE.MeshStandardMaterial({
+        color: 0x3f291f,
+        roughness: 0.84
+    });
+    const frameMaterial = new THREE.MeshStandardMaterial({
+        color: 0xc7d0d5,
+        metalness: 0.74,
+        roughness: 0.28
+    });
+    const panelWidth = PV_MODULE_WIDTH;
+    const panelLength = PV_MODULE_LENGTH;
+    const roofWidth = panelWidth * 2 + 0.18;
+    const roofLength = panelLength * 2 + 0.18;
+    const roofYAtX = (x) => PERGOLA_ROOF_Y - Math.tan(PERGOLA_ROOF_PITCH) * x;
+    const rafterLength = roofWidth / Math.cos(PERGOLA_ROOF_PITCH);
+
+    [-1, 1].forEach((xSign) => [-1, 1].forEach((zSign) => {
+        const x = xSign * (roofWidth / 2 - 0.15);
+        const z = zSign * (roofLength / 2 - 0.15);
+        const postHeight = roofYAtX(x) - 0.06;
+        addBox(pergola, [0.17, postHeight, 0.17], postMaterial,
+            [x, postHeight / 2, z], { radius: 0.025 });
+        addBox(pergola, [0.31, 0.12, 0.31], frameMaterial, [x, 0.06, z], { radius: 0.025 });
+    }));
+    [-1, 1].forEach((xSign) =>
+        addBox(pergola, [0.20, 0.22, roofLength + 0.34], beamMaterial,
+            [xSign * (roofWidth / 2 - 0.15),
+                roofYAtX(xSign * (roofWidth / 2 - 0.15)) - 0.08,
+                0], { radius: 0.025 }));
+    [-roofLength / 2 + 0.15, -1.02, 0, 1.02, roofLength / 2 - 0.15].forEach((z) => {
+        const rafter = addBox(pergola, [rafterLength, 0.11, 0.12], beamMaterial,
+            [0, PERGOLA_ROOF_Y - 0.09, z], { radius: 0.02 });
+        rafter.rotation.z = -PERGOLA_ROOF_PITCH;
+    });
+    const combinerMaterial = new THREE.MeshStandardMaterial({
+        color: 0x222c32,
+        metalness: 0.46,
+        roughness: 0.42
+    });
+    addBox(pergola, [0.30, 0.36, 0.18], combinerMaterial,
+        [-0.98, 2.48, 1.84], { radius: 0.035 });
+    addBox(pergola, [0.16, 0.07, 0.025], frameMaterial,
+        [-0.98, 2.50, 1.745], { radius: 0.012, castShadow: false });
+
+    PERGOLA_PANEL_LAYOUT.forEach(([x, z], index) => {
+        const panel = new THREE.Group();
+        panel.position.set(x,
+            PERGOLA_ROOF_Y - Math.tan(PERGOLA_ROOF_PITCH) * x + 0.035,
+            z);
+        panel.rotation.z = -PERGOLA_ROOF_PITCH;
+        panel.userData.pvString = "pv" + (index + 1);
+        pergola.add(panel);
+        addBox(panel, [panelWidth + 0.06, PV_MODULE_HEIGHT + 0.035, panelLength + 0.06],
+            frameMaterial, [0, 0, 0], { radius: 0.025 });
+        addBox(panel, [panelWidth, PV_MODULE_HEIGHT + 0.045, panelLength],
+            materials.solar, [0, 0.025, 0], { radius: 0.018 });
+        for (let column = -2; column <= 2; column += 1)
+            addBox(panel, [0.012, 0.010, panelLength - 0.10], frameMaterial,
+                [column * panelWidth / 6, 0.055, 0], { castShadow: false });
+        for (let row = -4; row <= 4; row += 1)
+            addBox(panel, [panelWidth - 0.08, 0.010, 0.010], frameMaterial,
+                [0, 0.055, row * panelLength / 10], { castShadow: false });
+    });
+    return pergola;
 }
 
 function createBayWindow(parent) {
@@ -746,24 +846,159 @@ function createHouse() {
         createWindow(house, [x, 1.46, -GABLE_Z - 0.02], [0.78, 1.14], "back"));
     createWindow(house, [1.25, 1.46, -GABLE_Z - 0.02], [0.78, 1.14], "back");
 
-    createBalconyPanels(house);
+    createBalconies(house);
     return house;
+}
+
+function createVerticalBatteryGauge(parent, position, size) {
+    const gauge = new THREE.Group();
+    gauge.position.set(...position);
+    parent.add(gauge);
+    const outlineMaterial = new THREE.MeshBasicMaterial({
+        color: 0xbff7ff,
+        transparent: true,
+        opacity: 0.72,
+        wireframe: true,
+        depthTest: false,
+        depthWrite: false
+    });
+    const fillMaterial = new THREE.MeshStandardMaterial({
+        color: 0x38bdf8,
+        emissive: 0x0ea5e9,
+        emissiveIntensity: 1.9,
+        transparent: true,
+        opacity: 0.66,
+        depthTest: false,
+        depthWrite: false
+    });
+    const waveMaterial = new THREE.MeshStandardMaterial({
+        color: 0x86efac,
+        emissive: 0x22c55e,
+        emissiveIntensity: 4.0,
+        transparent: true,
+        opacity: 0,
+        depthTest: false,
+        depthWrite: false
+    });
+    const outline = addBox(gauge, size, outlineMaterial, [0, 0, 0], {
+        radius: 0.018,
+        castShadow: false,
+        receiveShadow: false
+    });
+    const fillHeight = size[1] * 0.82;
+    const fill = addBox(gauge, [size[0] * 0.82, fillHeight, size[2] * 0.70],
+        fillMaterial, [0, 0, 0], {
+            radius: 0.012,
+            castShadow: false,
+            receiveShadow: false
+        });
+    const wave = addBox(gauge, [size[0] * 0.88, 0.018, size[2] * 0.82],
+        waveMaterial, [0, -fillHeight / 2, 0], {
+            radius: 0.008,
+            castShadow: false,
+            receiveShadow: false
+        });
+    [outline, fill, wave].forEach((mesh) => {
+        mesh.renderOrder = 18;
+    });
+    return {
+        fill,
+        wave,
+        outline,
+        fillMaterial,
+        waveMaterial,
+        height: fillHeight,
+        bottom: -fillHeight / 2
+    };
+}
+
+function createAudiBatteryPack(parent) {
+    // Schematisches Hochvolt-Batteriepaket an der realistischen Position:
+    // flach im Unterboden zwischen Vorder- und Hinterachse.
+    const pack = new THREE.Group();
+    pack.position.set(0, 0.34, -0.02);
+    parent.add(pack);
+    const outlineMaterial = new THREE.MeshBasicMaterial({
+        color: 0xc7f9ff,
+        transparent: true,
+        opacity: 0.76,
+        wireframe: true,
+        depthTest: false,
+        depthWrite: false
+    });
+    const outline = addBox(pack, [1.38, 0.18, 1.78], outlineMaterial, [0, 0, 0], {
+        radius: 0.06,
+        castShadow: false,
+        receiveShadow: false
+    });
+    outline.renderOrder = 19;
+    const cells = [];
+    for (let row = 0; row < 4; row += 1) {
+        for (let column = 0; column < 4; column += 1) {
+            const material = new THREE.MeshStandardMaterial({
+                color: 0x12374b,
+                emissive: 0x0ea5e9,
+                emissiveIntensity: 0.16,
+                transparent: true,
+                opacity: 0.22,
+                depthTest: false,
+                depthWrite: false
+            });
+            const cell = addBox(pack, [0.27, 0.105, 0.34], material,
+                [-0.48 + column * 0.32, 0.01, -0.61 + row * 0.41], {
+                    radius: 0.028,
+                    castShadow: false,
+                    receiveShadow: false
+                });
+            cell.renderOrder = 20;
+            cells.push(cell);
+        }
+    }
+    const waveMaterial = new THREE.MeshStandardMaterial({
+        color: 0x86efac,
+        emissive: 0x22c55e,
+        emissiveIntensity: 4.6,
+        transparent: true,
+        opacity: 0,
+        depthTest: false,
+        depthWrite: false
+    });
+    const wave = addBox(pack, [1.31, 0.035, 0.09], waveMaterial, [0, 0.115, -0.78], {
+        radius: 0.018,
+        castShadow: false,
+        receiveShadow: false
+    });
+    wave.renderOrder = 21;
+    return {
+        kind: "audi",
+        group: pack,
+        cells,
+        outline,
+        wave,
+        waveMaterial,
+        level: null,
+        mode: "idle"
+    };
 }
 
 function createSolarBank() {
     const bank = new THREE.Group();
-    bank.position.set(3.75, 2.08, -3.18);
+    bank.position.copy(SOLARBANK_POSITION);
     bank.rotation.y = -Math.PI / 2;
+    // Im exakten Hausmaßstab war die Anlage auf kleinen Displays kaum
+    // erkennbar. Der zweifache Darstellungsmaßstab endet weiterhin direkt
+    // unter dem Fenster und lässt alle drei Geräte klar unterscheiden.
+    bank.scale.setScalar(2);
     world.add(bank);
-    const silver = new THREE.MeshPhysicalMaterial({
-        color: 0x879198,
-        metalness: 0.72,
-        roughness: 0.27,
-        clearcoat: 0.48,
-        clearcoatRoughness: 0.22
+    const shell = new THREE.MeshPhysicalMaterial({
+        color: 0x8f999e,
+        metalness: 0.68,
+        roughness: 0.29,
+        clearcoat: 0.46,
+        clearcoatRoughness: 0.24
     });
-    const graphite = new THREE.MeshStandardMaterial({ color: 0x172027, metalness: 0.48, roughness: 0.34 });
-    const edge = new THREE.MeshStandardMaterial({ color: 0x0b1115, metalness: 0.35, roughness: 0.48 });
+    const graphite = new THREE.MeshStandardMaterial({ color: 0x252b2f, metalness: 0.38, roughness: 0.42 });
+    const edge = new THREE.MeshStandardMaterial({ color: 0x080b0d, metalness: 0.28, roughness: 0.52 });
     const display = new THREE.MeshPhysicalMaterial({
         color: 0x071116,
         metalness: 0.18,
@@ -778,57 +1013,198 @@ function createSolarBank() {
         roughness: 0.25
     });
 
-    // Zwei BP2700-Erweiterungsakkus bilden den realen Unterbau. Eingezogene
-    // Seiten, umlaufende Schattenfugen und die abgeschrägte Front vermeiden
-    // den bisherigen Eindruck eines einfachen gestapelten Kastens.
+    // Hausmaßstab: 20 × 10 m entsprechen 12,8 × 6,4 Szeneneinheiten.
+    // Solarbank 4: 460 × 305 × 355 mm; BP2700: 460 × 233 × 217,5 mm.
+    const metre = 0.64;
+    const bankWidth = 0.460 * metre;
+    const bpHeight = 0.233 * metre;
+    const bpDepth = 0.2175 * metre;
+    const mainHeight = 0.305 * metre;
+    const mainDepth = 0.355 * metre;
+    const gap = 0.012;
+    const batteryGauges = [];
+
     for (let level = 0; level < 2; level += 1) {
-        const y = 0.28 + level * 0.48;
-        addBox(bank, [0.94, 0.44, 0.64], edge, [0, y, 0], { radius: 0.075 });
-        addBox(bank, [0.88, 0.37, 0.59], graphite, [0, y + 0.01, -0.015], { radius: 0.06 });
-        addBox(bank, [0.76, 0.018, 0.63], silver, [0, y + 0.105, -0.315], {
-            rotation: [-0.13, 0, 0],
-            castShadow: false
-        });
-        for (let rib = -3; rib <= 3; rib += 1)
-            addBox(bank, [0.055, 0.018, 0.44], edge, [rib * 0.105, y + 0.225, 0.01], { castShadow: false });
-        addMesh(bank, new THREE.RingGeometry(0.030, 0.041, 18), silver,
-            0.31, y + 0.02, -0.326, { castShadow: false });
+        const y = bpHeight / 2 + level * (bpHeight + gap);
+        addBox(bank, [bankWidth, bpHeight, bpDepth], edge, [0, y, 0], { radius: 0.025 });
+        addBox(bank, [bankWidth - 0.018, bpHeight - 0.018, bpDepth - 0.014], graphite,
+            [0, y + 0.002, -0.004], { radius: 0.020 });
+        addBox(bank, [bankWidth * 0.66, 0.010, bpDepth + 0.004], shell,
+            [0, y + bpHeight * 0.18, -0.003], { castShadow: false });
+        batteryGauges.push(createVerticalBatteryGauge(bank,
+            [0, y, -bpDepth / 2 - 0.014],
+            [bankWidth * 0.78, bpHeight * 0.72, 0.018]));
     }
 
-    // Solarbank 4 E5000 Pro nach der offiziellen Produktansicht: breite
-    // silberne Front, dunkle trapezförmige Anzeige und belüftete Oberseite.
-    const mainY = 1.30;
-    addBox(bank, [1.02, 0.64, 0.70], edge, [0, mainY, 0], { radius: 0.085 });
-    addBox(bank, [0.96, 0.58, 0.64], silver, [0, mainY - 0.015, -0.015], { radius: 0.065 });
-    const faceShape = new THREE.Shape();
-    faceShape.moveTo(-0.43, -0.19);
-    faceShape.lineTo(0.43, -0.19);
-    faceShape.lineTo(0.34, 0.18);
-    faceShape.lineTo(-0.34, 0.18);
-    faceShape.closePath();
-    addMesh(bank, new THREE.ShapeGeometry(faceShape), silver, 0, mainY - 0.065, -0.342, {
-        rotation: [0, Math.PI, 0],
-        castShadow: false
-    });
-    const displayShape = new THREE.Shape();
-    displayShape.moveTo(-0.43, -0.085);
-    displayShape.lineTo(0.43, -0.085);
-    displayShape.lineTo(0.35, 0.105);
-    displayShape.lineTo(-0.35, 0.105);
-    displayShape.closePath();
-    addMesh(bank, new THREE.ShapeGeometry(displayShape), display, 0, mainY + 0.175, -0.346, {
-        rotation: [0, Math.PI, 0],
-        castShadow: false
-    });
-    addBox(bank, [0.35, 0.014, 0.012], cyan, [0, mainY + 0.125, -0.354], { castShadow: false });
-    for (let index = -5; index <= 5; index += 1)
-        addBox(bank, [0.055, 0.025, 0.49], edge, [index * 0.078, mainY + 0.325, 0.02], { castShadow: false });
-    addMesh(bank, new THREE.RingGeometry(0.052, 0.069, 24), edge,
-        0.515, mainY - 0.08, 0.04, { rotation: [0, Math.PI / 2, 0] });
-    [-0.31, 0.31].forEach((x) =>
-        addMesh(bank, new THREE.CylinderGeometry(0.024, 0.024, 0.035, 18), cyan,
-            x, mainY + 0.175, -0.354, { rotation: [Math.PI / 2, 0, 0], castShadow: false }));
+    const mainY = bpHeight * 2 + gap * 2 + mainHeight / 2;
+    addBox(bank, [bankWidth, mainHeight, mainDepth], edge, [0, mainY, 0], { radius: 0.028 });
+    addBox(bank, [bankWidth - 0.016, mainHeight - 0.016, mainDepth - 0.016], shell,
+        [0, mainY - 0.002, -0.003], { radius: 0.024 });
+    addBox(bank, [bankWidth * 0.72, mainHeight * 0.30, 0.012], display,
+        [0, mainY + mainHeight * 0.16, -mainDepth / 2 - 0.006], { radius: 0.012, castShadow: false });
+    addBox(bank, [bankWidth * 0.38, 0.010, 0.014], cyan,
+        [0, mainY + mainHeight * 0.15, -mainDepth / 2 - 0.014], { castShadow: false });
+    for (let index = -3; index <= 3; index += 1)
+        addBox(bank, [0.020, 0.010, mainDepth * 0.62], edge,
+            [index * bankWidth / 9, mainY + mainHeight / 2 + 0.002, 0], { castShadow: false });
+    solarBankBatteryVisual = {
+        kind: "solarbank",
+        group: bank,
+        gauges: batteryGauges,
+        level: null,
+        mode: "idle"
+    };
     return bank;
+}
+
+function createInteriorDollhouse() {
+    const interior = new THREE.Group();
+    interior.visible = false;
+    world.add(interior);
+
+    const floorMaterial = new THREE.MeshStandardMaterial({ color: 0xb58c64, roughness: 0.82 });
+    const innerWall = new THREE.MeshStandardMaterial({ color: 0xf1eadc, roughness: 0.94 });
+    const tile = new THREE.MeshStandardMaterial({ color: 0xd9e1df, roughness: 0.78 });
+    const furnitureWood = new THREE.MeshStandardMaterial({ color: 0x6e422d, roughness: 0.86 });
+    const textileBlue = new THREE.MeshStandardMaterial({ color: 0x345a79, roughness: 0.94 });
+    const textileGreen = new THREE.MeshStandardMaterial({ color: 0x56735c, roughness: 0.94 });
+    const appliance = new THREE.MeshPhysicalMaterial({
+        color: 0xcbd2d4,
+        metalness: 0.62,
+        roughness: 0.30,
+        clearcoat: 0.32
+    });
+    const screen = new THREE.MeshStandardMaterial({
+        color: 0x07131d,
+        emissive: 0x38bdf8,
+        emissiveIntensity: 0,
+        roughness: 0.18
+    });
+    const fridgeDisplay = screen.clone();
+    const tvScreen = screen.clone();
+    const pcScreen = screen.clone();
+    const livingLamp = new THREE.MeshStandardMaterial({
+        color: 0xfff3bf,
+        emissive: 0xffc857,
+        emissiveIntensity: 0,
+        roughness: 0.32
+    });
+    const bedLamp = livingLamp.clone();
+    const devices = [];
+
+    // Zwei voll möblierte Etagen. Die rechte Längsfassade und das Dach werden
+    // im Nahbereich ausgeblendet, sodass die Räume wie bei einem Puppenhaus
+    // offen und von mehreren Kamerawinkeln einsehbar bleiben.
+    [0.63, 2.82].forEach((y, index) =>
+        addBox(interior, [5.92, 0.12, 11.86], index === 1 ? tile : floorMaterial,
+            [0, y, 0], { castShadow: false }));
+    addBox(interior, [0.14, 4.15, 11.86], innerWall, [-2.96, 2.72, 0]);
+    [0, -3.35, 3.35].forEach((z) => {
+        addBox(interior, [5.86, 0.82, 0.11], innerWall, [0, 1.08, z]);
+        addBox(interior, [5.86, 0.78, 0.11], innerWall, [0, 3.27, z]);
+    });
+    addBox(interior, [0.11, 0.88, 6.65], innerWall, [0.18, 1.12, 1.68]);
+    addBox(interior, [0.11, 0.82, 6.65], innerWall, [0.18, 3.30, -1.68]);
+
+    function table(x, y, z, width = 1.15, length = 0.72) {
+        addBox(interior, [width, 0.10, length], furnitureWood, [x, y + 0.72, z], { radius: 0.025 });
+        [-1, 1].forEach((sx) => [-1, 1].forEach((sz) =>
+            addBox(interior, [0.07, 0.70, 0.07], furnitureWood,
+                [x + sx * (width / 2 - 0.08), y + 0.35, z + sz * (length / 2 - 0.08)])));
+    }
+
+    function sofa(x, y, z, rotation = 0) {
+        const group = new THREE.Group();
+        group.position.set(x, y, z);
+        group.rotation.y = rotation;
+        interior.add(group);
+        addBox(group, [1.65, 0.42, 0.78], textileGreen, [0, 0.25, 0], { radius: 0.12 });
+        addBox(group, [1.65, 0.72, 0.18], textileGreen, [0, 0.52, 0.30], { radius: 0.08 });
+        [-0.73, 0.73].forEach((xOffset) =>
+            addBox(group, [0.18, 0.56, 0.76], textileGreen, [xOffset, 0.34, 0], { radius: 0.07 }));
+    }
+
+    function bed(x, y, z, rotation = 0) {
+        const group = new THREE.Group();
+        group.position.set(x, y, z);
+        group.rotation.y = rotation;
+        interior.add(group);
+        addBox(group, [1.45, 0.30, 2.05], furnitureWood, [0, 0.24, 0], { radius: 0.08 });
+        addBox(group, [1.33, 0.22, 1.90], textileBlue, [0, 0.45, 0], { radius: 0.08 });
+        addBox(group, [1.10, 0.18, 0.42], materials.curtain, [0, 0.60, -0.68], { radius: 0.08 });
+    }
+
+    function addSocket(id, label, position, baseWatts, schedule, deviceMaterial = null) {
+        const group = new THREE.Group();
+        group.position.set(...position);
+        group.rotation.y = Math.PI / 2;
+        interior.add(group);
+        const socketFace = new THREE.MeshStandardMaterial({ color: 0xf7f5ee, roughness: 0.70 });
+        const led = new THREE.MeshStandardMaterial({
+            color: 0x64748b,
+            emissive: 0x22c55e,
+            emissiveIntensity: 0,
+            roughness: 0.40
+        });
+        addBox(group, [0.28, 0.19, 0.055], socketFace, [0, 0, 0], { radius: 0.035, castShadow: false });
+        [-0.065, 0.065].forEach((x) =>
+            addMesh(group, new THREE.CircleGeometry(0.025, 12), materials.windowInterior,
+                x, 0, 0.032, { castShadow: false }));
+        addMesh(group, new THREE.CircleGeometry(0.018, 12), led,
+            0, -0.068, 0.034, { castShadow: false });
+        devices.push({
+            id,
+            label,
+            position: new THREE.Vector3(...position),
+            anchor: new THREE.Vector3(position[0] + 0.22, position[1] + 0.30, position[2]),
+            baseWatts,
+            schedule,
+            led,
+            deviceMaterial,
+            active: false,
+            watts: 0
+        });
+    }
+
+    // Erdgeschoss: Küche, Wohnen, Hauswirtschaft und technische Grundlast.
+    addBox(interior, [0.78, 1.55, 0.74], appliance, [-2.35, 1.42, 4.92], { radius: 0.055 });
+    addBox(interior, [0.74, 0.035, 0.62], fridgeDisplay, [-2.34, 1.63, 4.53], { castShadow: false });
+    [-1.35, -0.55, 0.25, 1.05].forEach((z) =>
+        addBox(interior, [0.62, 0.88, 0.72], furnitureWood, [-2.30, 1.12, z + 2.15], { radius: 0.035 }));
+    table(-0.75, 0.66, 3.95, 1.35, 0.80);
+    sofa(-1.15, 0.66, -1.72, Math.PI / 2);
+    addBox(interior, [1.26, 0.78, 0.12], tvScreen, [-2.82, 1.50, -1.72], { castShadow: false });
+    addMesh(interior, new THREE.CylinderGeometry(0.035, 0.045, 1.15, 12), furnitureWood,
+        1.70, 1.22, -2.72);
+    addMesh(interior, new THREE.SphereGeometry(0.15, 18, 12), livingLamp,
+        1.70, 1.82, -2.72, { castShadow: false });
+    addBox(interior, [0.78, 0.88, 0.70], appliance, [-2.30, 1.12, -4.95], { radius: 0.08 });
+    addMesh(interior, new THREE.TorusGeometry(0.23, 0.045, 12, 24), materials.glass,
+        -1.93, 1.12, -4.94, { rotation: [0, Math.PI / 2, 0], castShadow: false });
+
+    // Obergeschoss: Arbeitsplatz für Homeoffice, Schlafen und ein zweiter Wohnbereich.
+    table(-1.75, 2.88, 4.45, 1.25, 0.66);
+    addBox(interior, [0.78, 0.54, 0.08], pcScreen, [-2.00, 3.98, 4.45], {
+        rotation: [0, Math.PI / 2, 0], castShadow: false
+    });
+    addBox(interior, [0.30, 0.52, 0.50], appliance, [-1.30, 3.26, 4.45], { radius: 0.04 });
+    bed(-1.35, 2.88, 0.62, Math.PI / 2);
+    addBox(interior, [0.38, 0.42, 0.38], furnitureWood, [1.62, 3.10, 0.64], { radius: 0.04 });
+    addMesh(interior, new THREE.SphereGeometry(0.13, 18, 12), bedLamp,
+        1.62, 3.48, 0.64, { castShadow: false });
+    sofa(-1.35, 2.88, -4.65, 0);
+    addBox(interior, [1.10, 0.65, 0.10], screen, [-2.82, 3.86, -4.65], { castShadow: false });
+
+    addSocket("fridge", "Kühlschrank", [2.82, 1.02, 4.82], 80, "always", fridgeDisplay);
+    addSocket("coffee", "Kaffeemaschine", [2.82, 1.12, 3.20], 900, "coffee");
+    addSocket("tv", "Fernseher", [2.82, 1.12, -1.72], 105, "evening", tvScreen);
+    addSocket("living-light", "Wohnzimmerlicht", [2.82, 1.72, -2.75], 24, "light", livingLamp);
+    addSocket("washer", "Waschmaschine", [2.82, 1.08, -4.95], 620, "washer");
+    addSocket("office", "Arbeitsplatz · PC", [2.82, 3.20, 4.45], 165, "office", pcScreen);
+    addSocket("bed-light", "Schlafzimmerlicht", [2.82, 3.90, 0.62], 18, "light", bedLamp);
+    addSocket("router", "Router & Netzwerk", [2.82, 3.20, -4.65], 22, "always");
+
+    return { group: interior, devices };
 }
 
 function createCarBodyShell(car, material, profile, width) {
@@ -1060,6 +1436,7 @@ function createVehicles() {
     const audiFallback = createCar(0x008dc8, "audi-q3");
     audiFallback.scale.set(1.10, 1.17, 1.08);
     audiSlot.add(audiFallback);
+    const audiBattery = createAudiBatteryPack(audiSlot);
 
     // IMG_7378: schwarzer Skoda Yeti mittig, kleiner schwarzer VW Fox ganz rechts.
     const yetiSlot = new THREE.Group();
@@ -1093,7 +1470,7 @@ function createVehicles() {
     karoqSlot.add(karoqFallback);
 
     return {
-        audi: { slot: audiSlot, fallback: audiFallback },
+        audi: { slot: audiSlot, fallback: audiFallback, battery: audiBattery },
         yeti: { slot: yetiSlot, fallback: yetiFallback },
         fox: { slot: foxSlot, fallback: foxFallback },
         karoq: { slot: karoqSlot, fallback: karoqFallback }
@@ -1307,7 +1684,8 @@ function createGrassDetail() {
         const onForecourt = z > 4.55 && x > -4.0 && x < 6.5;
         const onAudiDrive = x > 3.15 && z > -6.55 && z < 6.7;
         const aroundPool = x < -5.3 && z < -3.45;
-        if (onHouse || onForecourt || onAudiDrive || aroundPool)
+        const underPergola = x > 6.45 && x < 9.10 && z > -3.35 && z < 1.10;
+        if (onHouse || onForecourt || onAudiDrive || aroundPool || underPergola)
             continue;
         transform.position.set(x, 0.07, z);
         transform.rotation.set((random() - 0.5) * 0.22, random() * Math.PI, (random() - 0.5) * 0.22);
@@ -1350,21 +1728,34 @@ function createGarden() {
     // Die große Fichte steht laut Fotoreihe auf der gegenüberliegenden Gartenseite.
     createTree(0.35, -8.65, 0.94);
 
-    // Vor Garage und Autos bleibt die Einfahrt offen; hinten und an der Pool-Längsseite steht Holzzaun.
+    // Vor Garage und Autos bleibt die Einfahrt offen. Der hintere und die
+    // beiden seitlichen Holzzäune schließen ohne offene Lücken in den Ecken.
     const fence = new THREE.MeshStandardMaterial({ color: 0x6a5848, roughness: 1 });
-    for (let x = -11.70; x <= 4.0; x += 0.70)
+    for (let x = -11.70; x <= 9.55; x += 0.70)
         addBox(world, [0.10, 0.82, 0.10], fence, [x, 0.39, -10.65]);
-    addBox(world, [15.70, 0.10, 0.10], fence, [-3.85, 0.25, -10.65]);
-    addBox(world, [15.70, 0.10, 0.10], fence, [-3.85, 0.64, -10.65]);
-    for (let z = -10.0; z <= 9.0; z += 0.70)
+    addBox(world, [21.25, 0.10, 0.10], fence, [-1.075, 0.25, -10.65]);
+    addBox(world, [21.25, 0.10, 0.10], fence, [-1.075, 0.64, -10.65]);
+    for (let z = -10.65; z <= 9.0; z += 0.70)
         addBox(world, [0.10, 0.82, 0.10], fence, [-11.70, 0.39, z]);
-    addBox(world, [0.10, 0.10, 19.2], fence, [-11.70, 0.25, -0.50]);
-    addBox(world, [0.10, 0.10, 19.2], fence, [-11.70, 0.64, -0.50]);
+    addBox(world, [0.10, 0.10, 19.65], fence, [-11.70, 0.25, -0.825]);
+    addBox(world, [0.10, 0.10, 19.65], fence, [-11.70, 0.64, -0.825]);
+
+    // Auf der Audi-Seite schließt ein neuer L-förmiger Holzzaun die grüne
+    // Pergola-Fläche bis zur straßenseitigen Ecke des grauen Vorplatzes ab.
+    for (let z = -10.65; z <= 6.65; z += 0.68)
+        addBox(world, [0.10, 0.90, 0.10], fence, [9.55, 0.43, z]);
+    addBox(world, [0.10, 0.10, 17.30], fence, [9.55, 0.27, -2.00]);
+    addBox(world, [0.10, 0.10, 17.30], fence, [9.55, 0.69, -2.00]);
+    for (let x = 6.55; x <= 9.55; x += 0.68)
+        addBox(world, [0.10, 0.90, 0.10], fence, [x, 0.43, 6.65]);
+    addBox(world, [3.05, 0.10, 0.10], fence, [8.05, 0.27, 6.65]);
+    addBox(world, [3.05, 0.10, 0.10], fence, [8.05, 0.69, 6.65]);
 }
 
 function createGridBox() {
     const group = new THREE.Group();
-    group.position.set(6.05, 0, -5.20);
+    group.position.copy(GRID_BOX_POSITION);
+    group.rotation.y = -Math.PI / 2;
     world.add(group);
     const casing = new THREE.MeshStandardMaterial({ color: 0xd9d9d1, roughness: 0.72 });
     addBox(group, [0.58, 1.05, 0.42], casing, [0, 0.55, 0], { radius: 0.05 });
@@ -1372,13 +1763,61 @@ function createGridBox() {
     return group;
 }
 
+function createAudiChargeConnection() {
+    const connectorMaterial = new THREE.MeshStandardMaterial({ color: 0x172027, roughness: 0.46, metalness: 0.25 });
+    const handleMaterial = new THREE.MeshStandardMaterial({ color: 0x2f3b43, roughness: 0.58 });
+    const contactMaterial = new THREE.MeshStandardMaterial({ color: 0xb8c3c8, metalness: 0.82, roughness: 0.24 });
+    const statusMaterial = new THREE.MeshStandardMaterial({
+        color: 0x22c55e,
+        emissive: 0x22c55e,
+        emissiveIntensity: 2.4,
+        roughness: 0.32
+    });
+
+    function makePlug(position, rotation) {
+        const plug = new THREE.Group();
+        plug.position.set(...position);
+        plug.rotation.set(...rotation);
+        world.add(plug);
+        addMesh(plug, new THREE.CylinderGeometry(0.12, 0.14, 0.30, 18), connectorMaterial,
+            0, 0, 0, { rotation: [Math.PI / 2, 0, 0] });
+        addMesh(plug, new THREE.CylinderGeometry(0.095, 0.095, 0.12, 18), contactMaterial,
+            0, 0, -0.18, { rotation: [Math.PI / 2, 0, 0], castShadow: false });
+        addBox(plug, [0.12, 0.32, 0.12], handleMaterial, [0, -0.18, 0.13], {
+            rotation: [0.42, 0, 0], radius: 0.035
+        });
+        addMesh(plug, new THREE.TorusGeometry(0.145, 0.025, 10, 24), statusMaterial,
+            0, 0, -0.16, { rotation: [Math.PI / 2, 0, 0], castShadow: false });
+        return plug;
+    }
+
+    const port = new THREE.Group();
+    port.position.set(5.70, 0.88, -0.68);
+    port.rotation.y = Math.PI / 2;
+    world.add(port);
+    addMesh(port, new THREE.CircleGeometry(0.20, 24), connectorMaterial,
+        0, 0, 0, { castShadow: false });
+    addMesh(port, new THREE.RingGeometry(0.13, 0.19, 24), contactMaterial,
+        0, 0, 0.012, { castShadow: false });
+
+    const attached = makePlug([5.80, 0.88, -0.68], [0, Math.PI / 2, 0]);
+    const loose = makePlug([6.52, 0.16, 0.30], [Math.PI / 2, 0.24, Math.PI / 2]);
+    attached.visible = false;
+    loose.visible = true;
+    return { port, attached, loose, statusMaterial };
+}
+
 createGarden();
-createHouse();
-createSolarBank();
+exteriorHouse = createHouse();
+pergolaModel = createPergolaPanels();
+solarBankModel = createSolarBank();
+interiorHouse = createInteriorDollhouse();
 const vehicleModels = createVehicles();
 const audiModel = vehicleModels.audi.slot;
+audiBatteryVisual = vehicleModels.audi.battery;
 loadDetailedVehicles(vehicleModels);
-createGridBox();
+const gridBoxModel = createGridBox();
+const chargingConnection = createAudiChargeConnection();
 
 const hemisphere = new THREE.HemisphereLight(0xd9efff, 0x34452d, 1.58);
 scene.add(hemisphere);
@@ -1413,8 +1852,11 @@ function createCableCurve(points) {
     return path;
 }
 
-function createFlow(id, points, color) {
+function createFlow(id, points, color, options = {}) {
     const curve = createCableCurve(points);
+    const cableRadius = options.cableRadius || 0.043;
+    const glowRadius = options.glowRadius || 0.064;
+    const pulseRadius = options.pulseRadius || 0.11;
     const cableMaterial = new THREE.MeshStandardMaterial({
         color: 0x26323b,
         roughness: 0.64,
@@ -1438,13 +1880,13 @@ function createFlow(id, points, color) {
         const length = direction.length();
         const midpoint = start.clone().add(end).multiplyScalar(0.5);
         const quaternion = new THREE.Quaternion().setFromUnitVectors(up, direction.clone().normalize());
-        const cableSegment = new THREE.Mesh(new THREE.CylinderGeometry(0.043, 0.043, length, 10), cableMaterial);
+        const cableSegment = new THREE.Mesh(new THREE.CylinderGeometry(cableRadius, cableRadius, length, 10), cableMaterial);
         cableSegment.position.copy(midpoint);
         cableSegment.quaternion.copy(quaternion);
         cableSegment.castShadow = true;
         cableSegment.receiveShadow = true;
         cable.add(cableSegment);
-        const lightSegment = new THREE.Mesh(new THREE.CylinderGeometry(0.064, 0.064, length, 10), tubeMaterial);
+        const lightSegment = new THREE.Mesh(new THREE.CylinderGeometry(glowRadius, glowRadius, length, 10), tubeMaterial);
         lightSegment.position.copy(midpoint);
         lightSegment.quaternion.copy(quaternion);
         lightSegment.renderOrder = 2;
@@ -1464,7 +1906,7 @@ function createFlow(id, points, color) {
     });
     const pulses = [];
     for (let index = 0; index < 6; index += 1) {
-        const pulse = new THREE.Mesh(new THREE.SphereGeometry(0.11, 14, 10), pulseMaterial.clone());
+        const pulse = new THREE.Mesh(new THREE.SphereGeometry(pulseRadius, 14, 10), pulseMaterial.clone());
         pulse.userData.offset = index / 6;
         pulse.renderOrder = 3;
         world.add(pulse);
@@ -1473,68 +1915,124 @@ function createFlow(id, points, color) {
     flows[id] = { curve, cable, tube, tubeMaterial, pulses, active: false, reverse: false };
 }
 
-const pvPanelAnchors = PV_PANEL_Z.map((z, index) => ({
+const pvPanelAnchors = PERGOLA_PANEL_LAYOUT.map(([x, z], index) => ({
     id: "pv" + (index + 1),
-    anchor: new THREE.Vector3(),
-    tangentAnchor: new THREE.Vector3(),
-    z,
-    cableX: [4.58, 4.72, 4.86, 5.00][index]
+    anchor: new THREE.Vector3(
+        PERGOLA_CENTER.x + x,
+        PERGOLA_ROOF_Y - Math.tan(PERGOLA_ROOF_PITCH) * x + 0.20,
+        PERGOLA_CENTER.z + z
+    ),
+    tangentAnchor: new THREE.Vector3(
+        PERGOLA_CENTER.x + x + 0.18,
+        PERGOLA_ROOF_Y - Math.tan(PERGOLA_ROOF_PITCH) * x + 0.20,
+        PERGOLA_CENTER.z + z
+    )
 }));
 
-// Jeder PV-Strang verlässt sein eigenes Panel sichtbar und folgt einer
-// separaten 90-Grad-Trasse entlang der Balkonfassade. Statt direkt zur nahen
-// Solarbank abzukürzen, laufen alle vier Leitungen erst getrennt bis zum Ende
-// des Balkons und anschließend in vier eigenen Kabelkanälen zurück. Dadurch
-// bleiben Quelle und Ziel jedes Strangs fast über die gesamte Strecke sichtbar.
+// Auf dem Pultdach bleiben alle vier Modulstränge einzeln nachvollziehbar und
+// folgen Rahmen und Längsträger. Erst direkt unter der Pergola-Dachkante werden
+// sie in der Sammelbox zusammengeführt.
+const pvCombinerPoint = [7.12, 2.54, -6.66];
 const pvRoutes = [
     [
-        [4.01, 2.42, 2.42], [4.58, 2.42, 2.42], [4.58, 1.38, 2.42],
-        [4.58, 1.38, 5.72], [4.66, 1.38, 5.72], [4.66, 1.38, -3.18],
-        [4.66, 3.22, -3.18], [4.10, 3.22, -3.18]
+        pvPanelAnchors[0].anchor.toArray(), [7.04, 2.86, -9.50],
+        [7.04, 2.86, -6.78], pvCombinerPoint
     ],
     [
-        [4.01, 2.42, 4.42], [4.72, 2.42, 4.42], [4.72, 1.54, 4.42],
-        [4.72, 1.54, 5.52], [4.82, 1.54, 5.52], [4.82, 1.54, -3.18],
-        [4.82, 3.34, -3.18], [4.10, 3.34, -3.18]
+        pvPanelAnchors[1].anchor.toArray(), [7.10, 2.91, -9.50],
+        [7.10, 2.91, -6.72], pvCombinerPoint
     ],
     [
-        [4.01, 2.42, -2.85], [4.86, 2.42, -2.85], [4.86, 1.70, -2.85],
-        [4.86, 1.70, 5.32], [4.98, 1.70, 5.32], [4.98, 1.70, -3.18],
-        [4.98, 3.46, -3.18], [4.10, 3.46, -3.18]
+        pvPanelAnchors[2].anchor.toArray(), [7.16, 2.96, -7.50],
+        [7.16, 2.96, -6.68], pvCombinerPoint
     ],
     [
-        [4.01, 2.42, -1.45], [5.00, 2.42, -1.45], [5.00, 1.86, -1.45],
-        [5.00, 1.86, 5.12], [5.14, 1.86, 5.12], [5.14, 1.86, -3.18],
-        [5.14, 3.58, -3.18], [4.10, 3.58, -3.18]
+        pvPanelAnchors[3].anchor.toArray(), [7.22, 3.01, -7.50],
+        [7.22, 3.01, -6.62], pvCombinerPoint
     ]
 ];
 pvPanelAnchors.forEach((panel, index) => {
     createFlow(panel.id, pvRoutes[index], colors.pv);
-    // Die Stringwerte sitzen auf dem ersten waagerechten Kabelstück direkt
-    // neben dem zugehörigen Modul und sind damit sofort zuzuordnen.
-    panel.anchor.set((4.01 + panel.cableX) * 0.5, 2.42, panel.z);
-    panel.tangentAnchor.copy(panel.anchor).add(new THREE.Vector3(0.18, 0, 0));
 });
+// Ab der Sammelbox läuft der PV-Hauptstrang in einem eigenen Bodenkanal. Im
+// freien unteren Mauerfeld unterhalb des Solarbank-Fensters steigt er nur bis
+// zur Balkonplatte und geht anschließend verdeckt von unten in die Anlage.
+// So bleibt die komplette Fensterfläche einschließlich ihrer Umrandung frei.
+createFlow("pvTrunk", [
+    pvCombinerPoint, [7.12, 0.18, -6.66], [3.40, 0.18, -6.66],
+    [3.40, 0.18, -1.33], [3.40, 2.16, -1.33],
+    [3.40, 2.16, -1.42], [3.62, 2.16, -1.42],
+    [3.62, 2.56, -1.42]
+], colors.pv, { cableRadius: 0.060, glowRadius: 0.085, pulseRadius: 0.13 });
+// Der Netzstrang nutzt einen zweiten, versetzten Kanal. Er bleibt am Boden
+// außerhalb des Audi, wechselt oberhalb der unteren Fenster in den freien
+// oberen Spalt z=-3,38 und verläuft unter der Traufe parallel zum PV-Strang.
 createFlow("grid", [
-    [6.05, 0.58, -5.20], [6.05, 0.16, -5.20], [6.05, 0.16, -3.55],
-    [4.18, 0.16, -3.55], [4.02, 0.16, -3.18], [4.02, 2.72, -3.18],
-    [3.76, 2.72, -3.18]
+    [9.20, 0.58, -4.20], [9.20, 0.16, -4.20], [3.66, 0.16, -4.20],
+    [3.66, 0.16, 3.20], [3.66, 2.34, 3.20],
+    [3.66, 2.34, -3.38], [3.66, 4.84, -3.38],
+    [3.66, 4.84, -0.48], [3.66, 2.44, -0.48],
+    [3.66, 2.44, -1.42], [3.62, 2.44, -1.42]
 ], colors.grid);
-createFlow("audi", [
-    [3.76, 2.72, -3.18], [4.12, 2.72, -3.18], [4.12, 0.18, -3.18],
-    [4.46, 0.18, -3.18], [4.46, 0.18, 0.18], [4.82, 0.18, 0.18],
-    [5.00, 0.52, 0.25]
+createFlow("audiTrunk", [
+    // Von der Solarbank oben nach links bis in den Spalt der beiden Balkone.
+    // Dort läuft der Strang an der Hauswand hinunter und anschließend vor
+    // der Motorhaube entlang, niemals unter der Fahrzeugfläche.
+    [3.62, 2.32, -1.42], [3.62, 2.90, -1.42],
+    // 2,90 liegt über dem 2,84 hohen Geländer, aber unter der
+    // Fensterbank: Der Strang berührt keine Glas- oder Türfläche.
+    [3.50, 2.90, -1.42], [3.50, 2.90, -0.34],
+    // Zwischen den Geländern geht es nur bis in das freie Fassadenband.
+    // Der lange Steigstrang sitzt bei z=-1,33 im breiten Mauerstreifen
+    // zwischen den unteren Fenstern bei z=-0,55 und z=-2,12. Erst oberhalb
+    // ihrer Rahmen läuft er zurück zum Geländerspalt.
+    [3.50, 2.34, -0.34], [3.50, 2.34, -1.33],
+    [3.50, 0.16, -1.33], [3.50, 0.16, -1.18],
+    [5.80, 0.16, -1.18],
+    [5.80, 0.16, -0.68]
 ], colors.audi);
+createFlow("audi", [
+    [5.80, 0.16, -0.68], [5.80, 0.88, -0.68]
+], colors.audi);
+createFlow("audiLoose", [
+    [5.80, 0.16, -0.68], [6.52, 0.16, -0.68], [6.52, 0.16, 0.30]
+], colors.inactive);
+
+createFlow("houseMain", [
+    [3.62, 2.40, -1.42], [3.08, 2.40, -1.42], [3.08, 2.40, -3.18],
+    [3.08, 1.38, -3.18],
+    [2.72, 1.38, -3.18]
+], "#fb923c");
+interiorHouse.devices.forEach((device) => {
+    createFlow("room-" + device.id, [
+        [2.72, 1.38, -3.18],
+        [2.72, device.position.y, -3.18],
+        [2.72, device.position.y, device.position.z],
+        [device.position.x, device.position.y, device.position.z]
+    ], "#fb923c");
+});
+
+function setInteriorFlowVisibility(visible) {
+    ["houseMain", ...interiorHouse.devices.map((device) => "room-" + device.id)].forEach((id) => {
+        const flow = flows[id];
+        flow.cable.visible = visible;
+        flow.tube.visible = visible;
+        flow.pulses.forEach((pulse) => {
+            pulse.visible = visible && flow.active;
+        });
+    });
+}
+setInteriorFlowVisibility(false);
 
 function flowLabelAnchor(flowId, progress, offset = [0, 0, 0]) {
     return flows[flowId].curve.getPointAt(progress).add(new THREE.Vector3(...offset));
 }
 
 const labelAnchors = {
-    pv: flowLabelAnchor("pv1", 0.72, [-0.16, 0.28, -0.10]),
-    battery: new THREE.Vector3(3.72, 3.62, -3.18),
+    pv: flowLabelAnchor("pvTrunk", 0.55, [-0.16, 0.30, -0.10]),
+    battery: new THREE.Vector3(3.50, 3.34, -1.42),
     grid: flowLabelAnchor("grid", 0.30, [0, 0.30, 0]),
-    audi: flowLabelAnchor("audi", 0.76, [0, 0.30, 0])
+    audi: flowLabelAnchor("audiTrunk", 0.82, [0, 0.30, 0])
 };
 
 const labelElements = {};
@@ -1556,14 +2054,16 @@ pvPanelAnchors.forEach((panel, index) => {
     const label = document.createElement("span");
     label.className = "house-string-label";
     label.dataset.string = panel.id;
-    label.textContent = "PV" + (index + 1) + " --";
+    label.innerHTML = `<strong>PV${index + 1} · --</strong>` +
+        '<span class="panel-mid-detail">36,8 V · -- A</span>' +
+        '<span class="panel-close-detail">→ Solarbank · 0 Wh seit Ansicht</span>';
     stage.appendChild(label);
     pvStringElements[panel.id] = label;
 });
 
 const objectBatteryAnchors = {
-    battery: new THREE.Vector3(3.62, 4.18, -3.18),
-    audi: new THREE.Vector3(5.00, 2.18, 1.00)
+    battery: new THREE.Vector3(3.50, 3.48, -1.42),
+    audi: new THREE.Vector3(5.00, 0.72, 1.00)
 };
 const objectBatteryElements = {};
 Object.keys(objectBatteryAnchors).forEach((id) => {
@@ -1572,12 +2072,15 @@ Object.keys(objectBatteryAnchors).forEach((id) => {
     indicator.dataset.component = id;
     indicator.dataset.flow = "idle";
     indicator.setAttribute("role", "img");
-    indicator.innerHTML = '<span class="house-object-battery-shell"><span class="house-object-battery-fill"></span></span><strong>--</strong>';
+    // Der animierte Akku sitzt jetzt direkt im jeweiligen 3D-Objekt. Hier
+    // bleiben deshalb nur Ladestand und die beim Zoomen sichtbaren Details.
+    indicator.innerHTML = '<span class="house-object-battery-copy"><strong>--</strong>' +
+        '<small class="house-object-battery-detail">Bereit</small></span>';
     stage.appendChild(indicator);
     objectBatteryElements[id] = indicator;
 });
 
-function setObjectBattery(id, percent, flowMode) {
+function setObjectBattery(id, percent, flowMode, powerWatts = null, secondaryDetail = "") {
     const indicator = objectBatteryElements[id];
     const numericPercent = numberValue(percent);
     const known = numericPercent != null;
@@ -1586,9 +2089,177 @@ function setObjectBattery(id, percent, flowMode) {
     indicator.dataset.flow = known ? flowMode : "idle";
     indicator.classList.toggle("unknown", !known);
     indicator.querySelector("strong").textContent = known ? Math.round(level) + " %" : "--";
+    const power = numberValue(powerWatts);
+    const direction = flowMode === "charging" ? "↓ hinein" : flowMode === "discharging" ? "↑ heraus" : "Bereit";
+    const detailLines = Array.isArray(secondaryDetail) ? secondaryDetail :
+        secondaryDetail ? [secondaryDetail] : [];
+    indicator.querySelector(".house-object-battery-detail").innerHTML =
+        `<span>${power != null && power >= 5 ? formatPower(power) + " · " + direction : direction}</span>` +
+        detailLines.map((line) => `<span>${line}</span>`).join("");
     const label = id === "battery" ? "Solarbank" : "Audi";
     const motion = flowMode === "charging" ? " lädt" : flowMode === "discharging" ? " entlädt" : "";
     indicator.setAttribute("aria-label", label + ": " + (known ? Math.round(level) + " Prozent" + motion : "Ladestand unbekannt"));
+}
+
+function setSchematicBatteryState(visual, percent, mode) {
+    if (!visual)
+        return;
+    const numericPercent = numberValue(percent);
+    visual.level = numericPercent == null ? null : THREE.MathUtils.clamp(numericPercent, 0, 100);
+    visual.mode = numericPercent == null ? "idle" : mode;
+    const fraction = Math.max(0.025, (visual.level ?? 0) / 100);
+    const charging = visual.mode === "charging";
+    const discharging = visual.mode === "discharging";
+    const activeColor = charging ? 0x22c55e : discharging ? 0xf97316 : 0x38bdf8;
+
+    if (visual.kind === "audi") {
+        const activeCells = visual.level == null ? 0 :
+            Math.ceil(visual.cells.length * visual.level / 100);
+        visual.cells.forEach((cell, index) => {
+            cell.userData.energyActive = index < activeCells;
+            cell.material.color.setHex(cell.userData.energyActive ? activeColor : 0x12374b);
+            cell.material.emissive.setHex(cell.userData.energyActive ? activeColor : 0x0f2734);
+        });
+    }
+    else {
+        visual.gauges.forEach((gauge) => {
+            gauge.fill.scale.y = fraction;
+            gauge.fill.position.y = gauge.bottom + gauge.height * fraction / 2;
+            gauge.fillMaterial.color.setHex(activeColor);
+            gauge.fillMaterial.emissive.setHex(activeColor);
+        });
+    }
+}
+
+function animateSchematicBattery(visual, seconds) {
+    if (!visual)
+        return;
+    const hasLevel = visual.level != null;
+    const moving = hasLevel && (visual.mode === "charging" || visual.mode === "discharging");
+    const pulse = moving && !reduceMotion ? 0.76 + Math.sin(seconds * 6.2) * 0.24 : 1;
+    const directionProgress = reduceMotion ? (visual.level ?? 0) / 100 : (seconds * 0.56) % 1;
+    const progress = visual.mode === "discharging" ? 1 - directionProgress : directionProgress;
+    const zoomStrength = THREE.MathUtils.clamp((state.zoom - 0.82) / 0.72, 0.32, 1);
+
+    if (visual.kind === "audi") {
+        visual.outline.material.opacity = (hasLevel ? 0.42 : 0.18) + zoomStrength * 0.34;
+        visual.cells.forEach((cell) => {
+            const active = cell.userData.energyActive;
+            cell.material.opacity = (active ? 0.70 * pulse : 0.13) * zoomStrength;
+            cell.material.emissiveIntensity = active ? 2.5 * pulse : 0.10;
+        });
+        visual.wave.visible = moving;
+        visual.wave.position.z = -0.78 + progress * 1.56;
+        visual.waveMaterial.opacity = moving ? 0.88 * pulse : 0;
+        visual.waveMaterial.emissiveIntensity = 4.4 * pulse;
+    }
+    else {
+        visual.gauges.forEach((gauge, index) => {
+            gauge.outline.material.opacity = (hasLevel ? 0.44 : 0.16) + zoomStrength * 0.30;
+            gauge.fillMaterial.opacity = hasLevel ? 0.68 * pulse : 0.12;
+            gauge.fillMaterial.emissiveIntensity = hasLevel ? 2.2 * pulse : 0.08;
+            gauge.wave.visible = moving;
+            gauge.wave.position.y = gauge.bottom +
+                ((progress + index * 0.14) % 1) * gauge.height;
+            gauge.waveMaterial.opacity = moving ? 0.90 * pulse : 0;
+            gauge.waveMaterial.emissiveIntensity = 4.2 * pulse;
+        });
+    }
+}
+
+const interiorBadge = document.createElement("span");
+interiorBadge.className = "house-cutaway-badge";
+interiorBadge.textContent = "INNENANSICHT · Zwei-Personen-Profil";
+stage.appendChild(interiorBadge);
+
+const interiorDeviceElements = {};
+interiorHouse.devices.forEach((device) => {
+    const label = document.createElement("span");
+    label.className = "house-device-label";
+    label.dataset.device = device.id;
+    label.innerHTML = `<strong>${device.label}</strong><span>aus</span>`;
+    stage.appendChild(label);
+    interiorDeviceElements[device.id] = label;
+});
+
+const pvSessionWh = [0, 0, 0, 0];
+let currentPvStringPowers = [null, null, null, null];
+let simulatedHouseLoad = 0;
+let simulatedResidualLoad = 0;
+let lastRoutineMinute = -1;
+
+function updatePanelDetails() {
+    currentPvStringPowers.forEach((power, index) => {
+        const element = pvStringElements["pv" + (index + 1)];
+        const watts = numberValue(power);
+        const amps = watts == null ? null : Math.max(0, watts) / PV_MODULE_VMP;
+        element.querySelector("strong").textContent =
+            "PV" + (index + 1) + " · " + formatPower(watts);
+        element.querySelector(".panel-mid-detail").textContent =
+            "36,8 V · " + (amps == null ? "-- A" : amps.toLocaleString("de-DE", {
+                minimumFractionDigits: 1,
+                maximumFractionDigits: 2
+            }) + " A");
+        element.querySelector(".panel-close-detail").textContent =
+            "→ Solarbank · " + pvSessionWh[index].toLocaleString("de-DE", {
+                minimumFractionDigits: 1,
+                maximumFractionDigits: 1
+            }) + " Wh seit Ansicht";
+        element.classList.toggle("active", watts != null && watts >= 5);
+    });
+}
+
+function deviceScheduled(device, now) {
+    const hour = now.getHours() + now.getMinutes() / 60;
+    const weekday = now.getDay() >= 1 && now.getDay() <= 5;
+    const phase = Math.floor(now.getMinutes() / 7);
+    if (device.schedule === "always")
+        return true;
+    if (device.schedule === "office")
+        return weekday && hour >= 8.0 && hour < 17.7;
+    if (device.schedule === "coffee")
+        return ((hour >= 6.2 && hour < 8.7) || (hour >= 12.0 && hour < 14.2)) && phase % 3 === 0;
+    if (device.schedule === "evening")
+        return hour >= 18.3 && hour < 23.4;
+    if (device.schedule === "light")
+        return (hour < 7.7 || hour >= 17.2) && (phase + device.id.length) % 3 !== 0;
+    if (device.schedule === "washer") {
+        const plannedDay = (now.getDate() + now.getMonth()) % 3 === 0;
+        const weekendRun = !weekday && hour >= 10.0 && hour < 11.4;
+        return (plannedDay && hour >= 18.0 && hour < 19.5) || weekendRun;
+    }
+    return false;
+}
+
+function updateInteriorElectricity(totalWatts, now = new Date()) {
+    const total = Math.max(0, numberValue(totalWatts) ?? 0);
+    simulatedHouseLoad = total;
+    const scheduled = interiorHouse.devices.filter((device) => deviceScheduled(device, now));
+    const scheduledBase = scheduled.reduce((sum, device) => sum + device.baseWatts, 0);
+    const scale = scheduledBase > 0 ? Math.min(1, total / scheduledBase) : 0;
+    let assigned = 0;
+
+    interiorHouse.devices.forEach((device) => {
+        const active = total >= 5 && scheduled.includes(device);
+        const watts = active ? Math.max(1, Math.round(device.baseWatts * scale)) : 0;
+        device.active = active;
+        device.watts = watts;
+        assigned += watts;
+        device.led.emissiveIntensity = active ? 4.4 : 0;
+        device.led.color.setHex(active ? 0x86efac : 0x64748b);
+        if (device.deviceMaterial)
+            device.deviceMaterial.emissiveIntensity = active ? 2.8 : 0;
+        setFlowState(flows["room-" + device.id], active);
+        const element = interiorDeviceElements[device.id];
+        element.classList.toggle("active", active);
+        element.querySelector("span").textContent = active ? formatPower(watts) : "aus";
+    });
+    simulatedResidualLoad = Math.max(0, Math.round(total - assigned));
+    setFlowState(flows.houseMain, total >= 5);
+    setInteriorFlowVisibility(cutawayVisible);
+    interiorBadge.textContent = "INNENANSICHT · Hauslast " + formatPower(total) +
+        " · Zwei-Personen-Profil" + (simulatedResidualLoad > 0 ?
+            " · sonstige Last " + formatPower(simulatedResidualLoad) : "");
 }
 
 function componentData() {
@@ -1603,16 +2274,20 @@ function componentData() {
     const batteryCharge = numberValue(solix.battery_charge_power) ?? 0;
     const batteryDischarge = numberValue(solix.battery_discharge_power) ??
         Math.max(0, -(numberValue(solix.battery_power) ?? 0));
-    const output = numberValue(solix.system_output_power) ?? numberValue(solix.home_load);
+    const homeLoad = numberValue(solix.home_load);
+    const output = numberValue(solix.system_output_power) ?? homeLoad;
     const grid = numberValue(solix.grid_power);
     const plugPower = numberValue(smartPlug.power_w);
     const audiPowerKw = numberValue(audi.charging_power_kw);
     const audiPower = plugPower ?? (audiPowerKw == null ? null : audiPowerKw * 1000);
     const charging = plugPower != null ? plugPower >= 20 : audi.charging === true;
+    const plugConnected = audi.plug_connected === true || automation.audi_plug_connected === true;
+    const batteryEnergyWh = numberValue(solix.battery_energy_wh);
+    const interiorLoad = homeLoad == null ? output : Math.max(0, homeLoad - (plugPower ?? 0));
 
     return {
         pv: {
-            id: "pv", label: "BALKON-PV", icon: "☀️", value: formatPower(pv), color: colors.pv,
+            id: "pv", label: "PERGOLA-PV", icon: "☀️", value: formatPower(pv), color: colors.pv,
             detail: pvStrings.map((value, index) => "PV" + (index + 1) + " " + formatPower(value)).join(" · "),
             active: pv != null && pv >= 5
         },
@@ -1642,7 +2317,10 @@ function componentData() {
                     audi.plug_connected === false ? "Ladestecker ist getrennt." : "Audi-Status wird geprüft.",
             active: charging
         },
-        raw: { pv, pvStrings, batterySoc, batteryCharge, batteryDischarge, output, grid, audiPower, charging, solixStale }
+        raw: {
+            pv, pvStrings, batterySoc, batteryCharge, batteryDischarge, batteryEnergyWh,
+            output, interiorLoad, grid, audiPower, charging, plugConnected, solixStale
+        }
     };
 }
 
@@ -1662,16 +2340,41 @@ function updateLiveUi() {
     raw.pvStrings.forEach((power, index) => {
         const id = "pv" + (index + 1);
         setFlowState(flows[id], power != null && power >= 5);
-        const label = pvStringElements[id];
-        label.textContent = "PV" + (index + 1) + " " + formatPower(power);
-        label.classList.toggle("active", power != null && power >= 5);
+        currentPvStringPowers[index] = power;
     });
+    setFlowState(flows.pvTrunk, raw.pv != null && raw.pv >= 5);
+    updatePanelDetails();
     setFlowState(flows.grid, raw.grid != null && Math.abs(raw.grid) >= 5, raw.grid < 0);
+    setFlowState(flows.audiTrunk, raw.charging && raw.audiPower != null && raw.audiPower >= 5);
     setFlowState(flows.audi, raw.charging && raw.audiPower != null && raw.audiPower >= 5);
-    setObjectBattery("battery", raw.batterySoc,
-        raw.batteryCharge >= 5 ? "charging" : raw.batteryDischarge >= 5 ? "discharging" : "idle");
-    setObjectBattery("audi", numberValue((state.data.audi || {}).battery_percent),
-        raw.charging ? "charging" : "idle");
+    setFlowState(flows.audiLoose, false);
+    flows.audi.cable.visible = !cutawayVisible && raw.plugConnected;
+    flows.audi.tube.visible = !cutawayVisible && raw.plugConnected;
+    flows.audiLoose.cable.visible = !cutawayVisible && !raw.plugConnected;
+    flows.audiLoose.tube.visible = !cutawayVisible && !raw.plugConnected;
+    chargingConnection.attached.visible = !cutawayVisible && raw.plugConnected;
+    chargingConnection.loose.visible = !cutawayVisible && !raw.plugConnected;
+    chargingConnection.statusMaterial.emissiveIntensity = raw.plugConnected ? 2.4 : 0.24;
+    const solarBatteryMode = raw.batteryCharge >= 5 ? "charging" :
+        raw.batteryDischarge >= 5 ? "discharging" : "idle";
+    setSchematicBatteryState(solarBankBatteryVisual, raw.batterySoc, solarBatteryMode);
+    setObjectBattery("battery", raw.batterySoc, solarBatteryMode,
+        raw.batteryCharge >= 5 ? raw.batteryCharge : raw.batteryDischarge,
+        ["2 × BP2700", raw.batteryEnergyWh == null ? "" :
+            Math.round(raw.batteryEnergyWh).toLocaleString("de-DE") + " Wh gespeichert"].filter(Boolean));
+    const audiData = state.data.audi || {};
+    const audiRemaining = numberValue(audiData.remaining_charging_minutes);
+    const audiPercent = numberValue(audiData.battery_percent);
+    const audiBatteryMode = raw.charging ? "charging" : "idle";
+    const audiRange = numberValue(audiData.electric_range_km);
+    setSchematicBatteryState(audiBatteryVisual, audiPercent, audiBatteryMode);
+    setObjectBattery("audi", audiPercent, audiBatteryMode, raw.audiPower, [
+        raw.plugConnected === true ? "Stecker verbunden" :
+            raw.plugConnected === false ? "Stecker getrennt" : "Steckerstatus unbekannt",
+        audiRange == null ? "" : Math.round(audiRange) + " km elektrisch",
+        audiRemaining == null ? "" : "noch ca. " + Math.round(audiRemaining) + " Min."
+    ].filter(Boolean));
+    updateInteriorElectricity(raw.interiorLoad, new Date());
 
     ["pv", "battery", "grid", "audi"].forEach((id) => {
         const component = components[id];
@@ -1692,6 +2395,41 @@ function updateLiveUi() {
         "Live wird verbunden" : raw.solixStale ?
             "LETZTER STAND · Solix " + components.battery.value :
             "LIVE · Solix " + components.battery.value;
+}
+
+let cutawayVisible = false;
+
+function updateCutawayMode() {
+    const detailLevel = state.zoom >= 1.72 ? "interior" :
+        state.zoom >= 1.36 ? "close" : state.zoom >= 1.08 ? "near" : "overview";
+    stage.dataset.detailLevel = detailLevel;
+    const nextCutaway = detailLevel === "interior";
+    if (nextCutaway === cutawayVisible)
+        return;
+    cutawayVisible = nextCutaway;
+    exteriorHouse.visible = !cutawayVisible;
+    interiorHouse.group.visible = cutawayVisible;
+    pergolaModel.visible = !cutawayVisible;
+    solarBankModel.visible = !cutawayVisible;
+    gridBoxModel.visible = !cutawayVisible;
+    Object.values(vehicleModels).forEach((vehicle) => {
+        vehicle.slot.visible = !cutawayVisible;
+    });
+    chargingConnection.port.visible = !cutawayVisible;
+    chargingConnection.attached.visible = !cutawayVisible && componentData().raw.plugConnected;
+    chargingConnection.loose.visible = !cutawayVisible && !componentData().raw.plugConnected;
+    const plugConnected = componentData().raw.plugConnected;
+    ["pv1", "pv2", "pv3", "pv4", "pvTrunk", "grid", "audiTrunk", "audi", "audiLoose"].forEach((id) => {
+        const flow = flows[id];
+        const terminalVisible = id === "audi" ? plugConnected : id === "audiLoose" ? !plugConnected : true;
+        flow.cable.visible = !cutawayVisible && terminalVisible;
+        flow.tube.visible = !cutawayVisible && terminalVisible;
+        flow.pulses.forEach((pulse) => {
+            pulse.visible = !cutawayVisible && terminalVisible && flow.active;
+        });
+    });
+    stage.classList.toggle("house-cutaway", cutawayVisible);
+    setInteriorFlowVisibility(cutawayVisible);
 }
 
 function updateLabelPositions() {
@@ -1721,24 +2459,15 @@ function updateLabelPositions() {
 
     pvPanelAnchors.forEach((panel) => {
         const anchor = world.localToWorld(panel.anchor.clone());
-        const tangentAnchor = world.localToWorld(panel.tangentAnchor.clone());
         const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
         const projected = anchor.project(camera);
-        const tangentProjected = tangentAnchor.project(camera);
         const x = THREE.MathUtils.clamp((projected.x * 0.5 + 0.5) * rect.width, 30, rect.width - 30);
         const y = THREE.MathUtils.clamp((-projected.y * 0.5 + 0.5) * rect.height, 24, rect.height - 42);
-        const tangentX = (tangentProjected.x * 0.5 + 0.5) * rect.width;
-        const tangentY = (-tangentProjected.y * 0.5 + 0.5) * rect.height;
-        let angle = Math.atan2(tangentY - y, tangentX - x) * 180 / Math.PI;
-        if (angle > 90)
-            angle -= 180;
-        else if (angle < -90)
-            angle += 180;
         const element = pvStringElements[panel.id];
         element.style.left = x + "px";
         element.style.top = y + "px";
-        element.style.setProperty("--string-label-angle", angle.toFixed(1) + "deg");
-        element.style.setProperty("--string-label-scale", THREE.MathUtils.clamp(0.72 + state.zoom * 0.33, 0.98, 1.56));
+        element.style.setProperty("--string-label-angle", "0deg");
+        element.style.setProperty("--string-label-scale", THREE.MathUtils.clamp(0.68 + state.zoom * 0.38, 0.94, 1.70));
         element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
     });
 
@@ -1752,6 +2481,21 @@ function updateLabelPositions() {
         element.style.left = x + "px";
         element.style.top = y + "px";
         element.style.setProperty("--object-battery-scale", THREE.MathUtils.clamp(0.76 + state.zoom * 0.34, 1.0, 1.62));
+        element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
+    });
+
+    interiorHouse.devices.forEach((device) => {
+        const anchor = world.localToWorld(device.anchor.clone());
+        const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
+        const projected = anchor.project(camera);
+        const element = interiorDeviceElements[device.id];
+        element.style.left = THREE.MathUtils.clamp(
+            (projected.x * 0.5 + 0.5) * rect.width, 38, rect.width - 38
+        ) + "px";
+        element.style.top = THREE.MathUtils.clamp(
+            (-projected.y * 0.5 + 0.5) * rect.height, 34, rect.height - 46
+        ) + "px";
+        element.style.setProperty("--device-label-scale", THREE.MathUtils.clamp(0.60 + state.zoom * 0.34, 1.02, 1.58));
         element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
     });
 }
@@ -1954,6 +2698,19 @@ function animate(time) {
     state.zoom = THREE.MathUtils.damp(state.zoom, state.targetZoom, 10, delta);
     world.rotation.y = state.yaw;
     updateCameraTransform();
+    updateCutawayMode();
+
+    currentPvStringPowers.forEach((power, index) => {
+        if (power != null && power > 0)
+            pvSessionWh[index] += power * delta / 3600;
+    });
+    if (Math.floor(seconds) !== Math.floor(seconds - delta))
+        updatePanelDetails();
+    const routineMinute = Math.floor(Date.now() / 60000);
+    if (routineMinute !== lastRoutineMinute) {
+        lastRoutineMinute = routineMinute;
+        updateInteriorElectricity(componentData().raw.interiorLoad, new Date());
+    }
 
     if (!reduceMotion) {
         Object.values(flows).forEach((flow) => {
@@ -1971,6 +2728,9 @@ function animate(time) {
         materials.water.color.setHSL(0.53 + Math.sin(seconds * 0.7) * 0.008, 0.76, 0.48);
         audiModel.position.y = 0.02;
     }
+
+    animateSchematicBattery(solarBankBatteryVisual, seconds);
+    animateSchematicBattery(audiBatteryVisual, seconds);
 
     updateLabelPositions();
     renderer.render(scene, camera);

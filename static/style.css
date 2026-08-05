@@ -364,6 +364,36 @@ header p{
     transition:opacity .2s ease,filter .2s ease;
 }
 
+.house-string-label strong,
+.house-string-label span{
+    display:block;
+}
+
+.house-string-label strong{
+    font-size:12px;
+}
+
+.house-string-label .panel-mid-detail,
+.house-string-label .panel-close-detail{
+    display:none;
+    margin-top:3px;
+    color:#fef9c3;
+    font-size:8px;
+    font-weight:800;
+    letter-spacing:.01em;
+}
+
+.house-stage[data-detail-level="near"] .house-string-label .panel-mid-detail,
+.house-stage[data-detail-level="close"] .house-string-label .panel-mid-detail,
+.house-stage[data-detail-level="interior"] .house-string-label .panel-mid-detail{
+    display:block;
+}
+
+.house-stage[data-detail-level="close"] .house-string-label .panel-close-detail,
+.house-stage[data-detail-level="interior"] .house-string-label .panel-close-detail{
+    display:block;
+}
+
 .house-string-label.active{
     color:#fff7c2;
     filter:drop-shadow(0 0 5px #facc15);
@@ -371,6 +401,10 @@ header p{
 
 .house-string-label.behind{
     opacity:.28;
+}
+
+.house-stage[data-detail-level="overview"] .house-string-label{
+    display:none;
 }
 
 .house-object-battery{
@@ -427,6 +461,19 @@ header p{
     transition:height .65s ease,background-color .25s ease;
 }
 
+.house-object-battery-wave{
+    position:absolute;
+    right:2px;
+    bottom:2px;
+    left:2px;
+    height:9px;
+    border-top:3px solid rgba(255,255,255,.96);
+    border-radius:50%;
+    opacity:0;
+    filter:drop-shadow(0 0 4px currentColor);
+    pointer-events:none;
+}
+
 .house-object-battery[data-flow="charging"] .house-object-battery-fill{
     background-image:
         repeating-linear-gradient(to top,rgba(255,255,255,.82) 0 3px,rgba(255,255,255,.08) 3px 7px),
@@ -435,12 +482,49 @@ header p{
     animation:object-battery-flow-up .55s linear infinite;
 }
 
+.house-object-battery[data-flow="charging"] .house-object-battery-wave{
+    color:#86efac;
+    opacity:.96;
+    animation:object-battery-wave-up 1.05s ease-in-out infinite;
+}
+
 .house-object-battery[data-flow="discharging"] .house-object-battery-fill{
     background-image:
         repeating-linear-gradient(to top,rgba(255,255,255,.78) 0 3px,rgba(255,255,255,.06) 3px 7px),
         linear-gradient(180deg,#fde68a,#f97316);
     box-shadow:0 0 10px rgba(249,115,22,.88);
     animation:object-battery-flow-down .55s linear infinite;
+}
+
+.house-object-battery[data-flow="discharging"] .house-object-battery-wave{
+    color:#fdba74;
+    opacity:.96;
+    animation:object-battery-wave-down 1.05s ease-in-out infinite;
+}
+
+.house-object-battery-copy{
+    display:flex;
+    flex-direction:column;
+    align-items:flex-start;
+    gap:2px;
+}
+
+.house-object-battery-detail{
+    display:none;
+    color:#e2e8f0;
+    font-size:8px;
+    font-weight:800;
+    line-height:1.15;
+    white-space:nowrap;
+}
+
+.house-object-battery-detail span{
+    display:block;
+}
+
+.house-stage[data-detail-level="close"] .house-object-battery-detail,
+.house-stage[data-detail-level="interior"] .house-object-battery-detail{
+    display:block;
 }
 
 .house-object-battery.unknown{
@@ -465,9 +549,91 @@ header p{
     to{background-position:0 7px,0 0;}
 }
 
+@keyframes object-battery-wave-up{
+    0%{transform:translateY(29px) scaleX(.72);opacity:0;}
+    22%{opacity:1;}
+    72%{opacity:1;}
+    100%{transform:translateY(-4px) scaleX(1);opacity:0;}
+}
+
+@keyframes object-battery-wave-down{
+    0%{transform:translateY(-4px) scaleX(1);opacity:0;}
+    22%{opacity:1;}
+    72%{opacity:1;}
+    100%{transform:translateY(29px) scaleX(.72);opacity:0;}
+}
+
+.house-cutaway-badge{
+    position:absolute;
+    z-index:6;
+    top:12px;
+    left:50%;
+    display:none;
+    max-width:calc(100% - 32px);
+    padding:7px 11px;
+    border:1px solid rgba(251,146,60,.52);
+    border-radius:999px;
+    background:rgba(30,20,15,.84);
+    color:#ffedd5;
+    font-size:9px;
+    font-weight:900;
+    letter-spacing:.04em;
+    text-align:center;
+    white-space:nowrap;
+    transform:translateX(-50%);
+    box-shadow:0 4px 18px rgba(2,6,23,.44);
+    pointer-events:none;
+}
+
+.house-stage.house-cutaway .house-cutaway-badge{
+    display:block;
+}
+
+.house-device-label{
+    position:absolute;
+    z-index:5;
+    display:none;
+    padding:3px 5px;
+    color:#cbd5e1;
+    font-size:8px;
+    font-weight:800;
+    line-height:1.15;
+    text-align:center;
+    text-shadow:0 2px 4px #020617,1px 0 #020617,-1px 0 #020617;
+    transform:translate(-50%,-50%) scale(var(--device-label-scale,1));
+    pointer-events:none;
+}
+
+.house-device-label strong,
+.house-device-label span{
+    display:block;
+    white-space:nowrap;
+}
+
+.house-device-label.active{
+    color:#ffedd5;
+    filter:drop-shadow(0 0 5px #fb923c);
+}
+
+.house-device-label.behind{
+    opacity:.34;
+}
+
+.house-stage.house-cutaway .house-device-label.active{
+    display:block;
+}
+
+.house-stage.house-cutaway .house-scene-label,
+.house-stage.house-cutaway .house-string-label,
+.house-stage.house-cutaway .house-object-battery{
+    display:none;
+}
+
 .house-stage.is-interacting .house-scene-label,
 .house-stage.is-interacting .house-string-label,
 .house-stage.is-interacting .house-object-battery,
+.house-stage.is-interacting .house-device-label,
+.house-stage.is-interacting .house-cutaway-badge,
 .house-stage.is-interacting .house-gesture,
 .house-stage.is-interacting .house-reset{
     opacity:0!important;
@@ -1501,7 +1667,8 @@ body{
 @media(prefers-reduced-motion:reduce){
     .charging-visual.charging .charging-track span,
     .diagram-link.active,
-    .house-object-battery-fill{
+    .house-object-battery-fill,
+    .house-object-battery-wave{
         animation:none;
         opacity:.8;
     }
