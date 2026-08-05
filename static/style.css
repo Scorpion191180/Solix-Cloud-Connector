@@ -287,52 +287,126 @@ header p{
 .house-scene-label{
     position:absolute;
     z-index:4;
-    min-width:0;
-    padding:3px 5px;
+    display:grid;
+    min-width:78px;
+    max-width:132px;
+    gap:3px;
+    padding:6px 8px 7px;
     appearance:none;
-    border:0;
-    border-radius:0;
-    background:transparent;
-    box-shadow:none;
-    backdrop-filter:none;
-    -webkit-backdrop-filter:none;
+    border:1px solid rgba(226,232,240,.23);
+    border-left:3px solid var(--scene-color,#5eead4);
+    border-radius:10px;
+    background:linear-gradient(135deg,rgba(7,15,27,.88),rgba(15,23,42,.70));
+    box-shadow:0 5px 16px rgba(2,6,23,.34);
+    backdrop-filter:blur(8px) saturate(1.16);
+    -webkit-backdrop-filter:blur(8px) saturate(1.16);
     color:#f8fafc;
     font:inherit;
-    line-height:1.05;
-    text-align:center;
-    text-shadow:
-        0 2px 4px rgba(2,6,23,1),
-        1px 0 rgba(2,6,23,.95),
-        -1px 0 rgba(2,6,23,.95),
-        0 1px rgba(2,6,23,.95),
-        0 -1px rgba(2,6,23,.95);
+    line-height:1.1;
+    text-align:left;
+    text-shadow:0 1px 2px rgba(2,6,23,.9);
     pointer-events:auto;
     transform:translate(-50%,-50%) scale(var(--scene-label-scale,1));
-    transition:filter .2s ease,opacity .2s ease;
+    transition:filter .2s ease,opacity .2s ease,border-color .2s ease;
+}
+
+.house-scene-head,
+.house-scene-main{
+    display:flex;
+    align-items:center;
+}
+
+.house-scene-head{
+    gap:5px;
+}
+
+.house-scene-head i{
+    width:6px;
+    height:6px;
+    flex:0 0 auto;
+    border-radius:50%;
+    background:var(--scene-color,#5eead4);
+    box-shadow:0 0 7px var(--scene-color,#5eead4);
+}
+
+.house-scene-label[data-tone="muted"] .house-scene-head i{
+    background:#94a3b8;
+    box-shadow:none;
+}
+
+.house-scene-label[data-tone="warning"] .house-scene-head i{
+    background:#fb923c;
+    box-shadow:0 0 7px rgba(251,146,60,.75);
 }
 
 .house-scene-label small{
-    display:block;
-    margin-bottom:3px;
-    color:#dbeafe;
-    font-size:8px;
+    overflow:hidden;
+    color:#cbd5e1;
+    font-size:7px;
     font-weight:900;
-    letter-spacing:.09em;
+    letter-spacing:.08em;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+}
+
+.house-scene-main{
+    align-items:baseline;
+    justify-content:space-between;
+    gap:7px;
 }
 
 .house-scene-label strong{
     color:white;
-    font-size:14px;
+    font-size:13px;
     font-weight:900;
     white-space:nowrap;
 }
 
+.house-scene-label em{
+    display:none;
+    color:var(--scene-color,#5eead4);
+    font-size:5.5px;
+    font-style:normal;
+    font-weight:900;
+    letter-spacing:.045em;
+    line-height:1.15;
+    text-align:right;
+}
+
+.house-scene-label[data-tone="muted"] em{
+    color:#cbd5e1;
+}
+
+.house-scene-label[data-tone="warning"] em{
+    color:#fdba74;
+}
+
+.house-scene-detail{
+    display:none;
+    padding-top:3px;
+    border-top:1px solid rgba(226,232,240,.14);
+    color:#dbeafe;
+    font-size:6px;
+    font-weight:750;
+    line-height:1.28;
+}
+
+.house-stage[data-detail-level="near"] .house-scene-label em,
+.house-stage[data-detail-level="close"] .house-scene-label em{
+    display:block;
+}
+
+.house-stage[data-detail-level="close"] .house-scene-detail{
+    display:block;
+}
+
 .house-scene-label.active{
-    filter:drop-shadow(0 0 5px var(--scene-color,#5eead4));
+    border-color:color-mix(in srgb,var(--scene-color,#5eead4) 46%,transparent);
+    filter:drop-shadow(0 0 4px color-mix(in srgb,var(--scene-color,#5eead4) 52%,transparent));
 }
 
 .house-scene-label.selected{
-    filter:drop-shadow(0 0 7px var(--scene-color,#5eead4));
+    border-color:color-mix(in srgb,var(--scene-color,#5eead4) 68%,white 10%);
 }
 
 .house-scene-label.behind{
@@ -418,7 +492,9 @@ header p{
 .house-object-battery{
     position:absolute;
     z-index:5;
-    display:flex;
+    /* Ladestand und Status erscheinen nur noch einmal in der zugehörigen
+       Gerätekarte. Die animierten 3D-Akkus im Modell bleiben sichtbar. */
+    display:none;
     align-items:center;
     gap:7px;
     color:#f8fafc;
@@ -1559,17 +1635,26 @@ body{
 }
 
 .house-scene-label{
-    min-width:0;
-    padding:3px 4px;
+    min-width:72px;
+    max-width:116px;
+    padding:5px 6px 6px;
     pointer-events:none;
 }
 
 .house-scene-label small{
-    font-size:7px;
+    font-size:6.5px;
 }
 
 .house-scene-label strong{
-    font-size:13px;
+    font-size:12px;
+}
+
+.house-scene-label em{
+    font-size:5px;
+}
+
+.house-scene-detail{
+    font-size:5.5px;
 }
 
 .house-string-label{

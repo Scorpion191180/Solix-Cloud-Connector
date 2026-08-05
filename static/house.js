@@ -2062,15 +2062,14 @@ function setInteriorFlowVisibility(visible) {
 }
 setInteriorFlowVisibility(false);
 
-function flowLabelAnchor(flowId, progress, offset = [0, 0, 0]) {
-    return flows[flowId].curve.getPointAt(progress).add(new THREE.Vector3(...offset));
-}
-
 const labelAnchors = {
-    pv: flowLabelAnchor("pvTrunk", 0.55, [-0.16, 0.30, -0.10]),
-    battery: new THREE.Vector3(3.50, 3.34, -1.42),
-    grid: flowLabelAnchor("grid", 0.30, [0, 0.30, 0]),
-    audi: flowLabelAnchor("audiTrunk", 0.82, [0, 0.30, 0])
+    // Die vier Übersichtskarten sitzen direkt über ihrer Komponente. Zuvor
+    // lagen PV, Netz und Solarbank gemeinsam auf den Leitungen und überdeckten
+    // sich in der Standardansicht.
+    pv: new THREE.Vector3(PERGOLA_CENTER.x, 3.28, PERGOLA_CENTER.z),
+    battery: new THREE.Vector3(3.50, 3.62, -1.42),
+    grid: new THREE.Vector3(GRID_BOX_POSITION.x, 1.72, GRID_BOX_POSITION.z),
+    audi: new THREE.Vector3(5.00, 1.52, 1.00)
 };
 
 const labelElements = {};
@@ -2146,30 +2145,34 @@ function setSchematicBatteryState(visual, percent, mode) {
     visual.level = numericPercent == null ? null : THREE.MathUtils.clamp(numericPercent, 0, 100);
     visual.mode = numericPercent == null ? "idle" : mode;
     const fraction = Math.max(0.025, (visual.level ?? 0) / 100);
-    const charging = visual.mode === "charging";
     const discharging = visual.mode === "discharging";
-    const activeColor = charging ? 0x22c55e : discharging ? 0xf97316 : 0x38bdf8;
+    // Der aktuelle SOC ist bei Solarbank und Audi immer als grüne Fläche
+    // ablesbar. Laden/Entladen wird ausschließlich durch Farbe und Richtung
+    // der darüberlaufenden Pulswelle unterschieden.
+    const levelColor = 0x22c55e;
+    const waveColor = discharging ? 0xfdba74 : 0x86efac;
+    const waveEmissive = discharging ? 0xf97316 : 0x22c55e;
 
     if (visual.kind === "audi") {
         const activeCells = visual.level == null ? 0 :
             Math.ceil(visual.cells.length * visual.level / 100);
         visual.cells.forEach((cell, index) => {
             cell.userData.energyActive = index < activeCells;
-            cell.material.color.setHex(cell.userData.energyActive ? activeColor : 0x12374b);
-            cell.material.emissive.setHex(cell.userData.energyActive ? activeColor : 0x0f2734);
+            cell.material.color.setHex(cell.userData.energyActive ? levelColor : 0x12374b);
+            cell.material.emissive.setHex(cell.userData.energyActive ? levelColor : 0x0f2734);
         });
+        visual.waveMaterial.color.setHex(waveColor);
+        visual.waveMaterial.emissive.setHex(waveEmissive);
     }
     else {
         visual.gauges.forEach((gauge) => {
             gauge.fill.scale.y = fraction;
             gauge.fill.position.y = gauge.bottom + gauge.height * fraction / 2;
             gauge.levelFraction = fraction;
-            gauge.fillMaterial.color.setHex(activeColor);
-            gauge.fillMaterial.emissive.setHex(activeColor);
-            gauge.waveMaterial.color.setHex(
-                charging ? 0x86efac : discharging ? 0xfde68a : 0x7dd3fc
-            );
-            gauge.waveMaterial.emissive.setHex(activeColor);
+            gauge.fillMaterial.color.setHex(levelColor);
+            gauge.fillMaterial.emissive.setHex(levelColor);
+            gauge.waveMaterial.color.setHex(waveColor);
+            gauge.waveMaterial.emissive.setHex(waveEmissive);
         });
     }
 }
@@ -2328,28 +2331,48 @@ function componentData() {
     const audiPower = plugPower ?? (audiPowerKw == null ? null : audiPowerKw * 1000);
     const charging = plugPower != null ? plugPower >= 20 : audi.charging === true;
     const plugConnected = audi.plug_connected === true || automation.audi_plug_connected === true;
+    const audiStale = audi.stale === true;
     const batteryEnergyWh = numberValue(solix.battery_energy_wh);
     const interiorLoad = homeLoad == null ? output : Math.max(0, homeLoad - (plugPower ?? 0));
+    const audiRange = numberValue(audi.electric_range_km);
+    const audiRemaining = numberValue(audi.remaining_charging_minutes);
+
+    const pvStatus = solixStale ? "LETZTER STAND" :
+        pv != null && pv >= 5 ? "ERZEUGT" : pv == null ? "WIRD VERBUNDEN" : "RUHE";
+    const batteryStatus = solixStale ? "LETZTER STAND" :
+        batteryCharge >= 5 ? "LÄDT · " + formatPower(batteryCharge) :
+            batteryDischarge >= 5 ? "LIEFERT · " + formatPower(batteryDischarge) : "BEREIT";
+    const gridStatus = solixStale ? "LETZTER STAND" : grid == null ? "KEIN WERT" :
+        grid > 5 ? "BEZUG" : grid < -5 ? "EINSPEISUNG" : "RUHE";
+    const audiStatus = audiStale ? "LETZTER STAND" : charging ? "LÄDT · " + formatPower(audiPower) :
+        plugConnected ? "STECKER DRAN" : audi.plug_connected === false ? "GETRENNT" : "WIRD GEPRÜFT";
 
     return {
         pv: {
             id: "pv", label: "PERGOLA-PV", icon: "☀️", value: formatPower(pv), color: colors.pv,
+            status: pvStatus,
+            tone: solixStale || pv == null ? "muted" : pv >= 5 ? "active" : "idle",
             detail: pvStrings.map((value, index) => "PV" + (index + 1) + " " + formatPower(value)).join(" · "),
             active: pv != null && pv >= 5
         },
         battery: {
             id: "battery", label: "SOLARBANK 4", icon: "🔋", color: colors.battery,
             value: batterySoc == null ? "--" : Math.round(batterySoc) + " %",
-            detail: "PV-Eingang " + formatPower(pv) + " · " + (
-                batteryCharge >= 5 ? "Akku lädt mit " + formatPower(batteryCharge) + "." :
-                    batteryDischarge >= 5 ? "Akku liefert " + formatPower(batteryDischarge) + "." :
-                        "Akku ist im Bereitschaftsmodus."
-            ),
+            status: batteryStatus,
+            tone: solixStale || batterySoc == null ? "muted" :
+                batteryCharge >= 5 || batteryDischarge >= 5 ? "active" : "idle",
+            detail: [
+                "PV " + formatPower(pv),
+                batteryEnergyWh == null ? "" : Math.round(batteryEnergyWh).toLocaleString("de-DE") + " Wh gespeichert",
+                "2 × BP2700"
+            ].filter(Boolean).join(" · "),
             active: batteryCharge >= 5 || batteryDischarge >= 5
         },
         grid: {
             id: "grid", label: "STROMNETZ", icon: "🌐", color: colors.grid,
             value: formatPower(grid == null ? null : Math.abs(grid)),
+            status: gridStatus,
+            tone: solixStale || grid == null ? "muted" : Math.abs(grid) >= 5 ? "active" : "idle",
             detail: grid == null ? "Netzwert nicht verfügbar." :
                 grid > 5 ? "Aktueller Netzbezug." :
                     grid < -5 ? "Aktuelle Netzeinspeisung." : "Aktuell kein Netzfluss.",
@@ -2358,9 +2381,14 @@ function componentData() {
         audi: {
             id: "audi", label: "AUDI Q3", icon: "🚙", color: colors.audi,
             value: audi.battery_percent == null ? "--" : audi.battery_percent + " %",
-            detail: charging ? "Der blaue Q3 lädt mit " + formatPower(audiPower) + "." :
-                audi.plug_connected === true ? "Ladestecker verbunden · wartet." :
-                    audi.plug_connected === false ? "Ladestecker ist getrennt." : "Audi-Status wird geprüft.",
+            status: audiStatus,
+            tone: audiStale || audi.battery_percent == null ? "muted" : charging ? "active" :
+                plugConnected ? "idle" : "warning",
+            detail: [
+                plugConnected ? "Stecker verbunden" : audi.plug_connected === false ? "Stecker getrennt" : "Steckerstatus offen",
+                audiRange == null ? "" : Math.round(audiRange) + " km Reichweite",
+                audiRemaining == null ? "" : "noch ca. " + Math.round(audiRemaining) + " Min."
+            ].filter(Boolean).join(" · "),
             active: charging
         },
         raw: {
@@ -2422,11 +2450,17 @@ function updateLiveUi() {
     ["pv", "battery", "grid", "audi"].forEach((id) => {
         const component = components[id];
         const element = labelElements[id];
-        element.innerHTML = `<small>${component.icon} ${component.label}</small><strong>${component.value}</strong>`;
+        element.innerHTML =
+            '<span class="house-scene-head"><i aria-hidden="true"></i>' +
+            `<small>${component.label}</small></span>` +
+            '<span class="house-scene-main">' +
+            `<strong>${component.value}</strong><em>${component.status}</em></span>` +
+            `<span class="house-scene-detail">${component.detail}</span>`;
         element.classList.toggle("active", component.active);
         element.classList.toggle("selected", state.selected === id);
         element.style.setProperty("--scene-color", component.color);
-        element.setAttribute("aria-label", component.label + ": " + component.value);
+        element.dataset.tone = component.tone;
+        element.setAttribute("aria-label", component.label + ": " + component.value + ", " + component.status);
     });
 
     const selected = components[state.selected] || components.battery;
@@ -2440,39 +2474,17 @@ function updateLiveUi() {
             "LIVE · Solix " + components.battery.value;
 }
 
-let cutawayVisible = false;
+const cutawayVisible = false;
 
 function updateCutawayMode() {
-    const detailLevel = state.zoom >= 1.72 ? "interior" :
-        state.zoom >= 1.36 ? "close" : state.zoom >= 1.08 ? "near" : "overview";
+    // Bewusste Produktentscheidung: Auch beim maximalen Zoom bleibt die
+    // fotonahe Außenansicht erhalten. Etablierte Energie-Apps vertiefen
+    // Geräte- und Flussdaten, statt eine vollständige Hausverdrahtung in die
+    // Übersicht zu legen. Die vorbereitete Innenansicht bleibt deaktiviert,
+    // bis ein glaubwürdiger, weicher Wand-/Nebelschnitt umgesetzt ist.
+    const detailLevel = state.zoom >= 1.36 ? "close" :
+        state.zoom >= 1.08 ? "near" : "overview";
     stage.dataset.detailLevel = detailLevel;
-    const nextCutaway = detailLevel === "interior";
-    if (nextCutaway === cutawayVisible)
-        return;
-    cutawayVisible = nextCutaway;
-    exteriorHouse.visible = !cutawayVisible;
-    interiorHouse.group.visible = cutawayVisible;
-    pergolaModel.visible = !cutawayVisible;
-    solarBankModel.visible = !cutawayVisible;
-    gridBoxModel.visible = !cutawayVisible;
-    Object.values(vehicleModels).forEach((vehicle) => {
-        vehicle.slot.visible = !cutawayVisible;
-    });
-    chargingConnection.port.visible = !cutawayVisible;
-    chargingConnection.attached.visible = !cutawayVisible && componentData().raw.plugConnected;
-    chargingConnection.loose.visible = !cutawayVisible && !componentData().raw.plugConnected;
-    const plugConnected = componentData().raw.plugConnected;
-    ["pv1", "pv2", "pv3", "pv4", "pvTrunk", "grid", "audiTrunk", "audi"].forEach((id) => {
-        const flow = flows[id];
-        const terminalVisible = id === "audi" ? plugConnected : true;
-        flow.cable.visible = !cutawayVisible && terminalVisible;
-        flow.tube.visible = !cutawayVisible && terminalVisible;
-        flow.pulses.forEach((pulse) => {
-            pulse.visible = !cutawayVisible && terminalVisible && flow.active;
-        });
-    });
-    stage.classList.toggle("house-cutaway", cutawayVisible);
-    setInteriorFlowVisibility(cutawayVisible);
 }
 
 function updateLabelPositions() {
@@ -2483,13 +2495,16 @@ function updateLabelPositions() {
         const anchor = world.localToWorld(localAnchor.clone());
         const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
         const projected = anchor.project(camera);
-        const x = (projected.x * 0.5 + 0.5) * rect.width;
-        const y = (-projected.y * 0.5 + 0.5) * rect.height;
+        const rawX = (projected.x * 0.5 + 0.5) * rect.width;
+        const rawY = (-projected.y * 0.5 + 0.5) * rect.height;
+        const edgeMarginX = Math.min(58, rect.width * 0.22);
+        const x = THREE.MathUtils.clamp(rawX, edgeMarginX, rect.width - edgeMarginX);
+        const y = THREE.MathUtils.clamp(rawY, 30, rect.height - 42);
         const element = labelElements[id];
         element.style.left = x + "px";
         element.style.top = y + "px";
         element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
-        element.classList.toggle("outside", x < -60 || x > rect.width + 60 || y < -40 || y > rect.height + 40);
+        element.classList.toggle("outside", rawX < -110 || rawX > rect.width + 110 || rawY < -70 || rawY > rect.height + 70);
         element.style.setProperty("--scene-label-scale", THREE.MathUtils.clamp(0.72 + state.zoom * 0.18, 0.82, 1.12));
     });
 
