@@ -30,6 +30,8 @@ const state = {
     pointerMoved: false,
     pinchStartDistance: 0,
     pinchStartZoom: 1,
+    pinchLastCenterX: 0,
+    pinchLastCenterY: 0,
     yaw: 0.78,
     targetYaw: 0.78,
     pitch: 0,
@@ -620,8 +622,17 @@ function createBalconies(parent) {
     const sets = [
         { z: 3.00, length: 6.65, depth: 1.34, floorX: 3.82, railX: 4.43 },
         // Beide Balkone reichen gleich weit nach außen; auf dem rechten steht
-        // die maßstäbliche Solarbank vollständig hinter dem Geländer.
-        { z: -2.15, length: 3.58, depth: 1.34, floorX: 3.82, railX: 4.43 }
+        // die maßstäbliche Solarbank vollständig hinter dem Geländer. Seine
+        // kurzen Wandgeländer sitzen in den beiden freien Fassadenspalten und
+        // damit nicht mehr vor Fenster oder Balkontür.
+        {
+            z: -2.15,
+            length: 3.58,
+            depth: 1.34,
+            floorX: 3.82,
+            railX: 4.43,
+            wallRailZ: [-3.38, -0.62]
+        }
     ];
     sets.forEach((set) => {
         addBox(parent, [set.depth, 0.12, set.length], materials.darkTrim, [set.floorX, 2.08, set.z]);
@@ -634,11 +645,15 @@ function createBalconies(parent) {
         }
         const endRailLength = set.railX - 3.24;
         const endRailX = (set.railX + 3.24) / 2;
-        [-set.length / 2 + 0.12, set.length / 2 - 0.12].forEach((endOffset) => {
+        const wallRailZ = set.wallRailZ || [
+            set.z - set.length / 2 + 0.12,
+            set.z + set.length / 2 - 0.12
+        ];
+        wallRailZ.forEach((railZ) => {
             addBox(parent, [endRailLength, 0.16, 0.14], railMaterial,
-                [endRailX, 2.84, set.z + endOffset]);
+                [endRailX, 2.84, railZ]);
             addBox(parent, [0.10, 0.96, 0.14], railMaterial,
-                [set.railX, 2.37, set.z + endOffset]);
+                [set.railX, 2.37, railZ]);
         });
     });
 }
@@ -1919,12 +1934,12 @@ const pvPanelAnchors = PERGOLA_PANEL_LAYOUT.map(([x, z], index) => ({
     id: "pv" + (index + 1),
     anchor: new THREE.Vector3(
         PERGOLA_CENTER.x + x,
-        PERGOLA_ROOF_Y - Math.tan(PERGOLA_ROOF_PITCH) * x + 0.20,
+        PERGOLA_ROOF_Y - Math.tan(PERGOLA_ROOF_PITCH) * x + 0.075,
         PERGOLA_CENTER.z + z
     ),
     tangentAnchor: new THREE.Vector3(
-        PERGOLA_CENTER.x + x + 0.18,
-        PERGOLA_ROOF_Y - Math.tan(PERGOLA_ROOF_PITCH) * x + 0.20,
+        PERGOLA_CENTER.x + x + 0.28,
+        PERGOLA_ROOF_Y - Math.tan(PERGOLA_ROOF_PITCH) * x + 0.075,
         PERGOLA_CENTER.z + z
     )
 }));
@@ -1954,25 +1969,29 @@ const pvRoutes = [
 pvPanelAnchors.forEach((panel, index) => {
     createFlow(panel.id, pvRoutes[index], colors.pv);
 });
-// Ab der Sammelbox läuft der PV-Hauptstrang in einem eigenen Bodenkanal. Im
-// freien unteren Mauerfeld unterhalb des Solarbank-Fensters steigt er nur bis
-// zur Balkonplatte und geht anschließend verdeckt von unten in die Anlage.
-// So bleibt die komplette Fensterfläche einschließlich ihrer Umrandung frei.
+// Der PV-Hauptstrang erreicht die Fassade am rechten Fallrohr (z=-6,18), läuft
+// oberhalb der unteren Öffnungen und steigt links neben der äußeren Balkontür
+// bis zur Traufe. Von dort führt sein eigener Dachkanal zum freien Spalt
+// zwischen Balkontür und Solarbank-Fenster. Unterhalb des Fensters geht er in
+// einer separaten Höhenlage rechtsseitig in die Anlage.
 createFlow("pvTrunk", [
     pvCombinerPoint, [7.12, 0.18, -6.66], [3.40, 0.18, -6.66],
-    [3.40, 0.18, -1.33], [3.40, 2.16, -1.33],
-    [3.40, 2.16, -1.42], [3.62, 2.16, -1.42],
-    [3.62, 2.56, -1.42]
+    [3.40, 0.18, -6.18], [3.40, 2.28, -6.18],
+    [3.40, 2.28, -4.62], [3.40, 4.70, -4.62],
+    [3.40, 4.70, -1.93], [3.40, 2.52, -1.93],
+    [3.40, 2.52, -1.10], [3.62, 2.52, -1.10]
 ], colors.pv, { cableRadius: 0.060, glowRadius: 0.085, pulseRadius: 0.13 });
-// Der Netzstrang nutzt einen zweiten, versetzten Kanal. Er bleibt am Boden
-// außerhalb des Audi, wechselt oberhalb der unteren Fenster in den freien
-// oberen Spalt z=-3,38 und verläuft unter der Traufe parallel zum PV-Strang.
+// Der Netzstrang erreicht die Wand zwischen den beiden unteren Haustüren,
+// wechselt oberhalb ihrer Rahmen in den Spalt der beiden Balkontüren und
+// steigt dort bis zur Traufe. Sein Dach- und Abstiegskanal ist gegenüber PV
+// sowohl in der Höhe als auch im Wandabstand versetzt. Auch er mündet von
+// rechts in die Solarbank, ohne eine Öffnung oder den PV-Strang zu schneiden.
 createFlow("grid", [
-    [9.20, 0.58, -4.20], [9.20, 0.16, -4.20], [3.66, 0.16, -4.20],
-    [3.66, 0.16, 3.20], [3.66, 2.34, 3.20],
-    [3.66, 2.34, -3.38], [3.66, 4.84, -3.38],
-    [3.66, 4.84, -0.48], [3.66, 2.44, -0.48],
-    [3.66, 2.44, -1.42], [3.62, 2.44, -1.42]
+    [9.20, 0.58, -4.20], [9.20, 0.16, -4.20], [3.62, 0.16, -4.20],
+    [3.62, 0.16, -3.78], [3.62, 2.28, -3.78],
+    [3.62, 2.28, -3.38], [3.62, 4.84, -3.38],
+    [3.62, 4.84, -2.15], [3.62, 2.38, -2.15],
+    [3.62, 2.38, -1.10]
 ], colors.grid);
 createFlow("audiTrunk", [
     // Von der Solarbank oben nach links bis in den Spalt der beiden Balkone.
@@ -1988,15 +2007,12 @@ createFlow("audiTrunk", [
     // ihrer Rahmen läuft er zurück zum Geländerspalt.
     [3.50, 2.34, -0.34], [3.50, 2.34, -1.33],
     [3.50, 0.16, -1.33], [3.50, 0.16, -1.18],
-    [5.80, 0.16, -1.18],
-    [5.80, 0.16, -0.68]
+    [6.52, 0.16, -1.18], [6.52, 0.16, 0.84]
 ], colors.audi);
 createFlow("audi", [
+    [6.52, 0.16, 0.84], [6.52, 0.16, -0.68],
     [5.80, 0.16, -0.68], [5.80, 0.88, -0.68]
 ], colors.audi);
-createFlow("audiLoose", [
-    [5.80, 0.16, -0.68], [6.52, 0.16, -0.68], [6.52, 0.16, 0.30]
-], colors.inactive);
 
 createFlow("houseMain", [
     [3.62, 2.40, -1.42], [3.08, 2.40, -1.42], [3.08, 2.40, -3.18],
@@ -2347,11 +2363,8 @@ function updateLiveUi() {
     setFlowState(flows.grid, raw.grid != null && Math.abs(raw.grid) >= 5, raw.grid < 0);
     setFlowState(flows.audiTrunk, raw.charging && raw.audiPower != null && raw.audiPower >= 5);
     setFlowState(flows.audi, raw.charging && raw.audiPower != null && raw.audiPower >= 5);
-    setFlowState(flows.audiLoose, false);
     flows.audi.cable.visible = !cutawayVisible && raw.plugConnected;
     flows.audi.tube.visible = !cutawayVisible && raw.plugConnected;
-    flows.audiLoose.cable.visible = !cutawayVisible && !raw.plugConnected;
-    flows.audiLoose.tube.visible = !cutawayVisible && !raw.plugConnected;
     chargingConnection.attached.visible = !cutawayVisible && raw.plugConnected;
     chargingConnection.loose.visible = !cutawayVisible && !raw.plugConnected;
     chargingConnection.statusMaterial.emissiveIntensity = raw.plugConnected ? 2.4 : 0.24;
@@ -2419,9 +2432,9 @@ function updateCutawayMode() {
     chargingConnection.attached.visible = !cutawayVisible && componentData().raw.plugConnected;
     chargingConnection.loose.visible = !cutawayVisible && !componentData().raw.plugConnected;
     const plugConnected = componentData().raw.plugConnected;
-    ["pv1", "pv2", "pv3", "pv4", "pvTrunk", "grid", "audiTrunk", "audi", "audiLoose"].forEach((id) => {
+    ["pv1", "pv2", "pv3", "pv4", "pvTrunk", "grid", "audiTrunk", "audi"].forEach((id) => {
         const flow = flows[id];
-        const terminalVisible = id === "audi" ? plugConnected : id === "audiLoose" ? !plugConnected : true;
+        const terminalVisible = id === "audi" ? plugConnected : true;
         flow.cable.visible = !cutawayVisible && terminalVisible;
         flow.tube.visible = !cutawayVisible && terminalVisible;
         flow.pulses.forEach((pulse) => {
@@ -2440,35 +2453,36 @@ function updateLabelPositions() {
         const anchor = world.localToWorld(localAnchor.clone());
         const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
         const projected = anchor.project(camera);
-        const x = THREE.MathUtils.clamp(
-            (projected.x * 0.5 + 0.5) * rect.width,
-            rect.width < 520 ? 34 : 44,
-            rect.width - (rect.width < 520 ? 34 : 44)
-        );
-        const y = THREE.MathUtils.clamp(
-            (-projected.y * 0.5 + 0.5) * rect.height,
-            28,
-            rect.height - 48
-        );
+        const x = (projected.x * 0.5 + 0.5) * rect.width;
+        const y = (-projected.y * 0.5 + 0.5) * rect.height;
         const element = labelElements[id];
         element.style.left = x + "px";
         element.style.top = y + "px";
         element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
+        element.classList.toggle("outside", x < -60 || x > rect.width + 60 || y < -40 || y > rect.height + 40);
         element.style.setProperty("--scene-label-scale", THREE.MathUtils.clamp(0.68 + state.zoom * 0.32, 0.90, 1.54));
     });
 
     pvPanelAnchors.forEach((panel) => {
         const anchor = world.localToWorld(panel.anchor.clone());
+        const tangentAnchor = world.localToWorld(panel.tangentAnchor.clone());
         const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
         const projected = anchor.project(camera);
-        const x = THREE.MathUtils.clamp((projected.x * 0.5 + 0.5) * rect.width, 30, rect.width - 30);
-        const y = THREE.MathUtils.clamp((-projected.y * 0.5 + 0.5) * rect.height, 24, rect.height - 42);
+        const projectedTangent = tangentAnchor.project(camera);
+        const x = (projected.x * 0.5 + 0.5) * rect.width;
+        const y = (-projected.y * 0.5 + 0.5) * rect.height;
+        const tangentX = (projectedTangent.x * 0.5 + 0.5) * rect.width;
+        const tangentY = (-projectedTangent.y * 0.5 + 0.5) * rect.height;
+        let angle = Math.atan2(tangentY - y, tangentX - x) * 180 / Math.PI;
+        if (angle > 90) angle -= 180;
+        if (angle < -90) angle += 180;
         const element = pvStringElements[panel.id];
         element.style.left = x + "px";
         element.style.top = y + "px";
-        element.style.setProperty("--string-label-angle", "0deg");
-        element.style.setProperty("--string-label-scale", THREE.MathUtils.clamp(0.68 + state.zoom * 0.38, 0.94, 1.70));
+        element.style.setProperty("--string-label-angle", angle.toFixed(2) + "deg");
+        element.style.setProperty("--string-label-scale", THREE.MathUtils.clamp(0.52 + state.zoom * 0.24, 0.70, 1.18));
         element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
+        element.classList.toggle("outside", x < -45 || x > rect.width + 45 || y < -30 || y > rect.height + 30);
     });
 
     Object.entries(objectBatteryAnchors).forEach(([id, localAnchor]) => {
@@ -2539,6 +2553,17 @@ function pointerDistance() {
     return Math.hypot(pointers[0].x - pointers[1].x, pointers[0].y - pointers[1].y);
 }
 
+function pointerCenter() {
+    const pointers = Array.from(state.pointers.values());
+    if (!pointers.length)
+        return { x: 0, y: 0 };
+    const total = pointers.reduce((sum, pointer) => ({
+        x: sum.x + pointer.x,
+        y: sum.y + pointer.y
+    }), { x: 0, y: 0 });
+    return { x: total.x / pointers.length, y: total.y / pointers.length };
+}
+
 let interactionHideTimer = 0;
 
 function beginSceneInteraction() {
@@ -2567,6 +2592,9 @@ canvas.addEventListener("pointerdown", (event) => {
     else if (state.pointers.size === 2) {
         state.pinchStartDistance = pointerDistance();
         state.pinchStartZoom = state.targetZoom;
+        const center = pointerCenter();
+        state.pinchLastCenterX = center.x;
+        state.pinchLastCenterY = center.y;
     }
 });
 
@@ -2576,12 +2604,27 @@ canvas.addEventListener("pointermove", (event) => {
     state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (state.pointers.size >= 2) {
         const distance = pointerDistance();
+        const center = pointerCenter();
         if (state.pinchStartDistance > 0)
             state.targetZoom = THREE.MathUtils.clamp(
                 state.pinchStartZoom * distance / state.pinchStartDistance,
                 0.72,
                 2.45
             );
+        const panSpeed = (canvas.clientWidth < 700 ? 0.018 : 0.012) /
+            Math.max(0.80, state.targetZoom);
+        state.targetPanX = THREE.MathUtils.clamp(
+            state.targetPanX - (center.x - state.pinchLastCenterX) * panSpeed,
+            -4.8,
+            4.8
+        );
+        state.targetPanY = THREE.MathUtils.clamp(
+            state.targetPanY + (center.y - state.pinchLastCenterY) * panSpeed,
+            -2.8,
+            3.2
+        );
+        state.pinchLastCenterX = center.x;
+        state.pinchLastCenterY = center.y;
         state.pointerMoved = true;
         return;
     }
@@ -2617,12 +2660,15 @@ function finishPointer(event) {
     }
     else {
         state.pinchStartDistance = 0;
+        state.pinchLastCenterX = 0;
+        state.pinchLastCenterY = 0;
         finishSceneInteractionSoon();
     }
 }
 
 canvas.addEventListener("pointerup", finishPointer);
 canvas.addEventListener("pointercancel", finishPointer);
+stage.addEventListener("touchmove", (event) => event.preventDefault(), { passive: false });
 canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 canvas.addEventListener("wheel", (event) => {
     event.preventDefault();
