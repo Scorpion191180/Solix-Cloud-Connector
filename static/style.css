@@ -426,7 +426,7 @@ header p{
     background:transparent;
     box-shadow:none;
     color:#fff4a8;
-    font-size:9px;
+    font-size:10px;
     font-weight:900;
     line-height:1;
     white-space:nowrap;
@@ -448,7 +448,7 @@ header p{
 }
 
 .house-string-label strong{
-    font-size:9px;
+    font-size:10px;
 }
 
 .house-string-label .panel-mid-detail,
@@ -456,7 +456,7 @@ header p{
     display:none;
     margin-top:2px;
     color:#fef9c3;
-    font-size:6.5px;
+    font-size:7.2px;
     font-weight:800;
     letter-spacing:.01em;
 }
@@ -746,8 +746,12 @@ header p{
 
 .house-reset{
     right:12px;
-    padding:7px 11px;
+    padding:8px 13px;
     cursor:pointer;
+    color:#f8fafc;
+    border-color:rgba(94,234,212,.52);
+    background:rgba(8,18,32,.92);
+    box-shadow:0 5px 18px rgba(2,6,23,.38),0 0 0 1px rgba(45,212,191,.08);
 }
 
 .house-reset:hover{
@@ -1658,21 +1662,22 @@ body{
 }
 
 .house-string-label{
-    font-size:8px;
+    font-size:9px;
 }
 
 .house-string-label strong{
-    font-size:8px;
+    font-size:9px;
 }
 
 .house-string-label .panel-mid-detail,
 .house-string-label .panel-close-detail{
-    font-size:5.5px;
+    font-size:6.5px;
 }
 
 .house-gesture{
     bottom:max(10px,env(safe-area-inset-bottom));
-    max-width:72%;
+    /* Genug Platz für den deutlich größeren Standardansicht-Knopf lassen. */
+    max-width:calc(100% - 168px);
     overflow:hidden;
     text-overflow:ellipsis;
     white-space:nowrap;
@@ -1681,6 +1686,10 @@ body{
 .house-reset{
     right:max(10px,env(safe-area-inset-right));
     bottom:max(10px,env(safe-area-inset-bottom));
+    min-height:40px;
+    padding:9px 13px;
+    font-size:11px;
+    letter-spacing:.01em;
 }
 
 .big-value{

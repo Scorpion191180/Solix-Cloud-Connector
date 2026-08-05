@@ -18,6 +18,20 @@ const liveBadge = document.getElementById("houseLiveBadge");
 const resetButton = document.getElementById("houseReset");
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+// Diese Perspektive entspricht der gemeinsam festgelegten Audi-/Pergola-
+// Vorderansicht. Sie ist sowohl Startposition als auch Ziel des Reset-Knopfs.
+const DEFAULT_VIEW = Object.freeze({
+    yaw: -1.567337267354423,
+    pitch: -0.02485403197490183,
+    panX: -0.06990777953089873,
+    panY: 0.024679675328578947,
+    zoom: 1.2098821693994675
+});
+const MIN_ZOOM = 0.55;
+const MAX_ZOOM = 3.10;
+const MIN_PITCH = -0.28;
+const MAX_PITCH = 0.32;
+
 const state = {
     selected: "battery",
     data: window.solixDashboardState || { solix: {}, automation: {}, audi: {} },
@@ -30,18 +44,24 @@ const state = {
     pointerMoved: false,
     pinchStartDistance: 0,
     pinchStartZoom: 1,
+    pinchStartPanX: 0,
+    pinchStartPanY: 0,
+    pinchFocusX: 0,
+    pinchFocusY: 0,
+    pinchPanOffsetX: 0,
+    pinchPanOffsetY: 0,
     pinchLastCenterX: 0,
     pinchLastCenterY: 0,
-    yaw: 0.78,
-    targetYaw: 0.78,
-    pitch: 0,
-    targetPitch: 0,
-    panX: 0,
-    targetPanX: 0,
-    panY: 0,
-    targetPanY: 0,
-    zoom: 1,
-    targetZoom: 1,
+    yaw: DEFAULT_VIEW.yaw,
+    targetYaw: DEFAULT_VIEW.yaw,
+    pitch: DEFAULT_VIEW.pitch,
+    targetPitch: DEFAULT_VIEW.pitch,
+    panX: DEFAULT_VIEW.panX,
+    targetPanX: DEFAULT_VIEW.panX,
+    panY: DEFAULT_VIEW.panY,
+    targetPanY: DEFAULT_VIEW.panY,
+    zoom: DEFAULT_VIEW.zoom,
+    targetZoom: DEFAULT_VIEW.zoom,
     lastTime: 0
 };
 
@@ -599,9 +619,13 @@ const PV_MODULE_LENGTH = 1.906;
 const PV_MODULE_WIDTH = 1.134;
 const PV_MODULE_HEIGHT = 0.030;
 const PV_MODULE_VMP = 36.79;
-// Die Pergola steht auf der Audi-Seite in der hinteren rechten Zaunecke.
-// Der Abstand lässt Pfosten, Dachkante und beide Zaunseiten klar getrennt.
-const PERGOLA_CENTER = new THREE.Vector3(8.10, 0, -8.50);
+// Der Audi-seitige Zaun steht jetzt dicht an der grauen Zufahrt. Pergola und
+// Hausanschluss rücken mit, während ihre Abstände zur Zauninnenseite erhalten
+// bleiben. Dadurch verschwindet der unnötig breite Grünstreifen.
+const AUDI_SIDE_FENCE_X = 7.20;
+const PERGOLA_CENTER = new THREE.Vector3(5.75, 0, -8.50);
+const PERGOLA_SHIFT_X = PERGOLA_CENTER.x - 8.10;
+const pergolaX = (originalX) => originalX + PERGOLA_SHIFT_X;
 const PERGOLA_ROOF_Y = 2.62;
 const PERGOLA_ROOF_PITCH = THREE.MathUtils.degToRad(12);
 const PERGOLA_PANEL_LAYOUT = [
@@ -615,7 +639,7 @@ const PERGOLA_PANEL_LAYOUT = [
 const SOLARBANK_POSITION = new THREE.Vector3(3.50, 2.14, -1.42);
 // Der Hausanschluss steht am rechten Längszaun zwischen Audi-Stellplatz
 // und Pergola. Die Vorderseite zeigt zur Einfahrt beziehungsweise zum Haus.
-const GRID_BOX_POSITION = new THREE.Vector3(9.20, 0, -4.20);
+const GRID_BOX_POSITION = new THREE.Vector3(AUDI_SIDE_FENCE_X - 0.35, 0, -4.20);
 
 function createBalconies(parent) {
     const railMaterial = new THREE.MeshStandardMaterial({ color: 0x49332f, roughness: 0.8 });
@@ -1720,7 +1744,8 @@ function createGrassDetail() {
         const onForecourt = z > 4.55 && x > -4.0 && x < 6.5;
         const onAudiDrive = x > 3.15 && z > -6.55 && z < 6.7;
         const aroundPool = x < -5.3 && z < -3.45;
-        const underPergola = x > 6.45 && x < 9.10 && z > -3.35 && z < 1.10;
+        const underPergola = Math.abs(x - PERGOLA_CENTER.x) < 1.55 &&
+            Math.abs(z - PERGOLA_CENTER.z) < 2.25;
         if (onHouse || onForecourt || onAudiDrive || aroundPool || underPergola)
             continue;
         transform.position.set(x, 0.07, z);
@@ -1767,10 +1792,12 @@ function createGarden() {
     // Vor Garage und Autos bleibt die Einfahrt offen. Der hintere und die
     // beiden seitlichen Holzzäune schließen ohne offene Lücken in den Ecken.
     const fence = new THREE.MeshStandardMaterial({ color: 0x6a5848, roughness: 1 });
-    for (let x = -11.70; x <= 9.55; x += 0.70)
+    for (let x = -11.70; x <= AUDI_SIDE_FENCE_X; x += 0.70)
         addBox(world, [0.10, 0.82, 0.10], fence, [x, 0.39, -10.65]);
-    addBox(world, [21.25, 0.10, 0.10], fence, [-1.075, 0.25, -10.65]);
-    addBox(world, [21.25, 0.10, 0.10], fence, [-1.075, 0.64, -10.65]);
+    const rearFenceLength = AUDI_SIDE_FENCE_X + 11.70;
+    const rearFenceCenterX = (AUDI_SIDE_FENCE_X - 11.70) / 2;
+    addBox(world, [rearFenceLength, 0.10, 0.10], fence, [rearFenceCenterX, 0.25, -10.65]);
+    addBox(world, [rearFenceLength, 0.10, 0.10], fence, [rearFenceCenterX, 0.64, -10.65]);
     for (let z = -10.65; z <= 9.0; z += 0.70)
         addBox(world, [0.10, 0.82, 0.10], fence, [-11.70, 0.39, z]);
     addBox(world, [0.10, 0.10, 19.65], fence, [-11.70, 0.25, -0.825]);
@@ -1779,13 +1806,15 @@ function createGarden() {
     // Auf der Audi-Seite schließt ein neuer L-förmiger Holzzaun die grüne
     // Pergola-Fläche bis zur straßenseitigen Ecke des grauen Vorplatzes ab.
     for (let z = -10.65; z <= 6.65; z += 0.68)
-        addBox(world, [0.10, 0.90, 0.10], fence, [9.55, 0.43, z]);
-    addBox(world, [0.10, 0.10, 17.30], fence, [9.55, 0.27, -2.00]);
-    addBox(world, [0.10, 0.10, 17.30], fence, [9.55, 0.69, -2.00]);
-    for (let x = 6.55; x <= 9.55; x += 0.68)
+        addBox(world, [0.10, 0.90, 0.10], fence, [AUDI_SIDE_FENCE_X, 0.43, z]);
+    addBox(world, [0.10, 0.10, 17.30], fence, [AUDI_SIDE_FENCE_X, 0.27, -2.00]);
+    addBox(world, [0.10, 0.10, 17.30], fence, [AUDI_SIDE_FENCE_X, 0.69, -2.00]);
+    for (let x = 6.55; x <= AUDI_SIDE_FENCE_X; x += 0.68)
         addBox(world, [0.10, 0.90, 0.10], fence, [x, 0.43, 6.65]);
-    addBox(world, [3.05, 0.10, 0.10], fence, [8.05, 0.27, 6.65]);
-    addBox(world, [3.05, 0.10, 0.10], fence, [8.05, 0.69, 6.65]);
+    const frontFenceLength = AUDI_SIDE_FENCE_X - 6.55;
+    const frontFenceCenterX = 6.55 + frontFenceLength / 2;
+    addBox(world, [frontFenceLength, 0.10, 0.10], fence, [frontFenceCenterX, 0.27, 6.65]);
+    addBox(world, [frontFenceLength, 0.10, 0.10], fence, [frontFenceCenterX, 0.69, 6.65]);
 }
 
 function createGridBox() {
@@ -1969,25 +1998,25 @@ const pvPanelAnchors = PERGOLA_PANEL_LAYOUT.map(([x, z], index) => ({
 // laufen einzeln in den beiden Kreuzfugen und bleiben damit von den sichtbaren
 // Modulflächen weg. Erst an der vorderen Pergola-Kante werden sie in der
 // Sammelbox zusammengeführt.
-const pvCombinerPoint = [7.12, 2.54, -6.66];
+const pvCombinerPoint = [pergolaX(7.12), 2.54, -6.66];
 const pvUnderPanelY = (worldX) => PERGOLA_ROOF_Y -
     Math.tan(PERGOLA_ROOF_PITCH) * (worldX - PERGOLA_CENTER.x) - 0.035;
 const pvRoutes = [
     [
-        [7.49, pvUnderPanelY(7.49), -9.50], [8.02, pvUnderPanelY(8.02), -9.50],
-        [8.02, pvUnderPanelY(8.02), -8.56], [8.02, 2.54, -6.74], pvCombinerPoint
+        [pergolaX(7.49), pvUnderPanelY(pergolaX(7.49)), -9.50], [pergolaX(8.02), pvUnderPanelY(pergolaX(8.02)), -9.50],
+        [pergolaX(8.02), pvUnderPanelY(pergolaX(8.02)), -8.56], [pergolaX(8.02), 2.54, -6.74], pvCombinerPoint
     ],
     [
-        [8.71, pvUnderPanelY(8.71), -9.50], [8.08, pvUnderPanelY(8.08), -9.50],
-        [8.08, pvUnderPanelY(8.08), -8.52], [8.08, 2.54, -6.70], pvCombinerPoint
+        [pergolaX(8.71), pvUnderPanelY(pergolaX(8.71)), -9.50], [pergolaX(8.08), pvUnderPanelY(pergolaX(8.08)), -9.50],
+        [pergolaX(8.08), pvUnderPanelY(pergolaX(8.08)), -8.52], [pergolaX(8.08), 2.54, -6.70], pvCombinerPoint
     ],
     [
-        [7.49, pvUnderPanelY(7.49), -7.50], [8.14, pvUnderPanelY(8.14), -7.50],
-        [8.14, pvUnderPanelY(8.14), -8.48], [8.14, 2.54, -6.66], pvCombinerPoint
+        [pergolaX(7.49), pvUnderPanelY(pergolaX(7.49)), -7.50], [pergolaX(8.14), pvUnderPanelY(pergolaX(8.14)), -7.50],
+        [pergolaX(8.14), pvUnderPanelY(pergolaX(8.14)), -8.48], [pergolaX(8.14), 2.54, -6.66], pvCombinerPoint
     ],
     [
-        [8.71, pvUnderPanelY(8.71), -7.50], [8.20, pvUnderPanelY(8.20), -7.50],
-        [8.20, pvUnderPanelY(8.20), -8.44], [8.20, 2.54, -6.62], pvCombinerPoint
+        [pergolaX(8.71), pvUnderPanelY(pergolaX(8.71)), -7.50], [pergolaX(8.20), pvUnderPanelY(pergolaX(8.20)), -7.50],
+        [pergolaX(8.20), pvUnderPanelY(pergolaX(8.20)), -8.44], [pergolaX(8.20), 2.54, -6.62], pvCombinerPoint
     ]
 ];
 pvPanelAnchors.forEach((panel, index) => {
@@ -1998,7 +2027,7 @@ pvPanelAnchors.forEach((panel, index) => {
 // bis zur Balkonplatte und anschließend direkt zur Anlage. Dadurch bleibt die
 // gelbe Leitung aus der Fensterzone heraus und ist vom Netzstrang getrennt.
 createFlow("pvTrunk", [
-    pvCombinerPoint, [7.12, 0.18, -6.66], [3.40, 0.18, -6.66],
+    pvCombinerPoint, [pvCombinerPoint[0], 0.18, -6.66], [3.40, 0.18, -6.66],
     [3.40, 0.18, -1.33], [3.40, 2.16, -1.33],
     [3.40, 2.16, -1.42], [3.62, 2.16, -1.42],
     [3.62, 2.56, -1.42]
@@ -2009,7 +2038,7 @@ createFlow("pvTrunk", [
 // sowohl in der Höhe als auch im Wandabstand versetzt. Auch er mündet von
 // rechts in die Solarbank, ohne eine Öffnung oder den PV-Strang zu schneiden.
 createFlow("grid", [
-    [9.20, 0.58, -4.20], [9.20, 0.16, -4.20], [3.62, 0.16, -4.20],
+    [GRID_BOX_POSITION.x, 0.58, -4.20], [GRID_BOX_POSITION.x, 0.16, -4.20], [3.62, 0.16, -4.20],
     [3.62, 0.16, -3.78], [3.62, 2.28, -3.78],
     [3.62, 2.28, -3.38], [3.62, 4.84, -3.38],
     [3.62, 4.84, -2.15], [3.62, 2.38, -2.15],
@@ -2066,7 +2095,9 @@ const labelAnchors = {
     // Die vier Übersichtskarten sitzen direkt über ihrer Komponente. Zuvor
     // lagen PV, Netz und Solarbank gemeinsam auf den Leitungen und überdeckten
     // sich in der Standardansicht.
-    pv: new THREE.Vector3(PERGOLA_CENTER.x, 3.28, PERGOLA_CENTER.z),
+    // Die Gesamtkarte sitzt hausnah am Kabelzulauf und verdeckt dadurch keine
+    // der vier Modulanzeigen mehr.
+    pv: new THREE.Vector3(3.48, 3.18, -5.55),
     battery: new THREE.Vector3(3.50, 3.62, -1.42),
     grid: new THREE.Vector3(GRID_BOX_POSITION.x, 1.72, GRID_BOX_POSITION.z),
     audi: new THREE.Vector3(5.00, 1.52, 1.00)
@@ -2520,7 +2551,7 @@ function updateLabelPositions() {
         // Die Werte bleiben unabhängig vom Blickwinkel waagerecht lesbar,
         // ihr Mittelpunkt folgt weiterhin exakt dem jeweiligen Modul.
         element.style.setProperty("--string-label-angle", "0deg");
-        element.style.setProperty("--string-label-scale", THREE.MathUtils.clamp(0.58 + state.zoom * 0.18, 0.68, 1.02));
+        element.style.setProperty("--string-label-scale", THREE.MathUtils.clamp(0.62 + state.zoom * 0.24, 0.76, 1.35));
         element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
         element.classList.toggle("outside", x < -45 || x > rect.width + 45 || y < -30 || y > rect.height + 30);
     });
@@ -2604,6 +2635,35 @@ function pointerCenter() {
     return { x: total.x / pointers.length, y: total.y / pointers.length };
 }
 
+function normalizedCanvasPoint(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+        x: (clientX - rect.left) / Math.max(rect.width, 1) - 0.5,
+        y: (clientY - rect.top) / Math.max(rect.height, 1) - 0.5
+    };
+}
+
+function applyFocalZoom(newZoom, focusX, focusY, startZoom, startPanX, startPanY,
+    panOffsetX = 0, panOffsetY = 0) {
+    const safeStartZoom = Math.max(MIN_ZOOM, startZoom);
+    const safeNewZoom = THREE.MathUtils.clamp(newZoom, MIN_ZOOM, MAX_ZOOM);
+    const viewHeight = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) *
+        cameraBaseOffset.length();
+    const viewWidth = viewHeight * camera.aspect;
+    const focalShift = 1 / safeStartZoom - 1 / safeNewZoom;
+    state.targetPanX = THREE.MathUtils.clamp(
+        startPanX + focusX * viewWidth * focalShift + panOffsetX,
+        -6.5,
+        6.5
+    );
+    state.targetPanY = THREE.MathUtils.clamp(
+        startPanY - focusY * viewHeight * focalShift + panOffsetY,
+        -4.0,
+        4.5
+    );
+    state.targetZoom = safeNewZoom;
+}
+
 let interactionHideTimer = 0;
 
 function beginSceneInteraction() {
@@ -2632,7 +2692,14 @@ canvas.addEventListener("pointerdown", (event) => {
     else if (state.pointers.size === 2) {
         state.pinchStartDistance = pointerDistance();
         state.pinchStartZoom = state.targetZoom;
+        state.pinchStartPanX = state.targetPanX;
+        state.pinchStartPanY = state.targetPanY;
+        state.pinchPanOffsetX = 0;
+        state.pinchPanOffsetY = 0;
         const center = pointerCenter();
+        const focus = normalizedCanvasPoint(center.x, center.y);
+        state.pinchFocusX = focus.x;
+        state.pinchFocusY = focus.y;
         state.pinchLastCenterX = center.x;
         state.pinchLastCenterY = center.y;
     }
@@ -2645,23 +2712,25 @@ canvas.addEventListener("pointermove", (event) => {
     if (state.pointers.size >= 2) {
         const distance = pointerDistance();
         const center = pointerCenter();
-        if (state.pinchStartDistance > 0)
-            state.targetZoom = THREE.MathUtils.clamp(
+        const nextZoom = state.pinchStartDistance > 0 ?
+            THREE.MathUtils.clamp(
                 state.pinchStartZoom * distance / state.pinchStartDistance,
-                0.72,
-                2.45
-            );
+                MIN_ZOOM,
+                MAX_ZOOM
+            ) : state.targetZoom;
         const panSpeed = (canvas.clientWidth < 700 ? 0.018 : 0.012) /
-            Math.max(0.80, state.targetZoom);
-        state.targetPanX = THREE.MathUtils.clamp(
-            state.targetPanX - (center.x - state.pinchLastCenterX) * panSpeed,
-            -4.8,
-            4.8
-        );
-        state.targetPanY = THREE.MathUtils.clamp(
-            state.targetPanY + (center.y - state.pinchLastCenterY) * panSpeed,
-            -2.8,
-            3.2
+            Math.max(0.70, nextZoom);
+        state.pinchPanOffsetX -= (center.x - state.pinchLastCenterX) * panSpeed;
+        state.pinchPanOffsetY += (center.y - state.pinchLastCenterY) * panSpeed;
+        applyFocalZoom(
+            nextZoom,
+            state.pinchFocusX,
+            state.pinchFocusY,
+            state.pinchStartZoom,
+            state.pinchStartPanX,
+            state.pinchStartPanY,
+            state.pinchPanOffsetX,
+            state.pinchPanOffsetY
         );
         state.pinchLastCenterX = center.x;
         state.pinchLastCenterY = center.y;
@@ -2679,7 +2748,11 @@ canvas.addEventListener("pointermove", (event) => {
     }
     else {
         state.targetYaw += deltaX * 0.009;
-        state.targetPitch = THREE.MathUtils.clamp(state.targetPitch - deltaY * 0.0034, -0.14, 0.16);
+        state.targetPitch = THREE.MathUtils.clamp(
+            state.targetPitch - deltaY * 0.0034,
+            MIN_PITCH,
+            MAX_PITCH
+        );
     }
     state.lastPointerX = event.clientX;
     state.lastPointerY = event.clientY;
@@ -2700,6 +2773,8 @@ function finishPointer(event) {
     }
     else {
         state.pinchStartDistance = 0;
+        state.pinchPanOffsetX = 0;
+        state.pinchPanOffsetY = 0;
         state.pinchLastCenterX = 0;
         state.pinchLastCenterY = 0;
         finishSceneInteractionSoon();
@@ -2713,25 +2788,29 @@ canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 canvas.addEventListener("wheel", (event) => {
     event.preventDefault();
     beginSceneInteraction();
-    state.targetZoom = THREE.MathUtils.clamp(
+    const focus = normalizedCanvasPoint(event.clientX, event.clientY);
+    const startZoom = state.targetZoom;
+    const nextZoom = THREE.MathUtils.clamp(
         state.targetZoom * Math.exp(-event.deltaY * 0.0012),
-        0.72,
-        2.45
+        MIN_ZOOM,
+        MAX_ZOOM
     );
+    applyFocalZoom(nextZoom, focus.x, focus.y, startZoom,
+        state.targetPanX, state.targetPanY);
     finishSceneInteractionSoon();
 }, { passive: false });
 canvas.addEventListener("keydown", (event) => {
     if (event.key === "+" || event.key === "=") {
         event.preventDefault();
         beginSceneInteraction();
-        state.targetZoom = Math.min(2.45, state.targetZoom + 0.16);
+        state.targetZoom = Math.min(MAX_ZOOM, state.targetZoom + 0.16);
         finishSceneInteractionSoon();
         return;
     }
     if (event.key === "-" || event.key === "_") {
         event.preventDefault();
         beginSceneInteraction();
-        state.targetZoom = Math.max(0.72, state.targetZoom - 0.16);
+        state.targetZoom = Math.max(MIN_ZOOM, state.targetZoom - 0.16);
         finishSceneInteractionSoon();
         return;
     }
@@ -2744,18 +2823,18 @@ canvas.addEventListener("keydown", (event) => {
     else
         state.targetPitch = THREE.MathUtils.clamp(
             state.targetPitch + (event.key === "ArrowUp" ? 0.05 : -0.05),
-            -0.14,
-            0.16
+            MIN_PITCH,
+            MAX_PITCH
         );
     finishSceneInteractionSoon();
 });
 
 resetButton.addEventListener("click", () => {
-    state.targetYaw = 0.78;
-    state.targetPitch = 0;
-    state.targetPanX = 0;
-    state.targetPanY = 0;
-    state.targetZoom = 1;
+    state.targetYaw = DEFAULT_VIEW.yaw;
+    state.targetPitch = DEFAULT_VIEW.pitch;
+    state.targetPanX = DEFAULT_VIEW.panX;
+    state.targetPanY = DEFAULT_VIEW.panY;
+    state.targetZoom = DEFAULT_VIEW.zoom;
     state.selected = "battery";
     updateLiveUi();
 });
