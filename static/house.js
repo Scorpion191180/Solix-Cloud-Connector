@@ -2536,7 +2536,14 @@ function updateLabelPositions() {
         element.style.top = y + "px";
         element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
         element.classList.toggle("outside", rawX < -110 || rawX > rect.width + 110 || rawY < -70 || rawY > rect.height + 70);
-        element.style.setProperty("--scene-label-scale", THREE.MathUtils.clamp(0.72 + state.zoom * 0.18, 0.82, 1.12));
+        // In der Übersicht bleiben die Karten kompakt. Ab dem Nahzoom wächst
+        // dagegen die komplette Anzeige samt Status- und Detailzeilen deutlich
+        // mit, damit sie auch auf dem iPhone ohne Anstrengung lesbar ist.
+        element.style.setProperty("--scene-label-scale", THREE.MathUtils.clamp(
+            0.90 + Math.max(0, state.zoom - 1) * 0.28,
+            0.90,
+            1.50
+        ));
     });
 
     pvPanelAnchors.forEach((panel) => {
@@ -2551,7 +2558,11 @@ function updateLabelPositions() {
         // Die Werte bleiben unabhängig vom Blickwinkel waagerecht lesbar,
         // ihr Mittelpunkt folgt weiterhin exakt dem jeweiligen Modul.
         element.style.setProperty("--string-label-angle", "0deg");
-        element.style.setProperty("--string-label-scale", THREE.MathUtils.clamp(0.62 + state.zoom * 0.24, 0.76, 1.35));
+        element.style.setProperty("--string-label-scale", THREE.MathUtils.clamp(
+            0.64 + state.zoom * 0.32,
+            0.82,
+            1.65
+        ));
         element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
         element.classList.toggle("outside", x < -45 || x > rect.width + 45 || y < -30 || y > rect.height + 30);
     });
