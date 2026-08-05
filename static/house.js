@@ -870,26 +870,33 @@ function createVerticalBatteryGauge(parent, position, size) {
     gauge.position.set(...position);
     parent.add(gauge);
     const outlineMaterial = new THREE.MeshBasicMaterial({
-        color: 0xbff7ff,
+        color: 0xe8fff0,
         transparent: true,
-        opacity: 0.72,
+        opacity: 0.88,
         wireframe: true,
         depthTest: false,
         depthWrite: false
     });
-    const fillMaterial = new THREE.MeshStandardMaterial({
-        color: 0x38bdf8,
-        emissive: 0x0ea5e9,
-        emissiveIntensity: 1.9,
+    const backgroundMaterial = new THREE.MeshBasicMaterial({
+        color: 0x06110a,
         transparent: true,
-        opacity: 0.66,
+        opacity: 0.90,
+        depthTest: false,
+        depthWrite: false
+    });
+    const fillMaterial = new THREE.MeshStandardMaterial({
+        color: 0x22c55e,
+        emissive: 0x16a34a,
+        emissiveIntensity: 2.8,
+        transparent: true,
+        opacity: 0.92,
         depthTest: false,
         depthWrite: false
     });
     const waveMaterial = new THREE.MeshStandardMaterial({
         color: 0x86efac,
         emissive: 0x22c55e,
-        emissiveIntensity: 4.0,
+        emissiveIntensity: 5.2,
         transparent: true,
         opacity: 0,
         depthTest: false,
@@ -900,6 +907,12 @@ function createVerticalBatteryGauge(parent, position, size) {
         castShadow: false,
         receiveShadow: false
     });
+    const background = addBox(gauge, [size[0] * 0.88, size[1] * 0.88, size[2] * 0.52],
+        backgroundMaterial, [0, 0, 0.003], {
+            radius: 0.013,
+            castShadow: false,
+            receiveShadow: false
+        });
     const fillHeight = size[1] * 0.82;
     const fill = addBox(gauge, [size[0] * 0.82, fillHeight, size[2] * 0.70],
         fillMaterial, [0, 0, 0], {
@@ -913,17 +926,20 @@ function createVerticalBatteryGauge(parent, position, size) {
             castShadow: false,
             receiveShadow: false
         });
-    [outline, fill, wave].forEach((mesh) => {
-        mesh.renderOrder = 18;
-    });
+    background.renderOrder = 17;
+    fill.renderOrder = 18;
+    outline.renderOrder = 19;
+    wave.renderOrder = 20;
     return {
         fill,
         wave,
         outline,
+        background,
         fillMaterial,
         waveMaterial,
         height: fillHeight,
-        bottom: -fillHeight / 2
+        bottom: -fillHeight / 2,
+        levelFraction: 0
     };
 }
 
@@ -1062,6 +1078,11 @@ function createSolarBank() {
     for (let index = -3; index <= 3; index += 1)
         addBox(bank, [0.020, 0.010, mainDepth * 0.62], edge,
             [index * bankWidth / 9, mainY + mainHeight / 2 + 0.002, 0], { castShadow: false });
+    // Auch der große Hauptakku zeigt seinen tatsächlichen Füllstand. Die
+    // beiden kleineren Anzeigen darunter gehören zu den zwei BP2700-Paketen.
+    batteryGauges.push(createVerticalBatteryGauge(bank,
+        [0, mainY - mainHeight * 0.09, -mainDepth / 2 - 0.020],
+        [bankWidth * 0.82, mainHeight * 0.56, 0.022]));
     solarBankBatteryVisual = {
         kind: "solarbank",
         group: bank,
@@ -1944,42 +1965,43 @@ const pvPanelAnchors = PERGOLA_PANEL_LAYOUT.map(([x, z], index) => ({
     )
 }));
 
-// Auf dem Pultdach bleiben alle vier Modulstränge einzeln nachvollziehbar und
-// folgen Rahmen und Längsträger. Erst direkt unter der Pergola-Dachkante werden
-// sie in der Sammelbox zusammengeführt.
+// Die vier Modulstränge verlassen die Anschlussdosen unter den Modulen. Sie
+// laufen einzeln in den beiden Kreuzfugen und bleiben damit von den sichtbaren
+// Modulflächen weg. Erst an der vorderen Pergola-Kante werden sie in der
+// Sammelbox zusammengeführt.
 const pvCombinerPoint = [7.12, 2.54, -6.66];
+const pvUnderPanelY = (worldX) => PERGOLA_ROOF_Y -
+    Math.tan(PERGOLA_ROOF_PITCH) * (worldX - PERGOLA_CENTER.x) - 0.035;
 const pvRoutes = [
     [
-        pvPanelAnchors[0].anchor.toArray(), [7.04, 2.86, -9.50],
-        [7.04, 2.86, -6.78], pvCombinerPoint
+        [7.49, pvUnderPanelY(7.49), -9.50], [8.02, pvUnderPanelY(8.02), -9.50],
+        [8.02, pvUnderPanelY(8.02), -8.56], [8.02, 2.54, -6.74], pvCombinerPoint
     ],
     [
-        pvPanelAnchors[1].anchor.toArray(), [7.10, 2.91, -9.50],
-        [7.10, 2.91, -6.72], pvCombinerPoint
+        [8.71, pvUnderPanelY(8.71), -9.50], [8.08, pvUnderPanelY(8.08), -9.50],
+        [8.08, pvUnderPanelY(8.08), -8.52], [8.08, 2.54, -6.70], pvCombinerPoint
     ],
     [
-        pvPanelAnchors[2].anchor.toArray(), [7.16, 2.96, -7.50],
-        [7.16, 2.96, -6.68], pvCombinerPoint
+        [7.49, pvUnderPanelY(7.49), -7.50], [8.14, pvUnderPanelY(8.14), -7.50],
+        [8.14, pvUnderPanelY(8.14), -8.48], [8.14, 2.54, -6.66], pvCombinerPoint
     ],
     [
-        pvPanelAnchors[3].anchor.toArray(), [7.22, 3.01, -7.50],
-        [7.22, 3.01, -6.62], pvCombinerPoint
+        [8.71, pvUnderPanelY(8.71), -7.50], [8.20, pvUnderPanelY(8.20), -7.50],
+        [8.20, pvUnderPanelY(8.20), -8.44], [8.20, 2.54, -6.62], pvCombinerPoint
     ]
 ];
 pvPanelAnchors.forEach((panel, index) => {
     createFlow(panel.id, pvRoutes[index], colors.pv);
 });
-// Der PV-Hauptstrang erreicht die Fassade am rechten Fallrohr (z=-6,18), läuft
-// oberhalb der unteren Öffnungen und steigt links neben der äußeren Balkontür
-// bis zur Traufe. Von dort führt sein eigener Dachkanal zum freien Spalt
-// zwischen Balkontür und Solarbank-Fenster. Unterhalb des Fensters geht er in
-// einer separaten Höhenlage rechtsseitig in die Anlage.
+// Ab der Sammelbox läuft der PV-Hauptstrang wieder im unteren Bodenkanal zur
+// Fassade. Unterhalb des Solarbank-Fensters steigt er von unten an der Wand
+// bis zur Balkonplatte und anschließend direkt zur Anlage. Dadurch bleibt die
+// gelbe Leitung aus der Fensterzone heraus und ist vom Netzstrang getrennt.
 createFlow("pvTrunk", [
     pvCombinerPoint, [7.12, 0.18, -6.66], [3.40, 0.18, -6.66],
-    [3.40, 0.18, -6.18], [3.40, 2.28, -6.18],
-    [3.40, 2.28, -4.62], [3.40, 4.70, -4.62],
-    [3.40, 4.70, -1.93], [3.40, 2.52, -1.93],
-    [3.40, 2.52, -1.10], [3.62, 2.52, -1.10]
+    [3.40, 0.18, -1.33], [3.40, 2.16, -1.33],
+    [3.40, 2.16, -1.42], [3.62, 2.16, -1.42],
+    [3.62, 2.56, -1.42]
 ], colors.pv, { cableRadius: 0.060, glowRadius: 0.085, pulseRadius: 0.13 });
 // Der Netzstrang erreicht die Wand zwischen den beiden unteren Haustüren,
 // wechselt oberhalb ihrer Rahmen in den Spalt der beiden Balkontüren und
@@ -2141,8 +2163,13 @@ function setSchematicBatteryState(visual, percent, mode) {
         visual.gauges.forEach((gauge) => {
             gauge.fill.scale.y = fraction;
             gauge.fill.position.y = gauge.bottom + gauge.height * fraction / 2;
+            gauge.levelFraction = fraction;
             gauge.fillMaterial.color.setHex(activeColor);
             gauge.fillMaterial.emissive.setHex(activeColor);
+            gauge.waveMaterial.color.setHex(
+                charging ? 0x86efac : discharging ? 0xfde68a : 0x7dd3fc
+            );
+            gauge.waveMaterial.emissive.setHex(activeColor);
         });
     }
 }
@@ -2171,14 +2198,17 @@ function animateSchematicBattery(visual, seconds) {
     }
     else {
         visual.gauges.forEach((gauge, index) => {
-            gauge.outline.material.opacity = (hasLevel ? 0.44 : 0.16) + zoomStrength * 0.30;
-            gauge.fillMaterial.opacity = hasLevel ? 0.68 * pulse : 0.12;
-            gauge.fillMaterial.emissiveIntensity = hasLevel ? 2.2 * pulse : 0.08;
+            gauge.outline.material.opacity = hasLevel ? 0.74 + zoomStrength * 0.18 : 0.22;
+            gauge.background.material.opacity = hasLevel ? 0.88 : 0.42;
+            // Der ruhige, kräftige Füllkörper macht den SOC bereits aus der
+            // Entfernung sichtbar; nur die Welle pulsiert mit dem Energiefluss.
+            gauge.fillMaterial.opacity = hasLevel ? 0.90 : 0.12;
+            gauge.fillMaterial.emissiveIntensity = hasLevel ? 2.8 : 0.08;
             gauge.wave.visible = moving;
             gauge.wave.position.y = gauge.bottom +
-                ((progress + index * 0.14) % 1) * gauge.height;
-            gauge.waveMaterial.opacity = moving ? 0.90 * pulse : 0;
-            gauge.waveMaterial.emissiveIntensity = 4.2 * pulse;
+                ((progress + index * 0.14) % 1) * gauge.height * gauge.levelFraction;
+            gauge.waveMaterial.opacity = moving ? 0.98 * pulse : 0;
+            gauge.waveMaterial.emissiveIntensity = 5.2 * pulse;
         });
     }
 }
@@ -2460,27 +2490,22 @@ function updateLabelPositions() {
         element.style.top = y + "px";
         element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
         element.classList.toggle("outside", x < -60 || x > rect.width + 60 || y < -40 || y > rect.height + 40);
-        element.style.setProperty("--scene-label-scale", THREE.MathUtils.clamp(0.68 + state.zoom * 0.32, 0.90, 1.54));
+        element.style.setProperty("--scene-label-scale", THREE.MathUtils.clamp(0.72 + state.zoom * 0.18, 0.82, 1.12));
     });
 
     pvPanelAnchors.forEach((panel) => {
         const anchor = world.localToWorld(panel.anchor.clone());
-        const tangentAnchor = world.localToWorld(panel.tangentAnchor.clone());
         const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
         const projected = anchor.project(camera);
-        const projectedTangent = tangentAnchor.project(camera);
         const x = (projected.x * 0.5 + 0.5) * rect.width;
         const y = (-projected.y * 0.5 + 0.5) * rect.height;
-        const tangentX = (projectedTangent.x * 0.5 + 0.5) * rect.width;
-        const tangentY = (-projectedTangent.y * 0.5 + 0.5) * rect.height;
-        let angle = Math.atan2(tangentY - y, tangentX - x) * 180 / Math.PI;
-        if (angle > 90) angle -= 180;
-        if (angle < -90) angle += 180;
         const element = pvStringElements[panel.id];
         element.style.left = x + "px";
         element.style.top = y + "px";
-        element.style.setProperty("--string-label-angle", angle.toFixed(2) + "deg");
-        element.style.setProperty("--string-label-scale", THREE.MathUtils.clamp(0.52 + state.zoom * 0.24, 0.70, 1.18));
+        // Die Werte bleiben unabhängig vom Blickwinkel waagerecht lesbar,
+        // ihr Mittelpunkt folgt weiterhin exakt dem jeweiligen Modul.
+        element.style.setProperty("--string-label-angle", "0deg");
+        element.style.setProperty("--string-label-scale", THREE.MathUtils.clamp(0.58 + state.zoom * 0.18, 0.68, 1.02));
         element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
         element.classList.toggle("outside", x < -45 || x > rect.width + 45 || y < -30 || y > rect.height + 30);
     });
@@ -2494,7 +2519,7 @@ function updateLabelPositions() {
         const element = objectBatteryElements[id];
         element.style.left = x + "px";
         element.style.top = y + "px";
-        element.style.setProperty("--object-battery-scale", THREE.MathUtils.clamp(0.76 + state.zoom * 0.34, 1.0, 1.62));
+        element.style.setProperty("--object-battery-scale", THREE.MathUtils.clamp(0.74 + state.zoom * 0.20, 0.94, 1.22));
         element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
     });
 

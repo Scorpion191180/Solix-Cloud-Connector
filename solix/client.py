@@ -23,6 +23,7 @@ MIN_CACHE_SECONDS = 30
 DEFAULT_FAILURE_RETRY_SECONDS = 120
 DEFAULT_AUTH_FAILURE_RETRY_SECONDS = 30 * 60
 SMARTPLUG_TELEMETRY_WAIT_SECONDS = 1.0
+SOLARBANK_TELEMETRY_WAIT_SECONDS = 1.2
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,6 +33,13 @@ def _integer_setting(name: str, default: int, minimum: int, maximum: int) -> int
         return min(maximum, max(minimum, int(os.getenv(name, str(default)))))
     except ValueError:
         return default
+
+
+def _boolean_setting(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 class SolixClient:
@@ -67,6 +75,10 @@ class SolixClient:
         )
         self._last_smartplug_state: bool | None = None
         self._last_smartplug_telemetry_request = 0.0
+        self._active_solarbank_telemetry = _boolean_setting(
+            "SOLIX_ACTIVE_TELEMETRY", default=True
+        )
+        self._last_solarbank_telemetry_request = 0.0
         self._last_refresh_at: datetime | None = None
         self._last_refresh_attempt = 0.0
         self._last_refresh_error: str | None = None
@@ -106,12 +118,89 @@ class SolixClient:
         self._session = None
         self.api = None
         self._last_smartplug_telemetry_request = 0.0
+        self._last_solarbank_telemetry_request = 0.0
 
     async def _poll_cloud_locked(self) -> None:
         assert self.api is not None
         await self.api.update_sites()
         await self.api.update_site_details()
         await self.api.update_device_details()
+        await self._request_solarbank_telemetry_locked()
+
+    async def _request_solarbank_telemetry_locked(self) -> None:
+        """Trigger fresh device telemetry without changing Solarbank settings."""
+        if (
+            not self._active_solarbank_telemetry
+            or self.api is None
+            or not hasattr(self.api, "startMqttSession")
+        ):
+            return
+
+        devices = getattr(self.api, "devices", None)
+        if not isinstance(devices, dict) or not devices:
+            return
+        try:
+            solarbank, _, _ = self._select_solarbank_locked()
+        except RuntimeError:
+            return
+        if solarbank.get("mqtt_supported") is not True:
+            return
+
+        serial = next(
+            (
+                device_serial
+                for device_serial, device in devices.items()
+                if device is solarbank
+            ),
+            None,
+        )
+        if serial is None:
+            return
+
+        request_age = time.monotonic() - self._last_solarbank_telemetry_request
+        if request_age < max(MIN_CACHE_SECONDS, self._cache_seconds):
+            return
+        self._last_solarbank_telemetry_request = time.monotonic()
+
+        try:
+            from anker_solix_api.mqtt_factory import SolixMqttDeviceFactory
+
+            mqtt_device = SolixMqttDeviceFactory(
+                api_instance=self.api, device_sn=serial
+            ).create_device()
+            if mqtt_device is None:
+                return
+
+            mqtt_session = await self.api.startMqttSession()
+            if mqtt_session is None or not mqtt_session.is_connected():
+                return
+
+            topic = f"{mqtt_session.get_topic_prefix(deviceDict=solarbank)}#"
+            mqtt_session.subscribe(topic)
+
+            published = False
+            # The mobile app uses the same real-time trigger when it is opened.
+            # Repeat it here so the dashboard receives new PV/power values on
+            # its own instead of waiting for the mobile app to wake the stream.
+            if hasattr(mqtt_device, "realtime_trigger"):
+                result = await mqtt_device.realtime_trigger(
+                    timeout=max(60, self._cache_seconds + 15)
+                )
+                published = result is not None
+            if hasattr(mqtt_device, "status_request"):
+                result = await mqtt_device.status_request()
+                published = published or result is not None
+            if not published:
+                return
+
+            await asyncio.sleep(SOLARBANK_TELEMETRY_WAIT_SECONDS)
+            self.api.update_device_mqtt()
+        except Exception:
+            # Live MQTT is an enhancement. If the model or cloud broker does
+            # not support it, the normal REST refresh above remains usable.
+            _LOGGER.warning(
+                "Solarbank live telemetry request failed", exc_info=True
+            )
 
     def _login_token_available_locked(self) -> bool | None:
         """Report whether the upstream client completed password login."""

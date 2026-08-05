@@ -96,6 +96,34 @@ class FakeTelemetryDevice:
         return {}
 
 
+class FakeSolarbankTelemetryApi(FakeRefreshApi):
+    def __init__(self, devices):
+        super().__init__()
+        self.devices = devices
+        self.mqttsession = FakeTelemetrySession()
+        self.merged = 0
+
+    async def startMqttSession(self):
+        return self.mqttsession
+
+    def update_device_mqtt(self):
+        self.merged += 1
+
+
+class FakeSolarbankTelemetryDevice:
+    def __init__(self):
+        self.realtime_timeouts = []
+        self.status_requests = 0
+
+    async def realtime_trigger(self, timeout):
+        self.realtime_timeouts.append(timeout)
+        return {}
+
+    async def status_request(self):
+        self.status_requests += 1
+        return {}
+
+
 class SolixSmartPlugTests(unittest.IsolatedAsyncioTestCase):
     def make_client(self, devices):
         client = SolixClient()
@@ -247,6 +275,34 @@ class SolixSmartPlugTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             client.api.calls,
             ["sites", "site_details", "device_details"],
+        )
+
+    async def test_live_refresh_actively_triggers_solarbank_telemetry(self):
+        device = {
+            "type": "solarbank",
+            "device_pn": "A17C5",
+            "mqtt_supported": True,
+            "battery_soc": "42",
+        }
+        client = SolixClient()
+        client.api = FakeSolarbankTelemetryApi({"SOLARBANK-SERIAL": device})
+        telemetry_device = FakeSolarbankTelemetryDevice()
+
+        with (
+            patch(
+                "anker_solix_api.mqtt_factory.SolixMqttDeviceFactory"
+            ) as factory,
+            patch("solix.client.asyncio.sleep", new=AsyncMock()),
+        ):
+            factory.return_value.create_device.return_value = telemetry_device
+            await client.refresh(force=True)
+
+        self.assertEqual(telemetry_device.realtime_timeouts, [75])
+        self.assertEqual(telemetry_device.status_requests, 1)
+        self.assertEqual(client.api.merged, 1)
+        self.assertEqual(
+            client.api.mqttsession.topics,
+            ["dt/app/A17X8/SECRET-SERIAL/#"],
         )
 
     async def test_rejected_token_rebuilds_session_and_retries_once(self):
