@@ -8,8 +8,10 @@ import math
 import os
 import ssl
 import time
+from collections import deque
 from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import aiohttp
 import certifi
@@ -83,6 +85,16 @@ class SolixClient:
         self._last_refresh_attempt = 0.0
         self._last_refresh_error: str | None = None
         self._last_live_payload: dict[str, Any] | None = None
+        self._pv_timezone = ZoneInfo(os.getenv("APP_TIMEZONE", "Europe/Berlin"))
+        self._pv_day = None
+        self._pv_today_wh = 0.0
+        self._pv_today_wh_by_string = [0.0, 0.0, 0.0, 0.0]
+        self._pv_last_sample_at: datetime | None = None
+        self._pv_last_power_w: int | None = None
+        self._pv_last_string_powers: list[int] | None = None
+        # Zehn-Minuten-Punkte reichen für eine ruhige, kleine Tageskurve und
+        # halten die öffentliche Live-Antwort trotzdem kompakt.
+        self._pv_history: deque[dict[str, Any]] = deque(maxlen=144)
 
     async def _ensure_api_locked(self) -> None:
         if self.api is not None:
@@ -366,6 +378,68 @@ class SolixClient:
         except (TypeError, ValueError):
             return 0
 
+    def _record_pv_telemetry(
+        self,
+        pv_power_w: int,
+        observed_at: datetime,
+        string_powers: list[int] | None = None,
+    ) -> tuple[int, list[dict[str, Any]], list[int]]:
+        """Integrate fresh PV samples without calling Anker's history API."""
+        local_time = observed_at.astimezone(self._pv_timezone)
+        local_day = local_time.date()
+        if self._pv_day != local_day:
+            self._pv_day = local_day
+            self._pv_today_wh = 0.0
+            self._pv_today_wh_by_string = [0.0, 0.0, 0.0, 0.0]
+            self._pv_last_sample_at = None
+            self._pv_last_power_w = None
+            self._pv_last_string_powers = None
+            self._pv_history.clear()
+
+        if self._pv_last_sample_at is not None and self._pv_last_power_w is not None:
+            elapsed = (observed_at - self._pv_last_sample_at).total_seconds()
+            # Längere Lücken sind unbekannte Zeiträume und werden bewusst nicht
+            # hochgerechnet. So bleibt die Schätzung konservativ und ehrlich.
+            if 0 < elapsed <= 10 * 60:
+                average_power = (self._pv_last_power_w + pv_power_w) / 2
+                self._pv_today_wh += average_power * elapsed / 3600
+                if string_powers is not None and self._pv_last_string_powers is not None:
+                    for index, power in enumerate(string_powers[:4]):
+                        average_string_power = (
+                            self._pv_last_string_powers[index] + power
+                        ) / 2
+                        self._pv_today_wh_by_string[index] += (
+                            average_string_power * elapsed / 3600
+                        )
+
+        self._pv_last_sample_at = observed_at
+        self._pv_last_power_w = pv_power_w
+        self._pv_last_string_powers = list(string_powers[:4]) if string_powers else None
+        sample = {
+            "time": local_time.isoformat(timespec="minutes"),
+            "watts": pv_power_w,
+            "strings": list(string_powers[:4]) if string_powers else [],
+        }
+        bucket = (local_time.hour * 60 + local_time.minute) // 10
+        if self._pv_history and self._pv_history[-1].get("bucket") == bucket:
+            self._pv_history[-1] = {**sample, "bucket": bucket}
+        else:
+            self._pv_history.append({**sample, "bucket": bucket})
+
+        public_history = [
+            {
+                "time": point["time"],
+                "watts": point["watts"],
+                "strings": point.get("strings", []),
+            }
+            for point in self._pv_history
+        ]
+        return (
+            round(self._pv_today_wh),
+            public_history,
+            [round(value) for value in self._pv_today_wh_by_string],
+        )
+
     async def get_live(self) -> dict[str, Any]:
         try:
             await self.refresh()
@@ -419,6 +493,15 @@ class SolixClient:
             else -battery_discharge_power
         )
 
+        pv_values = [
+            to_int(solarbank.get(f"solar_power_{number}"))
+            for number in range(1, 5)
+        ]
+        pv_total = sum(pv_values)
+        pv_today_wh, pv_history, pv_today_wh_by_string = self._record_pv_telemetry(
+            pv_total, datetime.now(timezone.utc), pv_values
+        )
+
         payload = {
             "status": solarbank.get("status_desc"),
             "battery_percent": battery_percent,
@@ -439,14 +522,14 @@ class SolixClient:
             ),
             "system_output_power": to_int(solarbank.get("output_power")),
             "charging_status": solarbank.get("charging_status_desc"),
-            "pv_total": sum(
-                to_int(solarbank.get(f"solar_power_{number}"))
-                for number in range(1, 5)
-            ),
-            "pv1": to_int(solarbank.get("solar_power_1")),
-            "pv2": to_int(solarbank.get("solar_power_2")),
-            "pv3": to_int(solarbank.get("solar_power_3")),
-            "pv4": to_int(solarbank.get("solar_power_4")),
+            "pv_total": pv_total,
+            "pv1": pv_values[0],
+            "pv2": pv_values[1],
+            "pv3": pv_values[2],
+            "pv4": pv_values[3],
+            "pv_today_wh": pv_today_wh,
+            "pv_today_wh_by_string": pv_today_wh_by_string,
+            "pv_history": pv_history,
             "home_load": to_int(solarbank.get("to_home_load")),
             "grid_power": to_int(solarbank.get("grid_to_battery_power")),
             "firmware": solarbank.get("sw_version"),
@@ -498,6 +581,9 @@ class SolixClient:
             "pv2": None,
             "pv3": None,
             "pv4": None,
+            "pv_today_wh": None,
+            "pv_today_wh_by_string": [],
+            "pv_history": [],
             "home_load": None,
             "grid_power": None,
             "firmware": None,

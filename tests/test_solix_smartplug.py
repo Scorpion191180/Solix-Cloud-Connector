@@ -1,7 +1,7 @@
 import os
 import time
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -507,6 +507,31 @@ class SolixSmartPlugTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["solarbank_model"], "AE103")
         self.assertEqual(result["selection"], "auto_largest_system")
+
+    def test_pv_telemetry_builds_conservative_daily_curve(self):
+        client = SolixClient()
+        start = datetime(2026, 8, 6, 8, 0, tzinfo=timezone.utc)
+
+        first_energy, first_curve, first_strings = client._record_pv_telemetry(
+            300, start, [75, 75, 75, 75]
+        )
+        second_energy, second_curve, second_strings = client._record_pv_telemetry(
+            600, start + timedelta(minutes=10), [150, 150, 150, 150]
+        )
+        after_gap_energy, third_curve, third_strings = client._record_pv_telemetry(
+            900, start + timedelta(minutes=30), [225, 225, 225, 225]
+        )
+
+        self.assertEqual(first_energy, 0)
+        self.assertEqual(second_energy, 75)
+        self.assertEqual(after_gap_energy, 75)
+        self.assertEqual(len(first_curve), 1)
+        self.assertEqual(len(second_curve), 2)
+        self.assertEqual(len(third_curve), 3)
+        self.assertEqual(third_curve[-1]["watts"], 900)
+        self.assertEqual(first_strings, [0, 0, 0, 0])
+        self.assertEqual(second_strings, [19, 19, 19, 19])
+        self.assertEqual(third_strings, [19, 19, 19, 19])
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@
 
 <title>☀️ Solix Control</title>
 
-<link rel="stylesheet" href="/static/style.css?v=20260805-49">
+<link rel="stylesheet" href="/static/style.css?v=20260806-51">
 
 <script type="importmap">
 {
@@ -185,6 +185,24 @@ Signalstärke
 </div>
 
 <div class="house-stage" id="houseStage">
+<button class="house-menu-toggle" id="houseMenuToggle" type="button"
+    aria-label="Energie-Menü öffnen" aria-controls="houseMenuPanel" aria-expanded="false">
+<span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span>
+</button>
+<aside class="house-menu-panel" id="houseMenuPanel" aria-label="Energieübersicht" hidden>
+<div class="house-menu-head">
+<div><small>ENERGIEZENTRALE</small><strong>Live-Übersicht</strong></div>
+<button id="houseMenuClose" type="button" aria-label="Menü schließen">×</button>
+</div>
+<dl class="house-menu-stats">
+<div><dt>Solar heute</dt><dd id="menuPvToday">--</dd></div>
+<div><dt>Haus aktuell</dt><dd id="menuHousePower">--</dd></div>
+<div><dt>Solarbank</dt><dd id="menuBatterySoc">--</dd></div>
+<div><dt>Audi</dt><dd id="menuAudiSoc">--</dd></div>
+</dl>
+<p class="house-menu-rule">Automatik: Laden ab <span id="menuStartThreshold">--</span>, Stopp unter <span id="menuStopThreshold">--</span>.</p>
+<button class="house-menu-action" id="houseMenuCollapse" type="button">Detailkarten schließen</button>
+</aside>
 <canvas
     id="houseCanvas"
     role="img"
@@ -601,7 +619,7 @@ Einstellungen
 
 </div>
 
-<script type="module" src="/static/house.js?v=20260805-49"></script>
+<script type="module" src="/static/house.js?v=20260806-51"></script>
 <script src="/static/app.js?v=20260805-44"></script>
 
 </body>
