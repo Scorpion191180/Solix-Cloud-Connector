@@ -21,8 +21,8 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260806-51", dashboard)
-        self.assertIn("house.js?v=20260806-51", dashboard)
+        self.assertIn("style.css?v=20260806-52", dashboard)
+        self.assertIn("house.js?v=20260806-52", dashboard)
         self.assertIn("app.js?v=20260805-44", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
@@ -73,7 +73,7 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("function createJulietGuard", script)
         self.assertIn("function createWoodDoorWithCanopy", script)
         self.assertIn("function createFrontWoodDoor", script)
-        self.assertIn('createWoodDoorWithCanopy(house, [-3.30, 1.34, 1.80])', script)
+        self.assertIn('createWoodDoorWithCanopy(house, [-3.30, 1.34, 1.80], PHOTO_CROPS.garden.woodDoor)', script)
         self.assertIn("Gartenfassade aus IMG_7397", script)
         self.assertIn("[0.16, 4.90, 2.45]", script)
         self.assertIn("[5.22, 1.02]", script)
@@ -190,8 +190,8 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("function makeSkyTexture", script)
         self.assertIn("function createGrassDetail", script)
         self.assertIn("windowReflection", script)
-        self.assertIn("[-1.62, -2.72, 0.58, 0.76, slope]", script)
-        self.assertIn("[1.58, 4.48, 0.68, 0.86, -slope]", script)
+        self.assertIn("[-1.62, -2.72, 0.58, 0.76, slope, PHOTO_CROPS.roof[0]]", script)
+        self.assertIn("[1.58, 4.48, 0.68, 0.86, -slope, PHOTO_CROPS.roof[2]]", script)
         self.assertIn("[4.90, 0.42, -0.55, -2.12, -5.46]", script)
         self.assertIn("[set.railX, BALCONY_RAIL_TOP_Y, set.z]", script)
         self.assertIn("railX: 4.43", script)
@@ -258,6 +258,25 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("FDS-LD-900", script)
         self.assertIn("FDS-RS-700", script)
         self.assertIn("FDS-LS-600", script)
+        self.assertIn("facade-wall.jpg", script)
+        self.assertIn("roof-tiles.jpg", script)
+        self.assertIn("front-reference.jpg", script)
+        self.assertIn("garden-reference.jpg", script)
+        self.assertIn("garage-gable-reference.jpg", script)
+        self.assertIn("side-gable-reference.jpg", script)
+        self.assertIn("makePhotoCropTexture", script)
+        self.assertIn("PHOTO_CROPS.roof", script)
+        for filename in (
+            "facade-wall.jpg",
+            "roof-tiles.jpg",
+            "front-reference.jpg",
+            "garden-reference.jpg",
+            "garage-gable-reference.jpg",
+            "side-gable-reference.jpg",
+        ):
+            asset = ROOT / "static" / "textures" / "house" / filename
+            self.assertTrue(asset.exists())
+            self.assertLess(asset.stat().st_size, 1_500_000)
         self.assertIn("FDS-KS-800", script)
         self.assertNotIn(".house-stage.is-interacting .house-scene-label", stylesheet)
 
