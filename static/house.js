@@ -2723,6 +2723,8 @@ const audiPresenceMotion = {
     startedAt: 0,
     duration: 0
 };
+let audiPresenceDemoActive = false;
+let audiPresenceDemoTimers = [];
 
 function setAudiBrakeLights(active) {
     const lights = vehicleModels.audi.brakeLights;
@@ -2745,15 +2747,15 @@ function interpolateAudiPose(from, to, progress) {
     audiModel.rotation.y = THREE.MathUtils.lerp(from.yaw, to.yaw, eased);
 }
 
-function startAudiPresenceTransition(atHome) {
+function startAudiPresenceTransition(atHome, forceMotion = false) {
     if (typeof atHome !== "boolean")
         return;
     const previousTarget = audiPresenceMotion.targetHome;
-    if (previousTarget === atHome)
+    if (previousTarget === atHome && !forceMotion)
         return;
     audiPresenceMotion.targetHome = atHome;
 
-    if (reduceMotion) {
+    if (reduceMotion && !forceMotion) {
         audiPresenceMotion.phase = "idle";
         setAudiBrakeLights(false);
         setAudiPose(atHome ? AUDI_HOME_POSE : AUDI_OFFSCREEN_POSE);
@@ -2775,6 +2777,28 @@ function startAudiPresenceTransition(atHome) {
     audiPresenceMotion.duration = atHome ? 9000 : 8200;
     audiModel.visible = !cutawayVisible;
     setAudiPose(atHome ? AUDI_OFFSCREEN_POSE : AUDI_HOME_POSE);
+}
+
+function runAudiPresenceDemo() {
+    audiPresenceDemoTimers.forEach((timer) => window.clearTimeout(timer));
+    audiPresenceDemoTimers = [];
+    audiPresenceDemoActive = true;
+    audiPresenceMotion.phase = "idle";
+    audiPresenceMotion.targetHome = true;
+    setAudiBrakeLights(false);
+    setAudiPose(AUDI_HOME_POSE);
+    audiModel.visible = !cutawayVisible;
+
+    audiPresenceDemoTimers.push(window.setTimeout(
+        () => startAudiPresenceTransition(false, true), 900
+    ));
+    audiPresenceDemoTimers.push(window.setTimeout(
+        () => startAudiPresenceTransition(true, true), 10500
+    ));
+    audiPresenceDemoTimers.push(window.setTimeout(() => {
+        audiPresenceDemoActive = false;
+        audiPresenceDemoTimers = [];
+    }, 20500));
 }
 
 function updateAudiPresenceMotion(time) {
@@ -3665,7 +3689,8 @@ function updateLiveUi() {
         ["2 × BP2700", raw.batteryEnergyWh == null ? "" :
             Math.round(raw.batteryEnergyWh).toLocaleString("de-DE") + " Wh gespeichert"].filter(Boolean));
     const audiData = state.data.audi || {};
-    startAudiPresenceTransition(audiData.at_home);
+    if (!audiPresenceDemoActive)
+        startAudiPresenceTransition(audiData.at_home);
     const audiRemaining = numberValue(audiData.remaining_charging_minutes);
     const audiPercent = numberValue(audiData.battery_percent);
     const audiBatteryMode = raw.charging ? "charging" : "idle";
@@ -4129,6 +4154,7 @@ window.addEventListener("solix-dashboard-data", (event) => {
     state.data = event.detail || state.data;
     updateLiveUi();
 });
+window.addEventListener("solix-audi-demo", runAudiPresenceDemo);
 
 if (window.ResizeObserver) {
     const observer = new ResizeObserver(resize);
@@ -4186,4 +4212,6 @@ function animate(time) {
 
 resize();
 updateLiveUi();
+if (new URLSearchParams(window.location.search).get("audi_demo") === "1")
+    window.setTimeout(runAudiPresenceDemo, 1400);
 window.requestAnimationFrame(animate);
