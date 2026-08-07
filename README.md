@@ -76,6 +76,10 @@ AUDI_REFRESH_TOKEN=token-aus-der-gerätefreigabe
 AUDI_COUNTRY=DE
 AUDI_API_LEVEL=1
 AUDI_CACHE_SECONDS=900
+AUDI_HOME_LATITUDE=48.123456
+AUDI_HOME_LONGITUDE=8.123456
+AUDI_HOME_RADIUS_METERS=120
+AUDI_POSITION_INTERVAL_SECONDS=120
 SOLIX_CACHE_SECONDS=30
 SOLIX_SOLARBANK_PN=AE103
 SOLIX_BATTERY_CAPACITY_WH=10400
@@ -121,6 +125,13 @@ Datei; der Token wird nicht in der Konsole ausgegeben. Den Dateiinhalt als
 `AUDI_CACHE_SECONDS` kann angepasst werden, wird zum Schutz vor zu häufigen
 Audi-Abfragen aber nie unter 900 Sekunden gesetzt. Nach dem Render-Deploy lässt
 sich die Verbindung über `https://<dein-service>.onrender.com/api/audi` prüfen.
+
+`AUDI_HOME_LATITUDE` und `AUDI_HOME_LONGITUDE` definieren ausschließlich auf
+dem Server den Mittelpunkt des Hausbereichs. Die App veröffentlicht weder diese
+Hauskoordinaten noch die von Audi gelieferte Parkposition, sondern nur
+`at_home=true/false`. Der Radius ist mit 120 Metern bewusst tolerant gegenüber
+GPS-Abweichungen. Audi liefert eine Parkposition und kein Live-GPS während der
+Fahrt; ein Wechsel wird deshalb nach dem Abstellen des Fahrzeugs erkannt.
 
 `AUTOMATION_ENABLED` ist in `render.yaml` absichtlich standardmäßig `false`.
 Für den ersten gemeinsamen Test wird `AUTOMATION_ENABLED=true` zusammen mit

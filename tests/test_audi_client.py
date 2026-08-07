@@ -163,6 +163,95 @@ class AudiClientTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(client._cache_seconds, MIN_CACHE_SECONDS)
 
+    async def test_parking_position_is_reduced_to_private_home_presence(self):
+        with patch.dict(
+            os.environ,
+            {
+                "AUDI_REFRESH_TOKEN": "refresh-token",
+                "AUDI_HOME_LATITUDE": "48.100000",
+                "AUDI_HOME_LONGITUDE": "8.200000",
+                "AUDI_HOME_RADIUS_METERS": "120",
+            },
+            clear=True,
+        ):
+            client = AudiClient()
+
+        client._ensure_auth = AsyncMock()
+        client._vehicle_info = {"vin": "WAU123"}
+        client._auth = SimpleNamespace(
+            get_stored_position=AsyncMock(
+                return_value={
+                    "data": {
+                        "lat": 48.10035,
+                        "lon": 8.20020,
+                        "carCapturedTimestamp": "2026-08-07T10:00:00Z",
+                    }
+                }
+            )
+        )
+
+        result = await client.refresh_presence()
+        public = client._with_presence(client._empty_payload())
+
+        self.assertTrue(result["presence_available"])
+        self.assertTrue(result["at_home"])
+        self.assertEqual(result["presence_state"], "home")
+        self.assertEqual(result["position_last_update"], "2026-08-07T10:00:00Z")
+        self.assertNotIn("lat", public)
+        self.assertNotIn("lon", public)
+        self.assertNotIn("distance", public)
+
+    async def test_position_outside_geofence_is_away(self):
+        with patch.dict(
+            os.environ,
+            {
+                "AUDI_REFRESH_TOKEN": "refresh-token",
+                "AUDI_HOME_LATITUDE": "48.100000",
+                "AUDI_HOME_LONGITUDE": "8.200000",
+                "AUDI_HOME_RADIUS_METERS": "120",
+            },
+            clear=True,
+        ):
+            client = AudiClient()
+
+        client._ensure_auth = AsyncMock()
+        client._vehicle_info = {"vin": "WAU123"}
+        client._auth = SimpleNamespace(
+            get_stored_position=AsyncMock(
+                return_value={"lat": 48.110000, "lon": 8.210000}
+            )
+        )
+
+        result = await client.refresh_presence()
+
+        self.assertTrue(result["presence_available"])
+        self.assertFalse(result["at_home"])
+        self.assertEqual(result["presence_state"], "away")
+
+    async def test_missing_parking_position_does_not_guess_presence(self):
+        with patch.dict(
+            os.environ,
+            {
+                "AUDI_REFRESH_TOKEN": "refresh-token",
+                "AUDI_HOME_LATITUDE": "48.100000",
+                "AUDI_HOME_LONGITUDE": "8.200000",
+            },
+            clear=True,
+        ):
+            client = AudiClient()
+
+        client._ensure_auth = AsyncMock()
+        client._vehicle_info = {"vin": "WAU123"}
+        client._auth = SimpleNamespace(
+            get_stored_position=AsyncMock(return_value=None)
+        )
+
+        result = await client.refresh_presence()
+
+        self.assertFalse(result["presence_available"])
+        self.assertIsNone(result["at_home"])
+        self.assertEqual(result["presence_state"], "unknown")
+
     async def test_auth_clock_is_not_reset_when_token_is_not_yet_due(self):
         with patch.dict(
             os.environ,

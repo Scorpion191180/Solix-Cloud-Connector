@@ -46,6 +46,7 @@ def _authorize_manual_control(provided_token: str | None) -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    await audi_client.start()
     await charging_automation.start()
     yield
     await charging_automation.stop()

@@ -509,6 +509,20 @@ const materials = {
         ior: 1.47,
         envMapIntensity: 1.15
     }),
+    balconyGlass: new THREE.MeshPhysicalMaterial({
+        color: 0x7895a3,
+        map: textures.windowReflection,
+        roughness: 0.16,
+        metalness: 0.06,
+        transmission: 0.10,
+        transparent: true,
+        opacity: 0.94,
+        clearcoat: 0.84,
+        clearcoatRoughness: 0.14,
+        thickness: 0.04,
+        ior: 1.45,
+        envMapIntensity: 0.88
+    }),
     garageRed: new THREE.MeshStandardMaterial({ color: 0xb5141d, roughness: 0.55 }),
     grass: new THREE.MeshStandardMaterial({ map: textures.grass, bumpMap: textures.grass, bumpScale: 0.025, roughness: 1 }),
     paving: new THREE.MeshStandardMaterial({ map: textures.paving, bumpMap: textures.paving, bumpScale: 0.035, roughness: 0.91, envMapIntensity: 0.25 }),
@@ -770,6 +784,15 @@ function createDoor(parent, position, size = [0.82, 1.96], side = "front", photo
             [0, 0, -0.018], { castShadow: false });
         addBox(group, [size[0], size[1], 0.028], doorMaterial,
             [0, 0, 0.015], { castShadow: false });
+        const isBalconyDoor = photoSpec === INDIVIDUAL_OPENINGS.door.balconyLeft ||
+            photoSpec === INDIVIDUAL_OPENINGS.door.balconyRight;
+        if (isBalconyDoor) {
+            // Die Atlas-Vorlage enthält neutrale, fast weiße Scheiben. Eine
+            // exakt auf die Glasfläche begrenzte Ebene gleicht Farbe und
+            // Reflexion an die übrigen Fenster an, ohne die Rahmen zu überdecken.
+            addBox(group, [size[0] * 0.64, size[1] * 0.82, 0.018], materials.balconyGlass,
+                [0, 0.01, 0.036], { castShadow: false });
+        }
     }
     else {
         addBox(group, [size[0] + 0.22, size[1] + 0.18, 0.15], materials.windowInterior, [0, 0, -0.055]);
@@ -873,10 +896,12 @@ function createRoof(parent) {
         metalness: 0.48,
         roughness: 0.34
     });
+    // Positionen aus dem neuen senkrechten Luftbild IMG_7436: zwei Fenster
+    // auf der Gartenseite und ein Fenster im vorderen Garagenabschnitt.
     [
-        [-1.62, -2.72, 0.58, 0.76, slope, PHOTO_CROPS.roof[0]],
-        [-1.48, 2.34, 0.72, 0.92, slope, PHOTO_CROPS.roof[1]],
-        [1.58, 4.48, 0.68, 0.86, -slope, PHOTO_CROPS.roof[2]]
+        [-1.56, 3.18, 0.58, 0.76, slope, PHOTO_CROPS.roof[0]],
+        [-1.50, -2.86, 0.64, 0.82, slope, PHOTO_CROPS.roof[1]],
+        [1.58, 4.72, 0.68, 0.86, -slope, PHOTO_CROPS.roof[2]]
     ].forEach(([x, z, width, length, tilt, photoSpec]) => {
         const roofY = 7.06 - Math.abs(x) * (2.15 / 3.55);
         addBox(parent, [width + 0.22, 0.06, length + 0.22], materials.darkTrim,
@@ -897,10 +922,12 @@ function createRoof(parent) {
         metalness: 0.42,
         roughness: 0.52
     });
+    // Ebenfalls aus der Draufsicht: zwei Kamine auf der Straßenseite und
+    // einer auf der Gartenseite, jeweils deutlich außermittig entlang des Firsts.
     const chimneyPositions = [
-        { x: 1.10, z: -2.75 },
-        { x: 1.24, z: 2.72 },
-        { x: -1.16, z: 0.45 }
+        { x: 1.18, z: 1.55 },
+        { x: 1.20, z: -4.05 },
+        { x: -1.12, z: -3.92 }
     ];
     chimneyPositions.forEach(({ x, z }, index) => {
         const roofSurface = 7.02 - Math.abs(x) * (2.15 / 3.55);
@@ -2010,6 +2037,30 @@ function addVehiclePlates(slot, text, placement) {
     rear.renderOrder = 6;
 }
 
+function createAudiBrakeLights(slot) {
+    const lights = new THREE.Group();
+    lights.name = "Audi brake lights";
+    slot.add(lights);
+    const material = new THREE.MeshStandardMaterial({
+        color: 0x8b1018,
+        emissive: 0xff1f2d,
+        emissiveIntensity: 0.12,
+        roughness: 0.30,
+        metalness: 0.12,
+        transparent: true,
+        opacity: 0.92,
+        depthWrite: false
+    });
+    [-0.62, 0.62].forEach((x) => {
+        addBox(lights, [0.42, 0.13, 0.045], material, [x, 0.78, -2.015], {
+            radius: 0.035,
+            castShadow: false
+        });
+    });
+    lights.visible = false;
+    return { group: lights, material };
+}
+
 function createVehicles() {
     const audiSlot = new THREE.Group();
     audiSlot.position.set(5.00, 0.02, 1.0);
@@ -2019,6 +2070,7 @@ function createVehicles() {
     audiFallback.scale.set(1.10, 1.17, 1.08);
     audiSlot.add(audiFallback);
     const audiBattery = createAudiBatteryPack(audiSlot);
+    const audiBrakeLights = createAudiBrakeLights(audiSlot);
     // Die Detailmodelle enden an der Heckklappe etwas früher als ihre
     // prozeduralen Platzhalter. Getrennte Vorder-/Heckpositionen verhindern,
     // dass das Kennzeichen sichtbar vor dem vorgesehenen Ausschnitt schwebt.
@@ -2067,7 +2119,12 @@ function createVehicles() {
     });
 
     return {
-        audi: { slot: audiSlot, fallback: audiFallback, battery: audiBattery },
+        audi: {
+            slot: audiSlot,
+            fallback: audiFallback,
+            battery: audiBattery,
+            brakeLights: audiBrakeLights
+        },
         yeti: { slot: yetiSlot, fallback: yetiFallback },
         fox: { slot: foxSlot, fallback: foxFallback },
         karoq: { slot: karoqSlot, fallback: karoqFallback }
@@ -2270,6 +2327,115 @@ function createTree(x, z, scale = 1) {
     addMesh(tree, new THREE.ConeGeometry(0.42, 1.18, 14), needles, 0, 4.78, 0, { castShadow: true });
 }
 
+// Aus der blauen Grundstücksgrenze im senkrechten Luftbild IMG_7436
+// abgeleitete, vereinfachte Polygonkontur. +X zeigt zur langen Straße,
+// +Z zur Garagenseite; die Feldgrenze verläuft diagonal im Nordosten.
+const PROPERTY_BOUNDARY = [
+    [7.20, 6.75],
+    [7.20, -11.20],
+    [-11.50, -1.00],
+    [-9.00, 2.40],
+    [-6.90, 4.40],
+    [-8.70, 9.20],
+    [-6.00, 10.70],
+    [-1.00, 12.00],
+    [4.70, 10.80]
+];
+
+function pointInPolygon(x, z, polygon) {
+    let inside = false;
+    for (let current = 0, previous = polygon.length - 1;
+        current < polygon.length; previous = current++) {
+        const [currentX, currentZ] = polygon[current];
+        const [previousX, previousZ] = polygon[previous];
+        const crosses = (currentZ > z) !== (previousZ > z) &&
+            x < (previousX - currentX) * (z - currentZ) /
+                (previousZ - currentZ || Number.EPSILON) + currentX;
+        if (crosses)
+            inside = !inside;
+    }
+    return inside;
+}
+
+function addHorizontalPolygon(parent, points, material, y = 0) {
+    const shape = new THREE.Shape();
+    points.forEach(([x, z], index) => {
+        // ShapeGeometry liegt zunächst in XY. -Z wird nach der Drehung
+        // wieder zu +Z in der horizontalen Weltkoordinate.
+        if (index === 0)
+            shape.moveTo(x, -z);
+        else
+            shape.lineTo(x, -z);
+    });
+    shape.closePath();
+    const geometry = new THREE.ShapeGeometry(shape);
+    geometry.rotateX(-Math.PI / 2);
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.y = y;
+    mesh.receiveShadow = true;
+    mesh.castShadow = false;
+    parent.add(mesh);
+    return mesh;
+}
+
+function createFencePath(points, material, height = 0.82) {
+    points.slice(0, -1).forEach((start, index) => {
+        const end = points[index + 1];
+        const dx = end[0] - start[0];
+        const dz = end[1] - start[1];
+        const length = Math.hypot(dx, dz);
+        const angle = -Math.atan2(dz, dx);
+        const center = [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2];
+        [0.27, 0.66].forEach((railY) =>
+            addBox(world, [length, 0.10, 0.10], material,
+                [center[0], railY, center[1]], { rotation: [0, angle, 0] }));
+        const posts = Math.max(1, Math.ceil(length / 0.70));
+        for (let post = 0; post <= posts; post += 1) {
+            const progress = post / posts;
+            addBox(world, [0.10, height, 0.10], material, [
+                THREE.MathUtils.lerp(start[0], end[0], progress),
+                height / 2,
+                THREE.MathUtils.lerp(start[1], end[1], progress)
+            ]);
+        }
+    });
+}
+
+function createShrub(x, z, scale = 1, color = 0x315e34) {
+    const shrub = new THREE.Group();
+    shrub.position.set(x, 0, z);
+    shrub.scale.setScalar(scale);
+    world.add(shrub);
+    const material = new THREE.MeshStandardMaterial({ color, roughness: 0.98 });
+    [
+        [-0.34, 0.48, 0.02, 0.58],
+        [0.30, 0.44, -0.08, 0.54],
+        [0.02, 0.66, 0.22, 0.64],
+        [0.00, 0.52, -0.32, 0.56]
+    ].forEach(([offsetX, y, offsetZ, radius]) =>
+        addMesh(shrub, new THREE.IcosahedronGeometry(radius, 1), material,
+            offsetX, y, offsetZ, { castShadow: true }));
+}
+
+function createDeciduousTree(x, z, scale = 1) {
+    const tree = new THREE.Group();
+    tree.position.set(x, 0, z);
+    tree.scale.setScalar(scale);
+    world.add(tree);
+    const trunk = new THREE.MeshStandardMaterial({ color: 0x5c3c2b, roughness: 1 });
+    const leaves = new THREE.MeshStandardMaterial({ color: 0x2f6336, roughness: 0.98 });
+    addMesh(tree, new THREE.CylinderGeometry(0.18, 0.28, 2.65, 12), trunk, 0, 1.32, 0);
+    [
+        [-0.62, 2.75, 0.08, 1.00],
+        [0.55, 2.72, -0.08, 1.05],
+        [0.02, 3.35, 0.12, 1.18],
+        [0.02, 2.72, 0.70, 0.88],
+        [-0.06, 2.80, -0.72, 0.92]
+    ].forEach(([offsetX, y, offsetZ, radius]) =>
+        addMesh(tree, new THREE.IcosahedronGeometry(radius, 2), leaves,
+            offsetX, y, offsetZ, { castShadow: true }));
+}
+
 function createGrassDetail() {
     const bladeGeometry = new THREE.ConeGeometry(0.020, 0.16, 3);
     const bladeMaterial = new THREE.MeshStandardMaterial({ color: 0x49763f, roughness: 1 });
@@ -2283,15 +2449,18 @@ function createGrassDetail() {
     let attempts = 0;
     while (instance < 520 && attempts < 4000) {
         attempts += 1;
-        const x = -11.2 + random() * 20.8;
-        const z = -10.2 + random() * 20.0;
+        const x = -11.2 + random() * 18.2;
+        const z = -10.8 + random() * 22.4;
+        if (!pointInPolygon(x, z, PROPERTY_BOUNDARY))
+            continue;
         const onHouse = Math.abs(x) < 3.85 && Math.abs(z) < 6.95;
         const onForecourt = z > 4.55 && x > -4.0 && x < 6.5;
         const onAudiDrive = x > 3.15 && z > -6.55 && z < 6.7;
-        const aroundPool = x < -5.3 && z < -3.45;
+        const onRearPatio = x < -3.10 && x > -7.10 && z > -2.10 && z < 5.90;
+        const aroundPool = Math.hypot(x + 5.55, z + 3.70) < 3.10;
         const underPergola = Math.abs(x - PERGOLA_CENTER.x) < 1.55 &&
             Math.abs(z - PERGOLA_CENTER.z) < 2.25;
-        if (onHouse || onForecourt || onAudiDrive || aroundPool || underPergola)
+        if (onHouse || onForecourt || onAudiDrive || onRearPatio || aroundPool || underPergola)
             continue;
         transform.position.set(x, 0.07, z);
         transform.rotation.set((random() - 0.5) * 0.22, random() * Math.PI, (random() - 0.5) * 0.22);
@@ -2311,42 +2480,89 @@ function createGrassDetail() {
 }
 
 function createGarden() {
-    addBox(world, [23.0, 0.25, 22.8], materials.grass, [-1.50, -0.14, -0.55], { castShadow: false });
-    createGrassDetail();
-    // Ein zusammenhängender Vorplatz: von der linken Kante der Stellplätze bis zur Audi-Zufahrt.
-    addBox(world, [10.05, 0.07, 6.1], materials.paving, [1.375, 0.025, 7.7], { castShadow: false });
-    addBox(world, [3.2, 0.07, 13.2], materials.paving, [4.80, 0.03, 0.20], { castShadow: false });
+    // Große Umgebungsfläche und die tatsächliche, unregelmäßige Parzelle.
+    // Außerhalb der Grenze bleibt die Wiese des Luftbilds sichtbar.
+    addBox(world, [34.0, 0.25, 34.0], materials.grass, [0, -0.18, 0], { castShadow: false });
+    addHorizontalPolygon(world, PROPERTY_BOUNDARY, materials.grass, -0.045);
 
-    const road = new THREE.MeshStandardMaterial({ color: 0x54595d, roughness: 1 });
-    addBox(world, [15.8, 0.12, 2.3], road, [0, -0.02, 10.6], { castShadow: false });
+    const roadMaterial = new THREE.MeshStandardMaterial({ color: 0x555b5f, roughness: 1 });
+    const sidewalkMaterial = new THREE.MeshStandardMaterial({ color: 0xa4a49e, roughness: 0.96 });
+    const curbMaterial = new THREE.MeshStandardMaterial({ color: 0xd7d4cb, roughness: 0.94 });
+    const asphaltMaterial = new THREE.MeshStandardMaterial({ color: 0x424849, roughness: 0.98 });
+    const markingMaterial = new THREE.MeshStandardMaterial({ color: 0xf1efe5, roughness: 0.82 });
+
+    // Lange Straße an der Vorderseite und die quer anschließende Straße
+    // an der Garagenseite. Beide reichen über den Bildausschnitt hinaus.
+    addHorizontalPolygon(world, [
+        [7.82, -12.10], [13.20, -14.20], [13.20, 10.30],
+        [8.00, 9.00], [7.82, 6.75]
+    ], roadMaterial, -0.025);
+    addHorizontalPolygon(world, [
+        [8.00, 9.00], [13.20, 10.30], [7.20, 14.80], [-1.20, 15.50],
+        [-7.80, 13.10], [-9.40, 10.20], [-8.70, 9.20],
+        [-6.00, 10.70], [-1.00, 12.00], [4.70, 10.80]
+    ], roadMaterial, -0.022);
+
+    // Gehwege folgen den beiden Straßenseiten der blauen Grenze.
+    addHorizontalPolygon(world, [
+        [7.20, -11.20], [7.82, -12.10], [7.82, 6.75], [7.20, 6.75]
+    ], sidewalkMaterial, 0.006);
+    addHorizontalPolygon(world, [
+        [7.20, 6.75], [8.00, 9.00], [4.70, 11.55], [-1.10, 12.75],
+        [-6.20, 11.45], [-8.95, 9.70], [-8.70, 9.20],
+        [-6.00, 10.70], [-1.00, 12.00], [4.70, 10.80]
+    ], sidewalkMaterial, 0.008);
+    addBox(world, [0.12, 0.08, 17.95], curbMaterial, [7.18, 0.035, -2.225], { castShadow: false });
+
+    // Unterbrochene Fahrbahnmarkierungen machen beide Straßenzüge auch
+    // bei flacher Kameraperspektive eindeutig erkennbar.
+    for (let z = -11.0; z <= 8.0; z += 2.15)
+        addBox(world, [0.10, 0.025, 1.10], markingMaterial, [10.55, 0.038, z], { castShadow: false });
+    for (let x = -6.4; x <= 7.0; x += 2.15)
+        addBox(world, [1.10, 0.025, 0.10], markingMaterial, [x, 0.038, 13.25], { castShadow: false });
+
+    createGrassDetail();
+
+    // Befestigte Flächen aus der Draufsicht: Garagenvorplatz, langer
+    // straßenseitiger Stellplatz und der dunklere Hof auf der Gartenseite.
+    addHorizontalPolygon(world, [
+        [-3.55, 5.85], [3.55, 5.85], [6.80, 7.10], [5.05, 10.70],
+        [-0.90, 11.65], [-3.70, 9.60]
+    ], materials.paving, 0.022);
+    addBox(world, [3.2, 0.07, 13.2], materials.paving, [4.80, 0.03, 0.20], { castShadow: false });
+    addHorizontalPolygon(world, [
+        [-3.25, 5.70], [-6.55, 5.05], [-6.70, 1.65],
+        [-6.15, -1.85], [-3.25, -5.30]
+    ], asphaltMaterial, 0.018);
 
     const pool = new THREE.Group();
-    pool.position.set(-7.55, 0, -6.72);
-    // Auf Wunsch nochmals um 20 Grad nach rechts gedreht. Die lange
-    // Liegeplattform zeigt dadurch weiterhin zur hinteren Zaunecke.
+    // Aus dem Luftbild auf die reale Intex-Größe (ca. 5,5 × 2,7 m)
+    // skaliert und parallel zur diagonalen Feldgrenze positioniert.
+    pool.position.set(-5.55, 0, -3.70);
     pool.rotation.y = THREE.MathUtils.degToRad(-60);
     world.add(pool);
     const poolWall = new THREE.MeshStandardMaterial({ color: 0x374552, metalness: 0.22, roughness: 0.68 });
-    addBox(pool, [3.20, 1.02, 5.00], poolWall, [0, 0.50, 0], { radius: 0.12 });
-    addBox(pool, [2.84, 0.12, 4.64], materials.water, [0, 1.03, 0], { radius: 0.12, castShadow: false });
+    addBox(pool, [1.82, 0.88, 3.55], poolWall, [0, 0.43, 0], { radius: 0.10 });
+    addBox(pool, [1.58, 0.10, 3.30], materials.water, [0, 0.89, 0], { radius: 0.10, castShadow: false });
     const poolRail = new THREE.MeshStandardMaterial({ color: 0xd7d9d5, roughness: 0.50 });
-    [-1.52, 1.52].forEach((x) => addBox(pool, [0.08, 0.08, 4.86], poolRail, [x, 1.08, 0]));
-    [-2.42, 2.42].forEach((z) => addBox(pool, [3.04, 0.08, 0.08], poolRail, [0, 1.08, z]));
+    [-0.86, 0.86].forEach((x) => addBox(pool, [0.07, 0.07, 3.42], poolRail, [x, 0.94, 0]));
+    [-1.70, 1.70].forEach((z) => addBox(pool, [1.70, 0.07, 0.07], poolRail, [0, 0.94, z]));
 
     // Begehbare Holzumrandung mit einer breiten Liegefläche zum hinteren
     // Zaun. Die einzelnen Bretter behalten beim Drehen die Poolausrichtung.
     const deckWood = new THREE.MeshStandardMaterial({ color: 0x8a5d3b, roughness: 0.88 });
     const deckEdge = new THREE.MeshStandardMaterial({ color: 0x4b3024, roughness: 0.92 });
-    [-1.82, 1.82].forEach((x) =>
-        addBox(pool, [0.56, 0.16, 5.55], deckWood, [x, 1.04, 0], { radius: 0.025 }));
-    addBox(pool, [4.20, 0.16, 0.56], deckWood, [0, 1.04, 2.70], { radius: 0.025 });
+    [-1.14, 1.14].forEach((x) =>
+        addBox(pool, [0.42, 0.14, 4.05], deckWood, [x, 0.91, 0], { radius: 0.025 }));
+    addBox(pool, [2.70, 0.14, 0.42], deckWood, [0, 0.91, 1.98], { radius: 0.025 });
     // Breite Liegeplattform entlang der langen, zum Zaun gerichteten Seite.
-    addBox(pool, [1.62, 0.17, 5.55], deckWood, [-2.90, 1.04, 0], { radius: 0.025 });
-    for (let z = -2.46; z <= 2.46; z += 0.22)
-        addBox(pool, [1.52, 0.025, 0.055], deckEdge, [-2.90, 1.135, z], { castShadow: false });
+    addBox(pool, [1.02, 0.15, 4.05], deckWood, [-1.82, 0.91, 0], { radius: 0.025 });
+    for (let z = -1.72; z <= 1.72; z += 0.20)
+        addBox(pool, [0.94, 0.022, 0.05], deckEdge, [-1.82, 1.00, z], { castShadow: false });
 
     const lounger = new THREE.Group();
-    lounger.position.set(-2.90, 1.18, 0.22);
+    lounger.position.set(-1.82, 1.03, 0.08);
+    lounger.scale.setScalar(0.72);
     lounger.rotation.y = -0.06;
     pool.add(lounger);
     const loungerFrame = new THREE.MeshStandardMaterial({ color: 0xd7dde0, metalness: 0.55, roughness: 0.34 });
@@ -2359,35 +2575,28 @@ function createGarden() {
         addBox(lounger, [0.055, 0.36, 0.055], loungerFrame, [x, 0.03, -0.48]);
     });
 
-    // Die große Fichte steht laut Fotoreihe auf der gegenüberliegenden Gartenseite.
-    createTree(0.35, -8.65, 0.94);
+    // Gehölzgruppen gemäß Luftbild: dicht an der Garagenstraße und der
+    // hinteren Einbuchtung; ein markanter Laubbaum steht links neben dem Pool.
+    [
+        [-0.40, 11.05, 0.72], [-2.65, 10.65, 0.86], [-5.30, 9.95, 0.80],
+        [-7.55, 8.45, 0.72], [-8.25, 4.10, 0.60]
+    ].forEach(([x, z, scale]) => createDeciduousTree(x, z, scale));
+    createDeciduousTree(-4.72, -1.25, 0.68);
+    [
+        [-6.55, 10.15, 0.82], [-7.65, 6.15, 0.72], [-8.90, 2.55, 0.76],
+        [-10.10, 0.35, 0.72], [-2.10, -9.25, 0.62], [-0.60, -9.75, 0.60]
+    ].forEach(([x, z, scale]) => createShrub(x, z, scale));
 
-    // Vor Garage und Autos bleibt die Einfahrt offen. Der hintere und die
-    // beiden seitlichen Holzzäune schließen ohne offene Lücken in den Ecken.
+    // Der Holzzaun folgt jetzt der eingezeichneten Feld- und Gartengrenze,
+    // statt das Grundstück als unzutreffendes Rechteck einzufassen.
     const fence = new THREE.MeshStandardMaterial({ color: 0x6a5848, roughness: 1 });
-    for (let x = -11.70; x <= AUDI_SIDE_FENCE_X; x += 0.70)
-        addBox(world, [0.10, 0.82, 0.10], fence, [x, 0.39, -10.65]);
-    const rearFenceLength = AUDI_SIDE_FENCE_X + 11.70;
-    const rearFenceCenterX = (AUDI_SIDE_FENCE_X - 11.70) / 2;
-    addBox(world, [rearFenceLength, 0.10, 0.10], fence, [rearFenceCenterX, 0.25, -10.65]);
-    addBox(world, [rearFenceLength, 0.10, 0.10], fence, [rearFenceCenterX, 0.64, -10.65]);
-    for (let z = -10.65; z <= 9.0; z += 0.70)
-        addBox(world, [0.10, 0.82, 0.10], fence, [-11.70, 0.39, z]);
-    addBox(world, [0.10, 0.10, 19.65], fence, [-11.70, 0.25, -0.825]);
-    addBox(world, [0.10, 0.10, 19.65], fence, [-11.70, 0.64, -0.825]);
-
-    // Auf der Audi-Seite schließt ein neuer L-förmiger Holzzaun die grüne
-    // Pergola-Fläche bis zur straßenseitigen Ecke des grauen Vorplatzes ab.
-    for (let z = -10.65; z <= 6.65; z += 0.68)
-        addBox(world, [0.10, 0.90, 0.10], fence, [AUDI_SIDE_FENCE_X, 0.43, z]);
-    addBox(world, [0.10, 0.10, 17.30], fence, [AUDI_SIDE_FENCE_X, 0.27, -2.00]);
-    addBox(world, [0.10, 0.10, 17.30], fence, [AUDI_SIDE_FENCE_X, 0.69, -2.00]);
-    for (let x = 6.55; x <= AUDI_SIDE_FENCE_X; x += 0.68)
-        addBox(world, [0.10, 0.90, 0.10], fence, [x, 0.43, 6.65]);
-    const frontFenceLength = AUDI_SIDE_FENCE_X - 6.55;
-    const frontFenceCenterX = 6.55 + frontFenceLength / 2;
-    addBox(world, [frontFenceLength, 0.10, 0.10], fence, [frontFenceCenterX, 0.27, 6.65]);
-    addBox(world, [frontFenceLength, 0.10, 0.10], fence, [frontFenceCenterX, 0.69, 6.65]);
+    createFencePath([
+        [7.20, -11.20], [-11.50, -1.00], [-9.00, 2.40],
+        [-6.90, 4.40], [-8.70, 9.20]
+    ], fence, 0.84);
+    // Kurzes straßenseitiges Stück an der Pergola; die große Einfahrt
+    // vor Audi und Garagen bleibt wie auf dem Foto offen.
+    createFencePath([[7.20, -11.20], [7.20, -6.55]], fence, 0.88);
 }
 
 function createGridBox() {
@@ -2503,6 +2712,135 @@ audiBatteryVisual = vehicleModels.audi.battery;
 loadDetailedVehicles(vehicleModels);
 const gridBoxModel = createGridBox();
 const chargingConnection = createAudiChargeConnection();
+
+const AUDI_HOME_POSE = Object.freeze({ x: 5.00, z: 1.00, yaw: Math.PI });
+const AUDI_REVERSE_POSE = Object.freeze({ x: 5.00, z: 5.20, yaw: Math.PI });
+const AUDI_ROAD_POSE = Object.freeze({ x: 7.65, z: 7.05, yaw: Math.PI / 2 });
+const AUDI_OFFSCREEN_POSE = Object.freeze({ x: 11.40, z: 7.05, yaw: Math.PI / 2 });
+const audiPresenceMotion = {
+    targetHome: null,
+    phase: "idle",
+    startedAt: 0,
+    duration: 0
+};
+
+function setAudiBrakeLights(active) {
+    const lights = vehicleModels.audi.brakeLights;
+    lights.group.visible = active && audiModel.visible && !cutawayVisible;
+    lights.material.emissiveIntensity = active ? 7.2 : 0.12;
+}
+
+function setAudiPose(pose) {
+    audiModel.position.set(pose.x, 0.02, pose.z);
+    audiModel.rotation.y = pose.yaw;
+}
+
+function interpolateAudiPose(from, to, progress) {
+    const eased = progress * progress * (3 - 2 * progress);
+    audiModel.position.set(
+        THREE.MathUtils.lerp(from.x, to.x, eased),
+        0.02,
+        THREE.MathUtils.lerp(from.z, to.z, eased)
+    );
+    audiModel.rotation.y = THREE.MathUtils.lerp(from.yaw, to.yaw, eased);
+}
+
+function startAudiPresenceTransition(atHome) {
+    if (typeof atHome !== "boolean")
+        return;
+    const previousTarget = audiPresenceMotion.targetHome;
+    if (previousTarget === atHome)
+        return;
+    audiPresenceMotion.targetHome = atHome;
+
+    if (reduceMotion) {
+        audiPresenceMotion.phase = "idle";
+        setAudiBrakeLights(false);
+        setAudiPose(atHome ? AUDI_HOME_POSE : AUDI_OFFSCREEN_POSE);
+        audiModel.visible = atHome && !cutawayVisible;
+        return;
+    }
+
+    // Beim ersten bekannten Auswärtsstand wird die gewünschte Abfahrt einmal
+    // vollständig gezeigt. Ein erster Heimstand startet dagegen ruhig auf dem
+    // echten Stellplatz und löst keine künstliche Ankunft aus.
+    if (previousTarget === null && atHome) {
+        setAudiPose(AUDI_HOME_POSE);
+        audiModel.visible = !cutawayVisible;
+        return;
+    }
+
+    audiPresenceMotion.phase = atHome ? "arriving" : "departing";
+    audiPresenceMotion.startedAt = performance.now();
+    audiPresenceMotion.duration = atHome ? 9000 : 8200;
+    audiModel.visible = !cutawayVisible;
+    setAudiPose(atHome ? AUDI_OFFSCREEN_POSE : AUDI_HOME_POSE);
+}
+
+function updateAudiPresenceMotion(time) {
+    const motion = audiPresenceMotion;
+    if (motion.phase === "idle") {
+        const parkedHere = motion.targetHome !== false;
+        audiModel.visible = !cutawayVisible && parkedHere;
+        setAudiBrakeLights(false);
+        return;
+    }
+
+    audiModel.visible = !cutawayVisible;
+    const progress = THREE.MathUtils.clamp(
+        (time - motion.startedAt) / motion.duration, 0, 1
+    );
+    if (motion.phase === "departing") {
+        if (progress < 0.10) {
+            setAudiPose(AUDI_HOME_POSE);
+            setAudiBrakeLights(true);
+        }
+        else if (progress < 0.45) {
+            interpolateAudiPose(AUDI_HOME_POSE, AUDI_REVERSE_POSE, (progress - 0.10) / 0.35);
+            setAudiBrakeLights(false);
+        }
+        else if (progress < 0.57) {
+            setAudiPose(AUDI_REVERSE_POSE);
+            setAudiBrakeLights(true);
+        }
+        else if (progress < 0.76) {
+            interpolateAudiPose(AUDI_REVERSE_POSE, AUDI_ROAD_POSE, (progress - 0.57) / 0.19);
+            setAudiBrakeLights(false);
+        }
+        else {
+            interpolateAudiPose(AUDI_ROAD_POSE, AUDI_OFFSCREEN_POSE, (progress - 0.76) / 0.24);
+            setAudiBrakeLights(false);
+        }
+    }
+    else {
+        if (progress < 0.40) {
+            const entryPose = { ...AUDI_OFFSCREEN_POSE, yaw: -Math.PI / 2 };
+            const roadPose = { ...AUDI_ROAD_POSE, yaw: -Math.PI / 2 };
+            interpolateAudiPose(entryPose, roadPose, progress / 0.40);
+            setAudiBrakeLights(false);
+        }
+        else if (progress < 0.62) {
+            const roadPose = { ...AUDI_ROAD_POSE, yaw: -Math.PI / 2 };
+            interpolateAudiPose(roadPose, AUDI_REVERSE_POSE, (progress - 0.40) / 0.22);
+            setAudiBrakeLights(false);
+        }
+        else if (progress < 0.90) {
+            interpolateAudiPose(AUDI_REVERSE_POSE, AUDI_HOME_POSE, (progress - 0.62) / 0.28);
+            setAudiBrakeLights(false);
+        }
+        else {
+            setAudiPose(AUDI_HOME_POSE);
+            setAudiBrakeLights(true);
+        }
+    }
+
+    if (progress >= 1) {
+        motion.phase = "idle";
+        setAudiBrakeLights(false);
+        setAudiPose(motion.targetHome ? AUDI_HOME_POSE : AUDI_OFFSCREEN_POSE);
+        audiModel.visible = motion.targetHome && !cutawayVisible;
+    }
+}
 
 // Eigene Materialkopien erlauben einen weichen, nebelartigen Übergang zur
 // Innenansicht, ohne gemeinsam genutzte Materialien von Garten, Fahrzeugen
@@ -3155,7 +3493,9 @@ function componentData() {
     const audiPowerKw = numberValue(audi.charging_power_kw);
     const audiPower = plugPower ?? (audiPowerKw == null ? null : audiPowerKw * 1000);
     const charging = plugPower != null ? plugPower >= 20 : audi.charging === true;
-    const plugConnected = audi.plug_connected === true || automation.audi_plug_connected === true;
+    const audiAtHome = typeof audi.at_home === "boolean" ? audi.at_home : null;
+    const plugConnected = audiAtHome === false ? false :
+        audi.plug_connected === true || automation.audi_plug_connected === true;
     const audiStale = audi.stale === true;
     const batteryEnergyWh = numberValue(solix.battery_energy_wh);
     const interiorLoad = homeLoad == null ? output : Math.max(0, homeLoad - (plugPower ?? 0));
@@ -3179,7 +3519,8 @@ function componentData() {
             batteryDischarge >= 5 ? "LIEFERT · " + formatPower(batteryDischarge) : "BEREIT";
     const gridStatus = solixStale ? "LETZTER STAND" : grid == null ? "KEIN WERT" :
         grid > 5 ? "BEZUG" : grid < -5 ? "EINSPEISUNG" : "RUHE";
-    const audiStatus = audiStale ? "LETZTER STAND" : charging ? "LÄDT · " + formatPower(audiPower) :
+    const audiStatus = audiAtHome === false ? "UNTERWEGS" :
+        audiStale ? "LETZTER STAND" : charging ? "LÄDT · " + formatPower(audiPower) :
         plugConnected ? "STECKER DRAN" : audi.plug_connected === false ? "GETRENNT" : "WIRD GEPRÜFT";
 
     return {
@@ -3255,11 +3596,14 @@ function componentData() {
             tone: audiStale || audi.battery_percent == null ? "muted" : charging ? "active" :
                 plugConnected ? "idle" : "warning",
             detail: [
+                audiAtHome === false ? "Audi steht nicht am Haus" :
+                    audiAtHome === true ? "Audi steht am Haus" : "Standort wird geprüft",
                 plugConnected ? "Stecker verbunden" : audi.plug_connected === false ? "Stecker getrennt" : "Steckerstatus offen",
                 audiRange == null ? "" : Math.round(audiRange) + " km Reichweite",
                 audiRemaining == null ? "" : "noch ca. " + Math.round(audiRemaining) + " Min."
             ].filter(Boolean).join(" · "),
             rows: [
+                ["Standort", audiAtHome === true ? "am Haus" : audiAtHome === false ? "unterwegs" : "wird geprüft"],
                 ["Ladekabel", plugConnected ? "verbunden" : audi.plug_connected === false ? "an Säule" : "wird geprüft"],
                 ["Ladeleistung", formatPower(audiPower)],
                 ["Reichweite", audiRange == null ? "--" : Math.round(audiRange) + " km"]
@@ -3276,7 +3620,7 @@ function componentData() {
         },
         raw: {
             pv, pvStrings, batterySoc, batteryCharge, batteryDischarge, batteryEnergyWh,
-            output, interiorLoad, grid, audiPower, charging, plugConnected, solixStale,
+            output, interiorLoad, grid, audiPower, charging, plugConnected, audiAtHome, solixStale,
             pvTodayWh, batteryCapacityWh, onThreshold, offThreshold
         }
     };
@@ -3321,6 +3665,7 @@ function updateLiveUi() {
         ["2 × BP2700", raw.batteryEnergyWh == null ? "" :
             Math.round(raw.batteryEnergyWh).toLocaleString("de-DE") + " Wh gespeichert"].filter(Boolean));
     const audiData = state.data.audi || {};
+    startAudiPresenceTransition(audiData.at_home);
     const audiRemaining = numberValue(audiData.remaining_charging_minutes);
     const audiPercent = numberValue(audiData.battery_percent);
     const audiBatteryMode = raw.charging ? "charging" : "idle";
@@ -3332,6 +3677,7 @@ function updateLiveUi() {
         audiRange == null ? "" : Math.round(audiRange) + " km elektrisch",
         audiRemaining == null ? "" : "noch ca. " + Math.round(audiRemaining) + " Min."
     ].filter(Boolean));
+    objectBatteryElements.audi.hidden = raw.audiAtHome === false;
     updateInteriorElectricity(raw.interiorLoad, new Date());
 
     ["pv", "battery", "grid", "audi"].forEach((id) => {
@@ -3385,10 +3731,12 @@ function setCutawayVisible(visible) {
     if (visible)
         interiorHouse.group.visible = true;
     [pergolaModel, solarBankModel, gridBoxModel,
-        vehicleModels.audi.slot, vehicleModels.yeti.slot,
+        vehicleModels.yeti.slot,
         vehicleModels.fox.slot, vehicleModels.karoq.slot].forEach((model) => {
         model.visible = !visible;
     });
+    vehicleModels.audi.slot.visible = !visible &&
+        (audiPresenceMotion.targetHome !== false || audiPresenceMotion.phase !== "idle");
     updateInteriorElectricity(simulatedHouseLoad, new Date());
     setExteriorFlowVisibility(!visible);
 
@@ -3802,6 +4150,7 @@ function animate(time) {
     world.rotation.y = state.yaw;
     updateCameraTransform();
     updateCutawayMode(delta);
+    updateAudiPresenceMotion(time);
 
     if (Math.floor(seconds) !== Math.floor(seconds - delta))
         updatePanelDetails();
@@ -3825,7 +4174,6 @@ function animate(time) {
             });
         });
         materials.water.color.setHSL(0.53 + Math.sin(seconds * 0.7) * 0.008, 0.76, 0.48);
-        audiModel.position.y = 0.02;
     }
 
     animateSchematicBattery(solarBankBatteryVisual, seconds);

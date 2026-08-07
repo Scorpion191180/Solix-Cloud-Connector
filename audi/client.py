@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import os
 import ssl
 import time
@@ -17,6 +18,9 @@ DEFAULT_CACHE_SECONDS = 4 * 60 * 60
 MIN_CACHE_SECONDS = 15 * 60
 TOKEN_REFRESH_SECONDS = 45 * 60
 ERROR_RETRY_SECONDS = 15 * 60
+DEFAULT_POSITION_INTERVAL_SECONDS = 2 * 60
+MIN_POSITION_INTERVAL_SECONDS = 60
+DEFAULT_HOME_RADIUS_METERS = 120
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,6 +30,16 @@ def _integer_setting(name: str, default: int, minimum: int) -> int:
         return max(minimum, int(os.getenv(name, str(default))))
     except ValueError:
         return default
+
+
+def _float_setting(name: str) -> float | None:
+    value = os.getenv(name, "").strip()
+    if not value:
+        return None
+    try:
+        return float(value.replace(",", "."))
+    except ValueError:
+        return None
 
 
 class AudiClient:
@@ -49,6 +63,16 @@ class AudiClient:
         self._token_file = os.getenv(
             "AUDI_TOKEN_FILE", "/tmp/solix-audi-connect-tokens.json"
         )
+        self._home_latitude = _float_setting("AUDI_HOME_LATITUDE")
+        self._home_longitude = _float_setting("AUDI_HOME_LONGITUDE")
+        self._home_radius_meters = _integer_setting(
+            "AUDI_HOME_RADIUS_METERS", DEFAULT_HOME_RADIUS_METERS, 20
+        )
+        self._position_interval_seconds = _integer_setting(
+            "AUDI_POSITION_INTERVAL_SECONDS",
+            DEFAULT_POSITION_INTERVAL_SECONDS,
+            MIN_POSITION_INTERVAL_SECONDS,
+        )
 
         self._session: aiohttp.ClientSession | None = None
         self._auth: Any = None
@@ -59,10 +83,36 @@ class AudiClient:
         self._last_attempt: float | None = None
         self._last_error: str | None = None
         self._lock = asyncio.Lock()
+        self._presence_task: asyncio.Task[None] | None = None
+        self._presence: dict[str, Any] = {
+            "presence_configured": self.home_geofence_configured,
+            "presence_available": False,
+            "at_home": None,
+            "presence_state": (
+                "unknown" if self.home_geofence_configured else "home_not_configured"
+            ),
+            "position_last_update": None,
+            "position_checked_at": None,
+            "position_error": None,
+        }
 
     @property
     def configured(self) -> bool:
         return bool(self._refresh_token)
+
+    @property
+    def home_geofence_configured(self) -> bool:
+        return bool(
+            self._home_latitude is not None
+            and self._home_longitude is not None
+            and -90 <= self._home_latitude <= 90
+            and -180 <= self._home_longitude <= 180
+        )
+
+    def _with_presence(self, payload: dict[str, Any]) -> dict[str, Any]:
+        public = dict(payload)
+        public.update(self._presence)
+        return public
 
     def _empty_payload(self) -> dict[str, Any]:
         return {
@@ -89,6 +139,7 @@ class AudiClient:
             "remaining_charging_minutes": None,
             "plug_connected": None,
             "plug_state": None,
+            **self._presence,
         }
 
     @staticmethod
@@ -348,6 +399,126 @@ class AudiClient:
         )
         return payload
 
+    @staticmethod
+    def _position_values(raw_position: Any) -> tuple[float, float, Any] | None:
+        if not isinstance(raw_position, dict):
+            return None
+        data = raw_position.get("data")
+        if isinstance(data, dict):
+            raw_position = data
+        try:
+            latitude = float(raw_position.get("lat"))
+            longitude = float(raw_position.get("lon"))
+        except (TypeError, ValueError):
+            return None
+        if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+            return None
+        return latitude, longitude, raw_position.get("carCapturedTimestamp")
+
+    @staticmethod
+    def _distance_meters(
+        latitude_a: float,
+        longitude_a: float,
+        latitude_b: float,
+        longitude_b: float,
+    ) -> float:
+        """Return great-circle distance without exposing either coordinate."""
+        earth_radius_meters = 6_371_000
+        lat_a = math.radians(latitude_a)
+        lat_b = math.radians(latitude_b)
+        delta_lat = lat_b - lat_a
+        delta_lon = math.radians(longitude_b - longitude_a)
+        haversine = (
+            math.sin(delta_lat / 2) ** 2
+            + math.cos(lat_a) * math.cos(lat_b) * math.sin(delta_lon / 2) ** 2
+        )
+        return 2 * earth_radius_meters * math.asin(min(1, math.sqrt(haversine)))
+
+    async def refresh_presence(self) -> dict[str, Any]:
+        """Refresh the private parking position and publish only home/away."""
+        if not self.home_geofence_configured:
+            return dict(self._presence)
+        if not self.configured:
+            self._presence.update(
+                {
+                    "presence_available": False,
+                    "at_home": None,
+                    "presence_state": "unknown",
+                    "position_error": "Audi Connect ist nicht eingerichtet",
+                }
+            )
+            return dict(self._presence)
+
+        async with self._lock:
+            checked_at = datetime.now(timezone.utc).isoformat()
+            try:
+                await self._ensure_auth()
+                assert self._auth is not None
+                assert self._vehicle_info is not None
+                vin = str(self._vehicle_info.get("vin", ""))
+                raw_position = await self._auth.get_stored_position(vin)
+                position = self._position_values(raw_position)
+                if position is None:
+                    self._presence.update(
+                        {
+                            "presence_available": False,
+                            "at_home": None,
+                            "presence_state": "unknown",
+                            "position_checked_at": checked_at,
+                            "position_error": None,
+                        }
+                    )
+                    return dict(self._presence)
+
+                latitude, longitude, captured_at = position
+                assert self._home_latitude is not None
+                assert self._home_longitude is not None
+                distance = self._distance_meters(
+                    self._home_latitude,
+                    self._home_longitude,
+                    latitude,
+                    longitude,
+                )
+                at_home = distance <= self._home_radius_meters
+                self._presence.update(
+                    {
+                        "presence_available": True,
+                        "at_home": at_home,
+                        "presence_state": "home" if at_home else "away",
+                        "position_last_update": captured_at,
+                        "position_checked_at": checked_at,
+                        "position_error": None,
+                    }
+                )
+            except Exception as exc:
+                self._presence.update(
+                    {
+                        "presence_available": False,
+                        "at_home": None,
+                        "presence_state": "unknown",
+                        "position_checked_at": checked_at,
+                        "position_error": self._public_error(exc),
+                    }
+                )
+                _LOGGER.exception("Audi parking-position refresh failed")
+            return dict(self._presence)
+
+    async def _run_presence_monitor(self) -> None:
+        while True:
+            await self.refresh_presence()
+            await asyncio.sleep(self._position_interval_seconds)
+
+    async def start(self) -> None:
+        """Start an immediate, privacy-preserving home-presence monitor."""
+        if (
+            self.configured
+            and self.home_geofence_configured
+            and self._presence_task is None
+        ):
+            self._presence_task = asyncio.create_task(
+                self._run_presence_monitor(), name="audi-home-presence-monitor"
+            )
+
     def _cached_payload(self) -> dict[str, Any] | None:
         if self._cache is None or self._last_success is None:
             return None
@@ -405,31 +576,38 @@ class AudiClient:
         if not self.configured:
             payload = self._empty_payload()
             payload["error"] = "AUDI_REFRESH_TOKEN ist nicht gesetzt"
-            return payload
+            return self._with_presence(payload)
 
         cached = self._cached_payload()
         if cached and not cached["stale"]:
-            return cached
+            return self._with_presence(cached)
         if self._retry_delayed_after_error():
-            return self._failed_payload()
+            return self._with_presence(self._failed_payload())
 
         async with self._lock:
             cached = self._cached_payload()
             if cached and not cached["stale"]:
-                return cached
+                return self._with_presence(cached)
             if self._retry_delayed_after_error():
-                return self._failed_payload()
+                return self._with_presence(self._failed_payload())
             self._last_attempt = time.time()
             try:
                 self._cache = await self._refresh_from_cloud()
                 self._last_success = time.time()
                 self._last_error = None
-                return dict(self._cache)
+                return self._with_presence(self._cache)
             except Exception as exc:
                 self._last_error = self._public_error(exc)
                 _LOGGER.exception("Audi Connect refresh failed")
-                return self._failed_payload()
+                return self._with_presence(self._failed_payload())
 
     async def close(self) -> None:
+        if self._presence_task is not None:
+            self._presence_task.cancel()
+            try:
+                await self._presence_task
+            except asyncio.CancelledError:
+                pass
+            self._presence_task = None
         if self._session and not self._session.closed:
             await self._session.close()

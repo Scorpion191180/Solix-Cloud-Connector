@@ -14,6 +14,14 @@ services:
         value: "1"
       - key: AUDI_CACHE_SECONDS
         value: "900"
+      - key: AUDI_HOME_LATITUDE
+        sync: false
+      - key: AUDI_HOME_LONGITUDE
+        sync: false
+      - key: AUDI_HOME_RADIUS_METERS
+        value: "120"
+      - key: AUDI_POSITION_INTERVAL_SECONDS
+        value: "120"
       - key: SOLIX_CACHE_SECONDS
         value: "30"
       - key: SOLIX_SOLARBANK_PN
