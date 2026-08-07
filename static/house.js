@@ -371,6 +371,21 @@ function loadImageTexture(path, repeatX = 1, repeatY = 1) {
 // Projekt. Einzelne Fenster, Türen, Tore und Dachfenster verwenden daraus nur
 // ihren jeweiligen Ausschnitt; Rahmen, Laibung und Balkone bleiben echtes 3D.
 const housePhotoAtlases = {
+    windowsIndividual: {
+        path: "/static/textures/house/window-atlas-individual-v3.jpg",
+        width: 1254,
+        height: 1254
+    },
+    doorsIndividual: {
+        path: "/static/textures/house/door-atlas-individual-v3.jpg",
+        width: 1254,
+        height: 1254
+    },
+    garageClean: {
+        path: "/static/textures/house/garage-atlas-clean-v3.jpg",
+        width: 1254,
+        height: 1254
+    },
     windowsClean: {
         path: "/static/textures/house/window-atlas-clean-v2.jpg",
         width: 1024,
@@ -459,7 +474,7 @@ function makePhotoMaterial(spec, options = {}) {
 const textures = {
     wall: loadImageTexture("/static/textures/house/facade-wall.jpg", 5, 8),
     roof: loadImageTexture("/static/textures/house/roof-tiles.jpg", 2, 4),
-    shingle: makeTexture("#4a332b", "#190f0d", "shingles", 5, 9),
+    shingle: loadImageTexture("/static/textures/house/garage-shingles-clean-v3.jpg", 4, 8),
     grass: makeTexture("#496b38", "#9eb36a", "grass", 8, 12),
     paving: makeTexture("#777a79", "#363a3a", "pavers", 8, 12),
     water: makeTexture("#159bc5", "#d1f7ff", "water", 3, 6),
@@ -653,6 +668,40 @@ const CLEAN_OPENINGS = {
     }
 };
 
+// Individuell aus den freigegebenen Fassadenfotos abgeleitete Bauteile.
+// Jeder Ausschnitt besitzt bereits seinen vollständigen Originalrahmen samt
+// Fensterbank. Deshalb werden dafür keine zusätzlichen Standardrahmen mehr
+// vor die Fototextur gesetzt.
+const INDIVIDUAL_OPENINGS = {
+    window: {
+        modernSingle: { atlas: "windowsIndividual", x: 77, y: 20, width: 155, height: 273, cleanAsset: true },
+        modernDouble: { atlas: "windowsIndividual", x: 342, y: 30, width: 254, height: 255, cleanAsset: true },
+        balconyDouble: { atlas: "windowsIndividual", x: 660, y: 16, width: 278, height: 294, cleanAsset: true },
+        modernCurtain: { atlas: "windowsIndividual", x: 1018, y: 10, width: 176, height: 300, cleanAsset: true },
+        modernDivided: { atlas: "windowsIndividual", x: 62, y: 337, width: 198, height: 266, cleanAsset: true },
+        whiteCurtain: { atlas: "windowsIndividual", x: 370, y: 348, width: 182, height: 254, cleanAsset: true },
+        brownDivided: { atlas: "windowsIndividual", x: 720, y: 349, width: 141, height: 254, cleanAsset: true },
+        brownDouble: { atlas: "windowsIndividual", x: 984, y: 346, width: 224, height: 264, cleanAsset: true },
+        modernTall: { atlas: "windowsIndividual", x: 84, y: 651, width: 137, height: 282, cleanAsset: true },
+        brownTallCurtain: { atlas: "windowsIndividual", x: 392, y: 646, width: 155, height: 282, cleanAsset: true },
+        brownDoubleCurtain: { atlas: "windowsIndividual", x: 38, y: 996, width: 235, height: 224, cleanAsset: true },
+        bayThree: { atlas: "windowsIndividual", x: 342, y: 950, width: 248, height: 275, cleanAsset: true },
+        brownNarrow: { atlas: "windowsIndividual", x: 711, y: 960, width: 139, height: 270, cleanAsset: true },
+        brownNarrowCurtain: { atlas: "windowsIndividual", x: 1007, y: 946, width: 160, height: 282, cleanAsset: true }
+    },
+    door: {
+        rearGlass: { atlas: "doorsIndividual", x: 170, y: 26, width: 284, height: 575, cleanAsset: true },
+        balconyDouble: { atlas: "doorsIndividual", x: 719, y: 27, width: 444, height: 574, cleanAsset: true },
+        modernEntrance: { atlas: "doorsIndividual", x: 186, y: 649, width: 248, height: 580, cleanAsset: true },
+        rearDecorative: { atlas: "doorsIndividual", x: 677, y: 654, width: 518, height: 569, cleanAsset: true }
+    },
+    garage: {
+        door: { atlas: "garageClean", x: 696, y: 58, width: 487, height: 515, cleanAsset: true },
+        window: { atlas: "garageClean", x: 129, y: 717, width: 362, height: 436, cleanAsset: true },
+        attic: { atlas: "garageClean", x: 826, y: 768, width: 224, height: 332, cleanAsset: true }
+    }
+};
+
 function createWindow(parent, position, size, side = "front", photoSpec = null) {
     const group = new THREE.Group();
     group.position.set(...position);
@@ -665,25 +714,29 @@ function createWindow(parent, position, size, side = "front", photoSpec = null) 
     parent.add(group);
 
     const cleanAsset = Boolean(photoSpec?.cleanAsset);
-    // Tiefe Laibung und dunkler Innenraum vermeiden die frühere flache
-    // Scheibenwirkung. Bei den bereinigten Fotoelementen sind Rahmen und Glas
-    // bereits vollständig enthalten; deshalb kommen weder Vorhang noch
-    // pauschale Kreuzsprossen ein zweites Mal davor.
-    addBox(group, [size[0] + 0.26, size[1] + 0.26, 0.11], materials.windowInterior, [0, 0, -0.075]);
-    addBox(group, [size[0] + 0.18, size[1] + 0.18, 0.13], materials.darkTrim, [0, 0, -0.005]);
-    if (!cleanAsset) {
+    const glassMaterial = makePhotoMaterial(photoSpec) || materials.glass;
+    if (cleanAsset) {
+        // Der entzerrte Fotoausschnitt enthält bereits Laibung, Rahmen,
+        // Fensterbank und Scheibe. Eine einzige flache 3D-Trägerplatte
+        // verhindert doppelte Rahmen rund um die Textur.
+        addBox(group, [size[0] * 0.98, size[1] * 0.98, 0.035], materials.windowInterior,
+            [0, 0, -0.018], { castShadow: false });
+        addBox(group, [size[0], size[1], 0.028], glassMaterial,
+            [0, 0, 0.015], { castShadow: false });
+    }
+    else {
+        // Tiefe Laibung und dunkler Innenraum für rein prozedurale Fenster.
+        addBox(group, [size[0] + 0.26, size[1] + 0.26, 0.11], materials.windowInterior, [0, 0, -0.075]);
+        addBox(group, [size[0] + 0.18, size[1] + 0.18, 0.13], materials.darkTrim, [0, 0, -0.005]);
         [-1, 1].forEach((sideSign) =>
             addBox(group, [size[0] * 0.25, size[1] * 0.92, 0.018], materials.curtain,
                 [sideSign * size[0] * 0.34, 0, 0.028], { castShadow: false }));
-    }
-    const glassMaterial = makePhotoMaterial(photoSpec) || materials.glass;
-    addBox(group, [size[0], size[1], 0.075], glassMaterial, [0, 0, 0.065], { castShadow: false });
-    if (!cleanAsset) {
+        addBox(group, [size[0], size[1], 0.075], glassMaterial, [0, 0, 0.065], { castShadow: false });
         addBox(group, [0.046, size[1], 0.115], materials.darkTrim, [0, 0, 0.115]);
         addBox(group, [size[0], 0.046, 0.115], materials.darkTrim, [0, 0, 0.115]);
+        addBox(group, [size[0] + 0.30, 0.10, 0.24], materials.darkTrim, [0, -size[1] / 2 - 0.11, 0.035]);
+        addBox(group, [size[0] + 0.22, 0.055, 0.18], materials.soffit, [0, size[1] / 2 + 0.11, -0.02], { castShadow: false });
     }
-    addBox(group, [size[0] + 0.30, 0.10, 0.24], materials.darkTrim, [0, -size[1] / 2 - 0.11, 0.035]);
-    addBox(group, [size[0] + 0.22, 0.055, 0.18], materials.soffit, [0, size[1] / 2 + 0.11, -0.02], { castShadow: false });
     return group;
 }
 
@@ -699,11 +752,17 @@ function createDoor(parent, position, size = [0.82, 1.96], side = "front", photo
     parent.add(group);
 
     const cleanAsset = Boolean(photoSpec?.cleanAsset);
-    addBox(group, [size[0] + 0.22, size[1] + 0.18, 0.15], materials.windowInterior, [0, 0, -0.055]);
-    addBox(group, [size[0] + 0.16, size[1] + 0.14, 0.13], materials.darkTrim, [0, 0, 0]);
     const doorMaterial = makePhotoMaterial(photoSpec, { roughness: 0.26, clearcoat: 0.52 }) || materials.glass;
-    addBox(group, [size[0], size[1], 0.085], doorMaterial, [0, 0, 0.065], { castShadow: false });
-    if (!cleanAsset) {
+    if (cleanAsset) {
+        addBox(group, [size[0] * 0.98, size[1] * 0.98, 0.035], materials.windowInterior,
+            [0, 0, -0.018], { castShadow: false });
+        addBox(group, [size[0], size[1], 0.028], doorMaterial,
+            [0, 0, 0.015], { castShadow: false });
+    }
+    else {
+        addBox(group, [size[0] + 0.22, size[1] + 0.18, 0.15], materials.windowInterior, [0, 0, -0.055]);
+        addBox(group, [size[0] + 0.16, size[1] + 0.14, 0.13], materials.darkTrim, [0, 0, 0]);
+        addBox(group, [size[0], size[1], 0.085], doorMaterial, [0, 0, 0.065], { castShadow: false });
         addBox(group, [size[0] * 0.07, size[1], 0.13], materials.darkTrim, [0, 0, 0.12]);
         addBox(group, [size[0], 0.065, 0.13], materials.darkTrim, [0, size[1] * 0.10, 0.12]);
         const handle = new THREE.MeshStandardMaterial({ color: 0xb9c1c5, metalness: 0.82, roughness: 0.26 });
@@ -843,14 +902,18 @@ function createRoof(parent) {
 
 function createGarageDoors(parent) {
     const doorWidth = 1.72;
+    const garagePierMaterial = new THREE.MeshStandardMaterial({
+        color: 0xb9a36d,
+        roughness: 0.82,
+        envMapIntensity: 0.18
+    });
     [-2.08, 0, 2.08].forEach((x, index) => {
-        addBox(parent, [doorWidth + 0.18, 2.46, 0.12], new THREE.MeshStandardMaterial({ color: 0xc3a65e, roughness: 0.76 }), [x, 1.45, GABLE_Z - 0.105]);
-        const garagePhoto = makePhotoMaterial(PHOTO_CROPS.garage.doors[index], {
+        const garagePhoto = makePhotoMaterial(INDIVIDUAL_OPENINGS.garage.door, {
             roughness: 0.36,
             clearcoat: 0.36
         });
         const door = addBox(parent, [doorWidth, 2.26, 0.15], garagePhoto || materials.garageRed,
-            [x, 1.42, GABLE_Z], { radius: 0.035 });
+            [x, 1.42, GABLE_Z], { radius: 0.018, castShadow: false });
         if (!garagePhoto) {
             for (let row = -4; row <= 4; row += 1)
                 addBox(door, [doorWidth * 0.95, 0.018, 0.025], materials.darkTrim, [0, row * 0.205, 0.085], { castShadow: false });
@@ -859,10 +922,17 @@ function createGarageDoors(parent) {
                 addBox(door, [0.028, 0.58, 0.04], materials.garageRed, [offset, 0.61, 0.115], { castShadow: false }));
         }
     });
+    // Die vier schmalen Putzpfeiler entsprechen den echten Trennungen der
+    // drei Tore. Die Schindelwand bleibt dazwischen vollständig sichtbar.
+    [-3.12, -1.04, 1.04, 3.12].forEach((x) =>
+        addBox(parent, [0.22, 2.46, 0.17], garagePierMaterial,
+            [x, 1.43, GABLE_Z + 0.015], { castShadow: false }));
 }
 
 function createGable(parent) {
-    addBox(parent, [6.45, 2.45, 0.18], materials.shingle, [0, 3.72, GABLE_Z - 0.10]);
+    // Die reale Garagenseite ist vom Sockel bis in den Giebel vollständig mit
+    // den gleichen braunen Holzschindeln verkleidet.
+    addBox(parent, [6.45, 4.90, 0.18], materials.shingle, [0, 2.50, GABLE_Z - 0.10]);
     const shape = new THREE.Shape();
     shape.moveTo(-3.22, 0);
     shape.lineTo(0, 2.15);
@@ -872,12 +942,18 @@ function createGable(parent) {
     const triangle = addMesh(parent, geometry, materials.shingle, 0, 4.93, GABLE_Z);
     triangle.castShadow = true;
 
+    const garageUpperWindows = [
+        INDIVIDUAL_OPENINGS.garage.window,
+        INDIVIDUAL_OPENINGS.window.whiteCurtain,
+        INDIVIDUAL_OPENINGS.garage.window,
+        INDIVIDUAL_OPENINGS.window.brownDouble
+    ];
     [-2.18, -0.73, 0.73, 2.18].forEach((x, index) =>
         createWindow(parent, [x, 3.92, GABLE_Z + 0.12], [0.56, 0.78], "front",
-            CLEAN_OPENINGS.window.cross));
+            garageUpperWindows[index]));
     [-1.15, 1.15].forEach((x, index) =>
         createWindow(parent, [x, 5.20, GABLE_Z + 0.12], [0.58, 0.84], "front",
-            CLEAN_OPENINGS.window.cross));
+            INDIVIDUAL_OPENINGS.garage.attic));
     addBox(parent, [0.48, 0.25, 0.12], materials.darkTrim, [0, 6.36, GABLE_Z + 0.12]);
 
     const rearGeometry = new THREE.ShapeGeometry(shape);
@@ -886,9 +962,9 @@ function createGable(parent) {
     });
     rearTriangle.castShadow = true;
     createWindow(parent, [-1.05, 5.25, -GABLE_Z - 0.12], [0.58, 0.82], "back",
-        CLEAN_OPENINGS.window.narrow);
+        INDIVIDUAL_OPENINGS.window.brownNarrow);
     createWindow(parent, [1.05, 5.25, -GABLE_Z - 0.12], [0.58, 0.82], "back",
-        CLEAN_OPENINGS.window.narrow);
+        INDIVIDUAL_OPENINGS.window.brownNarrowCurtain);
 }
 
 const PV_MODULE_LENGTH = 1.906;
@@ -1062,11 +1138,13 @@ function createBayWindow(parent) {
     });
     addBox(bay, [1.34, 0.14, 0.74], materials.darkTrim, [2.62, 4.84, -6.50]);
 
-    createWindow(bay, [3.85, 3.70, -5.45], [0.72, 1.40], "side", CLEAN_OPENINGS.window.single);
+    createWindow(bay, [3.85, 3.70, -5.45], [0.72, 1.40], "side",
+        INDIVIDUAL_OPENINGS.window.modernTall);
     const cornerWindow = createWindow(bay, [3.76, 3.70, -6.57], [0.80, 1.40], "front",
-        CLEAN_OPENINGS.window.single);
+        INDIVIDUAL_OPENINGS.window.modernCurtain);
     cornerWindow.rotation.y = cornerAngle;
-    createWindow(bay, [2.62, 3.70, -6.85], [0.72, 1.40], "back", CLEAN_OPENINGS.window.single);
+    createWindow(bay, [2.62, 3.70, -6.85], [0.72, 1.40], "back",
+        INDIVIDUAL_OPENINGS.window.modernSingle);
 }
 
 function createJulietGuard(parent, z) {
@@ -1079,7 +1157,7 @@ function createJulietGuard(parent, z) {
         addBox(parent, [0.10, 0.92, 0.10], rail, [-3.60, 3.00, z + offset]));
 }
 
-function createWoodDoorWithCanopy(parent, position, photoSpec = null) {
+function createWoodDoorWithCanopy(parent, position, photoSpec = null, size = [0.84, 1.96]) {
     const group = new THREE.Group();
     group.position.set(...position);
     group.rotation.y = -Math.PI / 2;
@@ -1088,23 +1166,28 @@ function createWoodDoorWithCanopy(parent, position, photoSpec = null) {
     const wood = new THREE.MeshStandardMaterial({ color: 0x5b3424, roughness: 0.86 });
     const canopyWood = new THREE.MeshStandardMaterial({ color: 0x3f2a20, roughness: 0.90 });
     const metal = new THREE.MeshStandardMaterial({ color: 0xb9c1c5, metalness: 0.82, roughness: 0.26 });
-    addBox(group, [1.02, 2.12, 0.13], materials.darkTrim, [0, 0, 0]);
     const cleanAsset = Boolean(photoSpec?.cleanAsset);
-    const door = addBox(group, [0.84, 1.96, 0.15], wood, [0, -0.02, 0.025]);
-    if (!cleanAsset) {
-        [-0.66, -0.30, 0.08, 0.46].forEach((y) =>
-            addBox(door, [0.76, 0.035, 0.025], canopyWood, [0, y, 0.09], { castShadow: false }));
-        addBox(group, [0.48, 0.42, 0.17], materials.glass, [0, 0.55, 0.05], { castShadow: false });
-        addMesh(group, new THREE.SphereGeometry(0.04, 10, 8), metal,
-            0.31, -0.12, 0.13, { castShadow: false });
-    }
     const doorPhoto = makePhotoMaterial(photoSpec, { roughness: 0.32, clearcoat: 0.36 });
-    if (doorPhoto)
-        addBox(group, [0.80, 1.90, 0.018], doorPhoto, [0, -0.02, 0.112], { castShadow: false });
+    if (cleanAsset && doorPhoto) {
+        addBox(group, [size[0] * 0.98, size[1] * 0.98, 0.035], materials.windowInterior,
+            [0, -0.02, -0.018], { castShadow: false });
+        addBox(group, [size[0], size[1], 0.028], doorPhoto,
+            [0, -0.02, 0.015], { castShadow: false });
+    }
+    else {
+        addBox(group, [size[0] + 0.18, size[1] + 0.16, 0.13], materials.darkTrim, [0, 0, 0]);
+        const door = addBox(group, [size[0], size[1], 0.15], wood, [0, -0.02, 0.025]);
+        [-0.66, -0.30, 0.08, 0.46].forEach((y) =>
+            addBox(door, [size[0] * 0.90, 0.035, 0.025], canopyWood, [0, y, 0.09], { castShadow: false }));
+        addBox(group, [size[0] * 0.58, 0.42, 0.17], materials.glass, [0, 0.55, 0.05], { castShadow: false });
+        addMesh(group, new THREE.SphereGeometry(0.04, 10, 8), metal,
+            size[0] * 0.36, -0.12, 0.13, { castShadow: false });
+    }
 
-    const canopy = addBox(group, [1.42, 0.14, 0.92], canopyWood, [0, 1.28, 0.37]);
+    const canopyWidth = Math.max(1.42, size[0] + 0.42);
+    const canopy = addBox(group, [canopyWidth, 0.14, 0.92], canopyWood, [0, 1.28, 0.37]);
     canopy.rotation.x = -0.16;
-    [-0.56, 0.56].forEach((x) =>
+    [-(canopyWidth / 2 - 0.15), canopyWidth / 2 - 0.15].forEach((x) =>
         addBox(group, [0.09, 0.72, 0.09], canopyWood, [x, 0.96, 0.56]));
 }
 
@@ -1117,10 +1200,17 @@ function createFrontWoodDoor(parent, position, photoSpec = null) {
     const doorWood = new THREE.MeshStandardMaterial({ color: 0x4c2e25, roughness: 0.84 });
     const panelWood = new THREE.MeshStandardMaterial({ color: 0x2f1d19, roughness: 0.90 });
     const hardware = new THREE.MeshStandardMaterial({ color: 0xb9c1c5, metalness: 0.82, roughness: 0.24 });
-    addBox(group, [1.00, 2.10, 0.13], materials.darkTrim, [0, 0, 0]);
     const cleanAsset = Boolean(photoSpec?.cleanAsset);
-    const door = addBox(group, [0.84, 1.96, 0.15], doorWood, [0, -0.02, 0.025]);
-    if (!cleanAsset) {
+    const doorPhoto = makePhotoMaterial(photoSpec, { roughness: 0.32, clearcoat: 0.36 });
+    if (cleanAsset && doorPhoto) {
+        addBox(group, [0.82, 1.92, 0.035], materials.windowInterior,
+            [0, -0.02, -0.018], { castShadow: false });
+        addBox(group, [0.84, 1.96, 0.028], doorPhoto,
+            [0, -0.02, 0.015], { castShadow: false });
+    }
+    else {
+        addBox(group, [1.00, 2.10, 0.13], materials.darkTrim, [0, 0, 0]);
+        const door = addBox(group, [0.84, 1.96, 0.15], doorWood, [0, -0.02, 0.025]);
         [-0.62, -0.27, 0.16, 0.52].forEach((y) =>
             addBox(door, [0.72, 0.045, 0.025], panelWood, [0, y, 0.09], { castShadow: false }));
         addBox(group, [0.46, 0.38, 0.17], materials.glass, [0, 0.56, 0.05], { castShadow: false });
@@ -1128,9 +1218,6 @@ function createFrontWoodDoor(parent, position, photoSpec = null) {
         addMesh(group, new THREE.SphereGeometry(0.04, 10, 8), hardware,
             0.31, -0.08, 0.13, { castShadow: false });
     }
-    const doorPhoto = makePhotoMaterial(photoSpec, { roughness: 0.32, clearcoat: 0.36 });
-    if (doorPhoto)
-        addBox(group, [0.80, 1.90, 0.018], doorPhoto, [0, -0.02, 0.112], { castShadow: false });
 }
 
 function createHouse() {
@@ -1144,55 +1231,78 @@ function createHouse() {
     createGable(house);
 
     // Lange Balkonfassade aus IMG_7376/7377: Fenstergruppen und je eine Balkontür.
-    createWindow(house, [3.275, 1.48, 4.90], [0.76, 1.16], "side", CLEAN_OPENINGS.window.single);
-    [0.42, -0.55].forEach((z) =>
-        createWindow(house, [3.275, 1.48, z], [0.88, 0.92], "side", CLEAN_OPENINGS.window.cross));
-    createWindow(house, [3.275, 1.48, -2.12], [0.74, 1.16], "side", CLEAN_OPENINGS.window.single);
-    createWindow(house, [3.275, 1.48, -5.46], [0.68, 1.16], "side", CLEAN_OPENINGS.window.narrow);
-    createWindow(house, [3.285, 3.66, 5.45], [1.24, 1.10], "side", CLEAN_OPENINGS.window.double);
-    createDoor(house, [3.285, 3.58, 4.10], [0.78, 1.86], "side", CLEAN_OPENINGS.door.balcony);
-    createWindow(house, [3.285, 3.66, 2.72], [1.24, 1.10], "side", CLEAN_OPENINGS.window.double);
-    createDoor(house, [3.285, 3.58, 1.45], [0.78, 1.86], "side", CLEAN_OPENINGS.door.balcony);
-    createWindow(house, [3.285, 3.66, 0.18], [0.78, 1.10], "side", CLEAN_OPENINGS.window.single);
-    createWindow(house, [3.285, 3.66, -1.42], [0.72, 1.10], "side", CLEAN_OPENINGS.window.narrow);
-    createDoor(house, [3.285, 3.58, -2.70], [0.78, 1.86], "side", CLEAN_OPENINGS.door.balcony);
-    createDoor(house, [3.285, 3.58, -4.06], [0.78, 1.86], "side", CLEAN_OPENINGS.door.balcony);
+    createWindow(house, [3.275, 1.48, 4.90], [0.76, 1.16], "side",
+        INDIVIDUAL_OPENINGS.window.modernSingle);
+    createWindow(house, [3.275, 1.48, 0.42], [0.88, 0.92], "side",
+        INDIVIDUAL_OPENINGS.window.brownDoubleCurtain);
+    createWindow(house, [3.275, 1.48, -0.55], [0.88, 0.92], "side",
+        INDIVIDUAL_OPENINGS.window.brownDouble);
+    createWindow(house, [3.275, 1.48, -2.12], [0.74, 1.16], "side",
+        INDIVIDUAL_OPENINGS.window.modernDivided);
+    createWindow(house, [3.275, 1.48, -5.46], [0.68, 1.16], "side",
+        INDIVIDUAL_OPENINGS.window.modernTall);
+    createWindow(house, [3.285, 3.66, 5.45], [1.24, 1.10], "side",
+        INDIVIDUAL_OPENINGS.window.brownDoubleCurtain);
+    createDoor(house, [3.285, 3.58, 4.10], [0.78, 1.86], "side",
+        INDIVIDUAL_OPENINGS.door.rearGlass);
+    createWindow(house, [3.285, 3.66, 2.72], [1.24, 1.10], "side",
+        INDIVIDUAL_OPENINGS.window.brownDouble);
+    createDoor(house, [3.285, 3.58, 1.45], [0.78, 1.86], "side",
+        INDIVIDUAL_OPENINGS.door.rearGlass);
+    createWindow(house, [3.285, 3.66, 0.18], [0.78, 1.10], "side",
+        INDIVIDUAL_OPENINGS.window.modernDivided);
+    createWindow(house, [3.285, 3.66, -1.42], [0.72, 1.10], "side",
+        INDIVIDUAL_OPENINGS.window.modernCurtain);
+    createDoor(house, [3.285, 3.58, -2.70], [0.78, 1.86], "side",
+        INDIVIDUAL_OPENINGS.door.rearGlass);
+    createDoor(house, [3.285, 3.58, -4.06], [0.78, 1.86], "side",
+        INDIVIDUAL_OPENINGS.door.rearGlass);
     createFrontWoodDoor(house, [3.30, 1.35, -3.15], CLEAN_OPENINGS.door.wood);
-    createDoor(house, [3.30, 1.35, -4.30], [0.80, 1.92], "side", CLEAN_OPENINGS.door.entrance);
+    createDoor(house, [3.30, 1.35, -4.30], [0.80, 1.92], "side",
+        INDIVIDUAL_OPENINGS.door.modernEntrance);
     createBayWindow(house);
 
     // Gartenfassade aus IMG_7397: dunkler Garagenabschnitt und acht Öffnungen in Fotoreihenfolge.
     addBox(house, [0.16, 4.90, 2.45], materials.shingle, [-3.285, 2.50, 5.18]);
     [
-        [-5.02, 0.68],
-        [-2.12, 0.68],
-        [-0.62, 0.68],
-        [0.96, 0.78],
-        [2.42, 1.02],
-        [3.82, 0.62],
-        [5.22, 1.02]
-    ].forEach(([z, width], index) =>
-        createWindow(house, [-3.30, 3.70, z], [width, 1.08], "side-back",
-            index >= 4 ? CLEAN_OPENINGS.window.cross : CLEAN_OPENINGS.window.single));
+        [-5.02, 0.68, INDIVIDUAL_OPENINGS.window.modernSingle],
+        [-2.12, 0.68, INDIVIDUAL_OPENINGS.window.modernDivided],
+        [-0.62, 0.68, INDIVIDUAL_OPENINGS.window.modernSingle],
+        [0.96, 0.78, INDIVIDUAL_OPENINGS.window.modernDivided],
+        [2.42, 1.02, INDIVIDUAL_OPENINGS.window.whiteCurtain],
+        [3.82, 0.62, INDIVIDUAL_OPENINGS.window.brownDivided],
+        [5.22, 1.02, INDIVIDUAL_OPENINGS.window.brownDoubleCurtain]
+    ].forEach(([z, width, opening]) =>
+        createWindow(house, [-3.30, 3.70, z], [width, 1.08], "side-back", opening));
     createDoor(house, [-3.285, 3.58, -3.62], [1.18, 1.86], "side-back",
-        CLEAN_OPENINGS.door.balconyDouble);
+        INDIVIDUAL_OPENINGS.door.balconyDouble);
     createJulietGuard(house, -3.62);
-    createWindow(house, [-3.30, 1.50, -4.92], [0.72, 1.10], "side-back", CLEAN_OPENINGS.window.single);
-    createDoor(house, [-3.30, 1.34, -3.55], [0.82, 1.92], "side-back", CLEAN_OPENINGS.door.entrance);
-    createWindow(house, [-3.30, 1.46, 0.18], [0.62, 1.10], "side-back", CLEAN_OPENINGS.window.narrow);
-    createWoodDoorWithCanopy(house, [-3.30, 1.34, 1.80], CLEAN_OPENINGS.door.wood);
-    createWindow(house, [-3.30, 1.48, 5.08], [1.24, 1.14], "side-back", CLEAN_OPENINGS.window.cross);
+    createWindow(house, [-3.30, 1.50, -4.92], [0.72, 1.10], "side-back",
+        INDIVIDUAL_OPENINGS.window.modernCurtain);
+    createDoor(house, [-3.30, 1.34, -3.55], [0.82, 1.92], "side-back",
+        INDIVIDUAL_OPENINGS.door.rearGlass);
+    createWindow(house, [-3.30, 1.46, 0.18], [0.62, 1.10], "side-back",
+        INDIVIDUAL_OPENINGS.window.brownNarrow);
+    createWoodDoorWithCanopy(house, [-3.30, 1.34, 1.80],
+        INDIVIDUAL_OPENINGS.door.rearDecorative, [1.56, 1.92]);
+    createWindow(house, [-3.30, 1.48, 5.08], [1.24, 1.14], "side-back",
+        INDIVIDUAL_OPENINGS.window.brownDoubleCurtain);
 
     // Weiße Heckenseite: zwei Fensterreihen; laut Foto gibt es hier keine Tür.
     // Die rechten Fenster bleiben vor der Erkerkante und schneiden nicht mehr in dessen Rückfläche.
+    const rearGableUpper = [
+        INDIVIDUAL_OPENINGS.window.modernTall,
+        INDIVIDUAL_OPENINGS.window.modernSingle,
+        INDIVIDUAL_OPENINGS.window.modernCurtain
+    ];
     [-1.92, 0, 1.40].forEach((x, index) =>
         createWindow(house, [x, 3.68, -GABLE_Z - 0.02], [0.72, 1.08], "back",
-            CLEAN_OPENINGS.window.single));
+            rearGableUpper[index]));
     [-1.90, -0.15].forEach((x, index) =>
         createWindow(house, [x, 1.46, -GABLE_Z - 0.02], [0.78, 1.14], "back",
-            CLEAN_OPENINGS.window.single));
+            index === 0 ? INDIVIDUAL_OPENINGS.window.modernDivided : INDIVIDUAL_OPENINGS.window.modernSingle));
     createWindow(house, [1.25, 1.46, -GABLE_Z - 0.02], [0.78, 1.14], "back",
-        CLEAN_OPENINGS.window.single);
+        INDIVIDUAL_OPENINGS.window.modernTall);
 
     createBalconies(house);
     return house;
@@ -2165,8 +2275,9 @@ function createGarden() {
 
     const pool = new THREE.Group();
     pool.position.set(-7.55, 0, -6.72);
-    // Gegenüber der bisherigen Stellung um 20 Grad nach rechts gedreht.
-    pool.rotation.y = THREE.MathUtils.degToRad(-40);
+    // Auf Wunsch nochmals um 20 Grad nach rechts gedreht. Die lange
+    // Liegeplattform zeigt dadurch weiterhin zur hinteren Zaunecke.
+    pool.rotation.y = THREE.MathUtils.degToRad(-60);
     world.add(pool);
     const poolWall = new THREE.MeshStandardMaterial({ color: 0x374552, metalness: 0.22, roughness: 0.68 });
     addBox(pool, [3.20, 1.02, 5.00], poolWall, [0, 0.50, 0], { radius: 0.12 });
@@ -2182,13 +2293,14 @@ function createGarden() {
     [-1.82, 1.82].forEach((x) =>
         addBox(pool, [0.56, 0.16, 5.55], deckWood, [x, 1.04, 0], { radius: 0.025 }));
     addBox(pool, [4.20, 0.16, 0.56], deckWood, [0, 1.04, 2.70], { radius: 0.025 });
-    addBox(pool, [4.20, 0.17, 1.62], deckWood, [0, 1.04, -3.22], { radius: 0.025 });
-    for (let z = -3.94; z <= -2.50; z += 0.22)
-        addBox(pool, [4.08, 0.025, 0.055], deckEdge, [0, 1.135, z], { castShadow: false });
+    // Breite Liegeplattform entlang der langen, zum Zaun gerichteten Seite.
+    addBox(pool, [1.62, 0.17, 5.55], deckWood, [-2.90, 1.04, 0], { radius: 0.025 });
+    for (let z = -2.46; z <= 2.46; z += 0.22)
+        addBox(pool, [1.52, 0.025, 0.055], deckEdge, [-2.90, 1.135, z], { castShadow: false });
 
     const lounger = new THREE.Group();
-    lounger.position.set(0.48, 1.18, -3.18);
-    lounger.rotation.y = 0.10;
+    lounger.position.set(-2.90, 1.18, 0.22);
+    lounger.rotation.y = -0.06;
     pool.add(lounger);
     const loungerFrame = new THREE.MeshStandardMaterial({ color: 0xd7dde0, metalness: 0.55, roughness: 0.34 });
     const loungerFabric = new THREE.MeshStandardMaterial({ color: 0xe7e4dc, roughness: 0.76 });
