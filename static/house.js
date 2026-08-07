@@ -371,6 +371,16 @@ function loadImageTexture(path, repeatX = 1, repeatY = 1) {
 // Projekt. Einzelne Fenster, Türen, Tore und Dachfenster verwenden daraus nur
 // ihren jeweiligen Ausschnitt; Rahmen, Laibung und Balkone bleiben echtes 3D.
 const housePhotoAtlases = {
+    windowsClean: {
+        path: "/static/textures/house/window-atlas-clean-v2.jpg",
+        width: 1024,
+        height: 1024
+    },
+    doorsClean: {
+        path: "/static/textures/house/door-atlas-clean-v2.jpg",
+        width: 1024,
+        height: 1024
+    },
     front: {
         path: "/static/textures/house/front-reference.jpg",
         width: 2200,
@@ -433,14 +443,15 @@ function makePhotoMaterial(spec, options = {}) {
     const map = makePhotoCropTexture(spec);
     if (!map)
         return null;
+    const cleanAsset = Boolean(spec?.cleanAsset);
     return new THREE.MeshPhysicalMaterial({
         color: 0xffffff,
         map,
-        roughness: options.roughness ?? 0.20,
-        metalness: options.metalness ?? 0.02,
-        clearcoat: options.clearcoat ?? 0.72,
-        clearcoatRoughness: 0.16,
-        envMapIntensity: 0.66,
+        roughness: cleanAsset ? 0.72 : (options.roughness ?? 0.20),
+        metalness: cleanAsset ? 0 : (options.metalness ?? 0.02),
+        clearcoat: cleanAsset ? 0.08 : (options.clearcoat ?? 0.72),
+        clearcoatRoughness: cleanAsset ? 0.72 : 0.16,
+        envMapIntensity: cleanAsset ? 0.12 : 0.66,
         side: THREE.FrontSide
     });
 }
@@ -623,6 +634,25 @@ const PHOTO_CROPS = {
     ]
 };
 
+// Aus den freigegebenen Hausfotos abgeleitete, frontal entzerrte Bauteile.
+// Die neutralen Scheiben enthalten weder Straßen-/Gartenreflexionen noch
+// zufällige Bildinhalte. `cleanAsset` verhindert zusätzliche 3D-Sprossen,
+// damit ausschließlich die tatsächlich vorhandene Rahmenteilung sichtbar ist.
+const CLEAN_OPENINGS = {
+    window: {
+        single: { atlas: "windowsClean", x: 84, y: 32, width: 250, height: 440, cleanAsset: true },
+        double: { atlas: "windowsClean", x: 504, y: 80, width: 476, height: 383, cleanAsset: true },
+        cross: { atlas: "windowsClean", x: 73, y: 570, width: 298, height: 350, cleanAsset: true },
+        narrow: { atlas: "windowsClean", x: 623, y: 548, width: 200, height: 400, cleanAsset: true }
+    },
+    door: {
+        balcony: { atlas: "doorsClean", x: 139, y: 20, width: 210, height: 480, cleanAsset: true },
+        balconyDouble: { atlas: "doorsClean", x: 564, y: 20, width: 335, height: 480, cleanAsset: true },
+        entrance: { atlas: "doorsClean", x: 139, y: 522, width: 210, height: 472, cleanAsset: true },
+        wood: { atlas: "doorsClean", x: 605, y: 524, width: 255, height: 478, cleanAsset: true }
+    }
+};
+
 function createWindow(parent, position, size, side = "front", photoSpec = null) {
     const group = new THREE.Group();
     group.position.set(...position);
@@ -634,16 +664,24 @@ function createWindow(parent, position, size, side = "front", photoSpec = null) 
         group.rotation.y = Math.PI;
     parent.add(group);
 
-    // Tiefe Laibung, dunkler Innenraum und leicht sichtbare Vorhänge vermeiden die frühere flache Scheibenwirkung.
+    const cleanAsset = Boolean(photoSpec?.cleanAsset);
+    // Tiefe Laibung und dunkler Innenraum vermeiden die frühere flache
+    // Scheibenwirkung. Bei den bereinigten Fotoelementen sind Rahmen und Glas
+    // bereits vollständig enthalten; deshalb kommen weder Vorhang noch
+    // pauschale Kreuzsprossen ein zweites Mal davor.
     addBox(group, [size[0] + 0.26, size[1] + 0.26, 0.11], materials.windowInterior, [0, 0, -0.075]);
     addBox(group, [size[0] + 0.18, size[1] + 0.18, 0.13], materials.darkTrim, [0, 0, -0.005]);
-    [-1, 1].forEach((sideSign) =>
-        addBox(group, [size[0] * 0.25, size[1] * 0.92, 0.018], materials.curtain,
-            [sideSign * size[0] * 0.34, 0, 0.028], { castShadow: false }));
+    if (!cleanAsset) {
+        [-1, 1].forEach((sideSign) =>
+            addBox(group, [size[0] * 0.25, size[1] * 0.92, 0.018], materials.curtain,
+                [sideSign * size[0] * 0.34, 0, 0.028], { castShadow: false }));
+    }
     const glassMaterial = makePhotoMaterial(photoSpec) || materials.glass;
     addBox(group, [size[0], size[1], 0.075], glassMaterial, [0, 0, 0.065], { castShadow: false });
-    addBox(group, [0.046, size[1], 0.115], materials.darkTrim, [0, 0, 0.115]);
-    addBox(group, [size[0], 0.046, 0.115], materials.darkTrim, [0, 0, 0.115]);
+    if (!cleanAsset) {
+        addBox(group, [0.046, size[1], 0.115], materials.darkTrim, [0, 0, 0.115]);
+        addBox(group, [size[0], 0.046, 0.115], materials.darkTrim, [0, 0, 0.115]);
+    }
     addBox(group, [size[0] + 0.30, 0.10, 0.24], materials.darkTrim, [0, -size[1] / 2 - 0.11, 0.035]);
     addBox(group, [size[0] + 0.22, 0.055, 0.18], materials.soffit, [0, size[1] / 2 + 0.11, -0.02], { castShadow: false });
     return group;
@@ -660,14 +698,18 @@ function createDoor(parent, position, size = [0.82, 1.96], side = "front", photo
         group.rotation.y = Math.PI;
     parent.add(group);
 
+    const cleanAsset = Boolean(photoSpec?.cleanAsset);
     addBox(group, [size[0] + 0.22, size[1] + 0.18, 0.15], materials.windowInterior, [0, 0, -0.055]);
     addBox(group, [size[0] + 0.16, size[1] + 0.14, 0.13], materials.darkTrim, [0, 0, 0]);
     const doorMaterial = makePhotoMaterial(photoSpec, { roughness: 0.26, clearcoat: 0.52 }) || materials.glass;
     addBox(group, [size[0], size[1], 0.085], doorMaterial, [0, 0, 0.065], { castShadow: false });
-    addBox(group, [size[0] * 0.07, size[1], 0.13], materials.darkTrim, [0, 0, 0.12]);
-    addBox(group, [size[0], 0.065, 0.13], materials.darkTrim, [0, size[1] * 0.10, 0.12]);
-    const handle = new THREE.MeshStandardMaterial({ color: 0xb9c1c5, metalness: 0.82, roughness: 0.26 });
-    addMesh(group, new THREE.SphereGeometry(0.035, 10, 8), handle, size[0] * 0.34, -0.13, 0.12, { castShadow: false });
+    if (!cleanAsset) {
+        addBox(group, [size[0] * 0.07, size[1], 0.13], materials.darkTrim, [0, 0, 0.12]);
+        addBox(group, [size[0], 0.065, 0.13], materials.darkTrim, [0, size[1] * 0.10, 0.12]);
+        const handle = new THREE.MeshStandardMaterial({ color: 0xb9c1c5, metalness: 0.82, roughness: 0.26 });
+        addMesh(group, new THREE.SphereGeometry(0.035, 10, 8), handle,
+            size[0] * 0.34, -0.13, 0.12, { castShadow: false });
+    }
     return group;
 }
 
@@ -714,6 +756,10 @@ function createRoofTiles(parent, slope) {
 }
 
 function createRoof(parent) {
+    const roofGroup = new THREE.Group();
+    roofGroup.userData.hideInCutaway = true;
+    parent.add(roofGroup);
+    parent = roofGroup;
     const slope = Math.atan2(2.15, 3.55);
     const roofLength = Math.hypot(3.55, 2.15);
     addBox(parent, [roofLength, 0.20, HOUSE_LENGTH + 0.8], materials.roof, [-1.76, 5.88, 0], {
@@ -828,10 +874,10 @@ function createGable(parent) {
 
     [-2.18, -0.73, 0.73, 2.18].forEach((x, index) =>
         createWindow(parent, [x, 3.92, GABLE_Z + 0.12], [0.56, 0.78], "front",
-            PHOTO_CROPS.garage.upper[index]));
+            CLEAN_OPENINGS.window.cross));
     [-1.15, 1.15].forEach((x, index) =>
         createWindow(parent, [x, 5.20, GABLE_Z + 0.12], [0.58, 0.84], "front",
-            PHOTO_CROPS.garage.attic[index]));
+            CLEAN_OPENINGS.window.cross));
     addBox(parent, [0.48, 0.25, 0.12], materials.darkTrim, [0, 6.36, GABLE_Z + 0.12]);
 
     const rearGeometry = new THREE.ShapeGeometry(shape);
@@ -839,8 +885,10 @@ function createGable(parent) {
         rotation: [0, Math.PI, 0]
     });
     rearTriangle.castShadow = true;
-    createWindow(parent, [-1.05, 5.25, -GABLE_Z - 0.12], [0.58, 0.82], "back", PHOTO_CROPS.side.attic[0]);
-    createWindow(parent, [1.05, 5.25, -GABLE_Z - 0.12], [0.58, 0.82], "back", PHOTO_CROPS.side.attic[1]);
+    createWindow(parent, [-1.05, 5.25, -GABLE_Z - 0.12], [0.58, 0.82], "back",
+        CLEAN_OPENINGS.window.narrow);
+    createWindow(parent, [1.05, 5.25, -GABLE_Z - 0.12], [0.58, 0.82], "back",
+        CLEAN_OPENINGS.window.narrow);
 }
 
 const PV_MODULE_LENGTH = 1.906;
@@ -877,6 +925,10 @@ const SOLARBANK_POSITION = new THREE.Vector3(3.50, BALCONY_FLOOR_Y + 0.06, -1.42
 const GRID_BOX_POSITION = new THREE.Vector3(AUDI_SIDE_FENCE_X - 0.35, 0, -4.20);
 
 function createBalconies(parent) {
+    const balconyGroup = new THREE.Group();
+    balconyGroup.userData.hideInCutaway = true;
+    parent.add(balconyGroup);
+    parent = balconyGroup;
     const railMaterial = new THREE.MeshStandardMaterial({ color: 0x49332f, roughness: 0.8 });
     const sets = [
         { z: 3.00, length: 6.65, depth: 1.34, floorX: 3.82, railX: 4.43 },
@@ -1010,11 +1062,11 @@ function createBayWindow(parent) {
     });
     addBox(bay, [1.34, 0.14, 0.74], materials.darkTrim, [2.62, 4.84, -6.50]);
 
-    createWindow(bay, [3.85, 3.70, -5.45], [0.72, 1.40], "side", PHOTO_CROPS.front.baySide);
+    createWindow(bay, [3.85, 3.70, -5.45], [0.72, 1.40], "side", CLEAN_OPENINGS.window.single);
     const cornerWindow = createWindow(bay, [3.76, 3.70, -6.57], [0.80, 1.40], "front",
-        PHOTO_CROPS.front.bayCorner);
+        CLEAN_OPENINGS.window.single);
     cornerWindow.rotation.y = cornerAngle;
-    createWindow(bay, [2.62, 3.70, -6.85], [0.72, 1.40], "back", PHOTO_CROPS.front.bayBack);
+    createWindow(bay, [2.62, 3.70, -6.85], [0.72, 1.40], "back", CLEAN_OPENINGS.window.single);
 }
 
 function createJulietGuard(parent, z) {
@@ -1037,11 +1089,15 @@ function createWoodDoorWithCanopy(parent, position, photoSpec = null) {
     const canopyWood = new THREE.MeshStandardMaterial({ color: 0x3f2a20, roughness: 0.90 });
     const metal = new THREE.MeshStandardMaterial({ color: 0xb9c1c5, metalness: 0.82, roughness: 0.26 });
     addBox(group, [1.02, 2.12, 0.13], materials.darkTrim, [0, 0, 0]);
+    const cleanAsset = Boolean(photoSpec?.cleanAsset);
     const door = addBox(group, [0.84, 1.96, 0.15], wood, [0, -0.02, 0.025]);
-    [-0.66, -0.30, 0.08, 0.46].forEach((y) =>
-        addBox(door, [0.76, 0.035, 0.025], canopyWood, [0, y, 0.09], { castShadow: false }));
-    addBox(group, [0.48, 0.42, 0.17], materials.glass, [0, 0.55, 0.05], { castShadow: false });
-    addMesh(group, new THREE.SphereGeometry(0.04, 10, 8), metal, 0.31, -0.12, 0.13, { castShadow: false });
+    if (!cleanAsset) {
+        [-0.66, -0.30, 0.08, 0.46].forEach((y) =>
+            addBox(door, [0.76, 0.035, 0.025], canopyWood, [0, y, 0.09], { castShadow: false }));
+        addBox(group, [0.48, 0.42, 0.17], materials.glass, [0, 0.55, 0.05], { castShadow: false });
+        addMesh(group, new THREE.SphereGeometry(0.04, 10, 8), metal,
+            0.31, -0.12, 0.13, { castShadow: false });
+    }
     const doorPhoto = makePhotoMaterial(photoSpec, { roughness: 0.32, clearcoat: 0.36 });
     if (doorPhoto)
         addBox(group, [0.80, 1.90, 0.018], doorPhoto, [0, -0.02, 0.112], { castShadow: false });
@@ -1062,13 +1118,16 @@ function createFrontWoodDoor(parent, position, photoSpec = null) {
     const panelWood = new THREE.MeshStandardMaterial({ color: 0x2f1d19, roughness: 0.90 });
     const hardware = new THREE.MeshStandardMaterial({ color: 0xb9c1c5, metalness: 0.82, roughness: 0.24 });
     addBox(group, [1.00, 2.10, 0.13], materials.darkTrim, [0, 0, 0]);
+    const cleanAsset = Boolean(photoSpec?.cleanAsset);
     const door = addBox(group, [0.84, 1.96, 0.15], doorWood, [0, -0.02, 0.025]);
-    [-0.62, -0.27, 0.16, 0.52].forEach((y) =>
-        addBox(door, [0.72, 0.045, 0.025], panelWood, [0, y, 0.09], { castShadow: false }));
-    addBox(group, [0.46, 0.38, 0.17], materials.glass, [0, 0.56, 0.05], { castShadow: false });
-    addBox(group, [0.36, 0.055, 0.035], hardware, [0, -0.18, 0.13], { castShadow: false });
-    addMesh(group, new THREE.SphereGeometry(0.04, 10, 8), hardware,
-        0.31, -0.08, 0.13, { castShadow: false });
+    if (!cleanAsset) {
+        [-0.62, -0.27, 0.16, 0.52].forEach((y) =>
+            addBox(door, [0.72, 0.045, 0.025], panelWood, [0, y, 0.09], { castShadow: false }));
+        addBox(group, [0.46, 0.38, 0.17], materials.glass, [0, 0.56, 0.05], { castShadow: false });
+        addBox(group, [0.36, 0.055, 0.035], hardware, [0, -0.18, 0.13], { castShadow: false });
+        addMesh(group, new THREE.SphereGeometry(0.04, 10, 8), hardware,
+            0.31, -0.08, 0.13, { castShadow: false });
+    }
     const doorPhoto = makePhotoMaterial(photoSpec, { roughness: 0.32, clearcoat: 0.36 });
     if (doorPhoto)
         addBox(group, [0.80, 1.90, 0.018], doorPhoto, [0, -0.02, 0.112], { castShadow: false });
@@ -1085,18 +1144,21 @@ function createHouse() {
     createGable(house);
 
     // Lange Balkonfassade aus IMG_7376/7377: Fenstergruppen und je eine Balkontür.
-    [4.90, 0.42, -0.55, -2.12, -5.46].forEach((z, index) =>
-        createWindow(house, [3.275, 1.48, z], [0.74, 1.16], "side", PHOTO_CROPS.front.ground[index]));
-    createWindow(house, [3.285, 3.66, 5.45], [1.24, 1.10], "side", PHOTO_CROPS.front.upper[0]);
-    createDoor(house, [3.285, 3.58, 4.10], [0.78, 1.86], "side", PHOTO_CROPS.front.upper[1]);
-    createWindow(house, [3.285, 3.66, 2.72], [1.24, 1.10], "side", PHOTO_CROPS.front.upper[2]);
-    createDoor(house, [3.285, 3.58, 1.45], [0.78, 1.86], "side", PHOTO_CROPS.front.upper[3]);
-    createWindow(house, [3.285, 3.66, 0.18], [0.78, 1.10], "side", PHOTO_CROPS.front.upper[4]);
-    createWindow(house, [3.285, 3.66, -1.42], [0.72, 1.10], "side", PHOTO_CROPS.front.upper[5]);
-    createDoor(house, [3.285, 3.58, -2.70], [0.78, 1.86], "side", PHOTO_CROPS.front.upper[6]);
-    createDoor(house, [3.285, 3.58, -4.06], [0.78, 1.86], "side", PHOTO_CROPS.front.upper[7]);
-    createFrontWoodDoor(house, [3.30, 1.35, -3.15], PHOTO_CROPS.front.woodDoor);
-    createDoor(house, [3.30, 1.35, -4.30], [0.80, 1.92], "side", PHOTO_CROPS.front.glassDoor);
+    createWindow(house, [3.275, 1.48, 4.90], [0.76, 1.16], "side", CLEAN_OPENINGS.window.single);
+    [0.42, -0.55].forEach((z) =>
+        createWindow(house, [3.275, 1.48, z], [0.88, 0.92], "side", CLEAN_OPENINGS.window.cross));
+    createWindow(house, [3.275, 1.48, -2.12], [0.74, 1.16], "side", CLEAN_OPENINGS.window.single);
+    createWindow(house, [3.275, 1.48, -5.46], [0.68, 1.16], "side", CLEAN_OPENINGS.window.narrow);
+    createWindow(house, [3.285, 3.66, 5.45], [1.24, 1.10], "side", CLEAN_OPENINGS.window.double);
+    createDoor(house, [3.285, 3.58, 4.10], [0.78, 1.86], "side", CLEAN_OPENINGS.door.balcony);
+    createWindow(house, [3.285, 3.66, 2.72], [1.24, 1.10], "side", CLEAN_OPENINGS.window.double);
+    createDoor(house, [3.285, 3.58, 1.45], [0.78, 1.86], "side", CLEAN_OPENINGS.door.balcony);
+    createWindow(house, [3.285, 3.66, 0.18], [0.78, 1.10], "side", CLEAN_OPENINGS.window.single);
+    createWindow(house, [3.285, 3.66, -1.42], [0.72, 1.10], "side", CLEAN_OPENINGS.window.narrow);
+    createDoor(house, [3.285, 3.58, -2.70], [0.78, 1.86], "side", CLEAN_OPENINGS.door.balcony);
+    createDoor(house, [3.285, 3.58, -4.06], [0.78, 1.86], "side", CLEAN_OPENINGS.door.balcony);
+    createFrontWoodDoor(house, [3.30, 1.35, -3.15], CLEAN_OPENINGS.door.wood);
+    createDoor(house, [3.30, 1.35, -4.30], [0.80, 1.92], "side", CLEAN_OPENINGS.door.entrance);
     createBayWindow(house);
 
     // Gartenfassade aus IMG_7397: dunkler Garagenabschnitt und acht Öffnungen in Fotoreihenfolge.
@@ -1110,22 +1172,27 @@ function createHouse() {
         [3.82, 0.62],
         [5.22, 1.02]
     ].forEach(([z, width], index) =>
-        createWindow(house, [-3.30, 3.70, z], [width, 1.08], "side-back", PHOTO_CROPS.garden.upper[index]));
-    createDoor(house, [-3.285, 3.58, -3.62], [1.18, 1.86], "side-back", PHOTO_CROPS.garden.julietDoor);
+        createWindow(house, [-3.30, 3.70, z], [width, 1.08], "side-back",
+            index >= 4 ? CLEAN_OPENINGS.window.cross : CLEAN_OPENINGS.window.single));
+    createDoor(house, [-3.285, 3.58, -3.62], [1.18, 1.86], "side-back",
+        CLEAN_OPENINGS.door.balconyDouble);
     createJulietGuard(house, -3.62);
-    createWindow(house, [-3.30, 1.50, -4.92], [0.72, 1.10], "side-back", PHOTO_CROPS.garden.groundLeft);
-    createDoor(house, [-3.30, 1.34, -3.55], [0.82, 1.92], "side-back", PHOTO_CROPS.garden.groundDoor);
-    createWindow(house, [-3.30, 1.46, 0.18], [0.62, 1.10], "side-back", PHOTO_CROPS.garden.groundMiddle);
-    createWoodDoorWithCanopy(house, [-3.30, 1.34, 1.80], PHOTO_CROPS.garden.woodDoor);
-    createWindow(house, [-3.30, 1.48, 5.08], [1.24, 1.14], "side-back", PHOTO_CROPS.garden.garageWindow);
+    createWindow(house, [-3.30, 1.50, -4.92], [0.72, 1.10], "side-back", CLEAN_OPENINGS.window.single);
+    createDoor(house, [-3.30, 1.34, -3.55], [0.82, 1.92], "side-back", CLEAN_OPENINGS.door.entrance);
+    createWindow(house, [-3.30, 1.46, 0.18], [0.62, 1.10], "side-back", CLEAN_OPENINGS.window.narrow);
+    createWoodDoorWithCanopy(house, [-3.30, 1.34, 1.80], CLEAN_OPENINGS.door.wood);
+    createWindow(house, [-3.30, 1.48, 5.08], [1.24, 1.14], "side-back", CLEAN_OPENINGS.window.cross);
 
     // Weiße Heckenseite: zwei Fensterreihen; laut Foto gibt es hier keine Tür.
     // Die rechten Fenster bleiben vor der Erkerkante und schneiden nicht mehr in dessen Rückfläche.
     [-1.92, 0, 1.40].forEach((x, index) =>
-        createWindow(house, [x, 3.68, -GABLE_Z - 0.02], [0.72, 1.08], "back", PHOTO_CROPS.side.upper[index]));
+        createWindow(house, [x, 3.68, -GABLE_Z - 0.02], [0.72, 1.08], "back",
+            CLEAN_OPENINGS.window.single));
     [-1.90, -0.15].forEach((x, index) =>
-        createWindow(house, [x, 1.46, -GABLE_Z - 0.02], [0.78, 1.14], "back", PHOTO_CROPS.side.ground[index]));
-    createWindow(house, [1.25, 1.46, -GABLE_Z - 0.02], [0.78, 1.14], "back", PHOTO_CROPS.side.ground[2]);
+        createWindow(house, [x, 1.46, -GABLE_Z - 0.02], [0.78, 1.14], "back",
+            CLEAN_OPENINGS.window.single));
+    createWindow(house, [1.25, 1.46, -GABLE_Z - 0.02], [0.78, 1.14], "back",
+        CLEAN_OPENINGS.window.single);
 
     createBalconies(house);
     return house;
@@ -1408,6 +1475,29 @@ function createInteriorDollhouse() {
     addBox(interior, [0.11, 0.88, 6.65], innerWall, [0.18, 1.12, 1.68]);
     addBox(interior, [0.11, 0.82, 6.65], innerWall, [0.18, 3.30, -1.68]);
 
+    // Die rückwärtige Dachhälfte bleibt als räumlicher Abschluss erhalten,
+    // während die kameranahe Hälfte offen ist. Zusammen mit der nebelartig
+    // ausgeblendeten Außenhülle entsteht der klare App-Puppenhausstil aus der
+    // Referenz, ohne dass die Zimmer wie lose Möbelplatten wirken.
+    const innerRoof = new THREE.MeshStandardMaterial({ color: 0xf5efe4, roughness: 0.92 });
+    const roofSlope = Math.atan2(2.15, 3.55);
+    const innerRoofLength = Math.hypot(3.55, 2.15);
+    addBox(interior, [innerRoofLength, 0.13, HOUSE_LENGTH - 0.34], innerRoof,
+        [-1.76, 5.86, 0], { rotation: [0, 0, roofSlope], castShadow: false });
+
+    // Warmes, weiches Raumlicht macht jedes Zimmer auch auf dem iPhone klar
+    // lesbar. Die Lampen gehören zur Interior-Gruppe und verschwinden deshalb
+    // vollständig, sobald wieder herausgezoomt wird.
+    [
+        [-1.1, 2.15, 4.25], [-1.0, 2.10, 0.25], [-1.0, 2.10, -4.40],
+        [-1.1, 4.35, 4.25], [-1.0, 4.32, 0.30], [-1.0, 4.30, -4.35]
+    ].forEach(([x, y, z]) => {
+        const roomLight = new THREE.PointLight(0xffe2ad, 0.78, 4.3, 1.55);
+        roomLight.position.set(x, y, z);
+        roomLight.castShadow = false;
+        interior.add(roomLight);
+    });
+
     function table(x, y, z, width = 1.15, length = 0.72) {
         addBox(interior, [width, 0.10, length], furnitureWood, [x, y + 0.72, z], { radius: 0.025 });
         [-1, 1].forEach((sx) => [-1, 1].forEach((sz) =>
@@ -1458,7 +1548,7 @@ function createInteriorDollhouse() {
             id,
             label,
             position: new THREE.Vector3(...position),
-            anchor: new THREE.Vector3(position[0] + 0.22, position[1] + 0.30, position[2]),
+            anchor: new THREE.Vector3(position[0] + 0.24, position[1] + 0.30, position[2]),
             baseWatts,
             schedule,
             led,
@@ -1497,14 +1587,14 @@ function createInteriorDollhouse() {
     sofa(-1.35, 2.88, -4.65, 0);
     addBox(interior, [1.10, 0.65, 0.10], screen, [-2.82, 3.86, -4.65], { castShadow: false });
 
-    addSocket("fridge", "Kühlschrank", [2.82, 1.02, 4.82], 80, "always", fridgeDisplay);
-    addSocket("coffee", "Kaffeemaschine", [2.82, 1.12, 3.20], 900, "coffee");
-    addSocket("tv", "Fernseher", [2.82, 1.12, -1.72], 105, "evening", tvScreen);
-    addSocket("living-light", "Wohnzimmerlicht", [2.82, 1.72, -2.75], 24, "light", livingLamp);
-    addSocket("washer", "Waschmaschine", [2.82, 1.08, -4.95], 620, "washer");
-    addSocket("office", "Arbeitsplatz · PC", [2.82, 3.20, 4.45], 165, "office", pcScreen);
-    addSocket("bed-light", "Schlafzimmerlicht", [2.82, 3.90, 0.62], 18, "light", bedLamp);
-    addSocket("router", "Router & Netzwerk", [2.82, 3.20, -4.65], 22, "always");
+    addSocket("fridge", "Kühlschrank", [-2.82, 1.02, 4.82], 80, "always", fridgeDisplay);
+    addSocket("coffee", "Kaffeemaschine", [-2.82, 1.12, 3.20], 900, "coffee");
+    addSocket("tv", "Fernseher", [-2.82, 1.12, -1.72], 105, "evening", tvScreen);
+    addSocket("living-light", "Wohnzimmerlicht", [-2.82, 1.72, -2.75], 24, "light", livingLamp);
+    addSocket("washer", "Waschmaschine", [-2.82, 1.08, -4.95], 620, "washer");
+    addSocket("office", "Arbeitsplatz · PC", [-2.82, 3.20, 4.45], 165, "office", pcScreen);
+    addSocket("bed-light", "Schlafzimmerlicht", [-2.82, 3.90, 0.62], 18, "light", bedLamp);
+    addSocket("router", "Router & Netzwerk", [-2.82, 3.20, -4.65], 22, "always");
 
     return { group: interior, devices };
 }
@@ -2255,6 +2345,56 @@ loadDetailedVehicles(vehicleModels);
 const gridBoxModel = createGridBox();
 const chargingConnection = createAudiChargeConnection();
 
+// Eigene Materialkopien erlauben einen weichen, nebelartigen Übergang zur
+// Innenansicht, ohne gemeinsam genutzte Materialien von Garten, Fahrzeugen
+// oder Energiekomponenten transparent zu machen.
+const exteriorFadeMaterials = [];
+const exteriorCutawayHiddenGroups = [];
+function prepareExteriorFade(group) {
+    const copies = new Map();
+    const copyMaterial = (source) => {
+        if (copies.has(source))
+            return copies.get(source);
+        const material = source.clone();
+        material.userData.baseOpacity = source.opacity;
+        material.userData.baseTransparent = source.transparent;
+        material.userData.baseDepthWrite = source.depthWrite;
+        copies.set(source, material);
+        exteriorFadeMaterials.push(material);
+        return material;
+    };
+    group.traverse((object) => {
+        if (object.userData.hideInCutaway)
+            exteriorCutawayHiddenGroups.push(object);
+        if (!object.isMesh)
+            return;
+        object.material = Array.isArray(object.material) ?
+            object.material.map(copyMaterial) : copyMaterial(object.material);
+    });
+}
+
+function applyExteriorFade(amount) {
+    exteriorCutawayHiddenGroups.forEach((group) => {
+        group.visible = amount < 0.42;
+    });
+    exteriorFadeMaterials.forEach((material) => {
+        const baseOpacity = material.userData.baseOpacity ?? 1;
+        // Im fertigen Schnitt bleibt nur eine sehr feine Nebelkontur übrig.
+        // Mehrere übereinanderliegende Fenster-, Balkon- und Dachmaterialien
+        // addieren sich optisch; 1,8 % pro Material hält deshalb die Räume
+        // frei und lässt trotzdem die ursprüngliche Hausform erkennen.
+        const fadedOpacity = Math.min(baseOpacity, 0.018);
+        material.opacity = THREE.MathUtils.lerp(baseOpacity, fadedOpacity, amount);
+        const nextTransparent = amount > 0.01 || material.userData.baseTransparent;
+        if (material.transparent !== nextTransparent) {
+            material.transparent = nextTransparent;
+            material.needsUpdate = true;
+        }
+        material.depthWrite = amount < 0.22 ? material.userData.baseDepthWrite : false;
+    });
+}
+prepareExteriorFade(exteriorHouse);
+
 const hemisphere = new THREE.HemisphereLight(0xd9efff, 0x34452d, 1.58);
 scene.add(hemisphere);
 const sun = new THREE.DirectionalLight(0xffedcf, 3.65);
@@ -2294,9 +2434,11 @@ function createFlow(id, points, color, options = {}) {
     const glowRadius = options.glowRadius || 0.064;
     const pulseRadius = options.pulseRadius || 0.11;
     const cableMaterial = new THREE.MeshStandardMaterial({
-        color: 0x26323b,
-        roughness: 0.64,
-        metalness: 0.18
+        color: options.interior ? 0xf4f7f8 : 0x26323b,
+        roughness: options.interior ? 0.42 : 0.64,
+        metalness: options.interior ? 0.06 : 0.18,
+        emissive: options.interior ? 0x28343b : 0x000000,
+        emissiveIntensity: options.interior ? 0.24 : 0
     });
     const tubeMaterial = new THREE.MeshBasicMaterial({
         color,
@@ -2328,7 +2470,7 @@ function createFlow(id, points, color, options = {}) {
         lightSegment.renderOrder = 2;
         tube.add(lightSegment);
         if (index < points.length - 1) {
-            const sleeve = addMesh(world, new THREE.SphereGeometry(0.066, 12, 8), cableMaterial,
+            const sleeve = addMesh(cable, new THREE.SphereGeometry(0.066, 12, 8), cableMaterial,
                 end.x, end.y, end.z, { castShadow: false });
             sleeve.renderOrder = 1;
         }
@@ -2350,19 +2492,27 @@ function createFlow(id, points, color, options = {}) {
         world.add(pulse);
         pulses.push(pulse);
     }
-    flows[id] = { curve, cable, tube, tubeMaterial, pulses, active: false, reverse: false };
+    flows[id] = {
+        curve,
+        cable,
+        tube,
+        tubeMaterial,
+        pulses,
+        active: false,
+        reverse: false,
+        isInterior: Boolean(options.interior),
+        showCable: options.showCable !== false
+    };
 }
 
 const pvPanelAnchors = PERGOLA_PANEL_LAYOUT.map(([x, z], index) => ({
     id: "pv" + (index + 1),
     anchor: new THREE.Vector3(
         PERGOLA_CENTER.x + x,
-        PERGOLA_ROOF_Y - Math.tan(PERGOLA_ROOF_PITCH) * x + 0.075,
-        PERGOLA_CENTER.z + z
-    ),
-    tangentAnchor: new THREE.Vector3(
-        PERGOLA_CENTER.x + x + 0.28,
-        PERGOLA_ROOF_Y - Math.tan(PERGOLA_ROOF_PITCH) * x + 0.075,
+        // Nur wenige Millimeter über der Glasfläche: Die HTML-Schrift sitzt
+        // optisch direkt auf dem Modul, bleibt aber als Screen-Space-Overlay
+        // unabhängig von Drehung und Dachneigung immer waagerecht lesbar.
+        PERGOLA_ROOF_Y - Math.tan(PERGOLA_ROOF_PITCH) * x + 0.045,
         PERGOLA_CENTER.z + z
     )
 }));
@@ -2439,17 +2589,16 @@ createFlow("audi", [
 ], colors.audi, { showCable: false });
 
 createFlow("houseMain", [
-    [3.62, 2.40, -1.42], [3.08, 2.40, -1.42], [3.08, 2.40, -3.18],
-    [3.08, 1.38, -3.18],
-    [2.72, 1.38, -3.18]
-], "#fb923c");
+    [3.62, 2.40, -1.42], [3.08, 2.40, -1.42], [3.08, 0.72, -1.42],
+    [-2.72, 0.72, -1.42], [-2.72, 1.38, -1.42], [-2.72, 1.38, -3.18]
+], "#fb923c", { interior: true, cableRadius: 0.018, glowRadius: 0.030, pulseRadius: 0.060 });
 interiorHouse.devices.forEach((device) => {
     createFlow("room-" + device.id, [
-        [2.72, 1.38, -3.18],
-        [2.72, device.position.y, -3.18],
-        [2.72, device.position.y, device.position.z],
+        [-2.72, 1.38, -3.18],
+        [-2.72, device.position.y, -3.18],
+        [-2.72, device.position.y, device.position.z],
         [device.position.x, device.position.y, device.position.z]
-    ], "#fb923c");
+    ], "#fb923c", { interior: true, cableRadius: 0.016, glowRadius: 0.028, pulseRadius: 0.055 });
 });
 
 function setInteriorFlowVisibility(visible) {
@@ -2464,6 +2613,18 @@ function setInteriorFlowVisibility(visible) {
 }
 setInteriorFlowVisibility(false);
 
+function setExteriorFlowVisibility(visible) {
+    Object.values(flows).filter((flow) => !flow.isInterior).forEach((flow) => {
+        flow.cable.visible = visible && flow.showCable;
+        flow.tube.visible = visible;
+        flow.tubeMaterial.opacity = visible && flow.active ? 0.92 : 0;
+        flow.pulses.forEach((pulse) => {
+            pulse.visible = visible && flow.active;
+            pulse.material.opacity = flow.active ? 1 : 0;
+        });
+    });
+}
+
 const labelAnchors = {
     // Die vier Übersichtskarten sitzen direkt über ihrer Komponente. Zuvor
     // lagen PV, Netz und Solarbank gemeinsam auf den Leitungen und überdeckten
@@ -2471,9 +2632,12 @@ const labelAnchors = {
     // Die Gesamtkarte sitzt hausnah am Kabelzulauf und verdeckt dadurch keine
     // der vier Modulanzeigen mehr.
     pv: new THREE.Vector3(3.48, 3.18, -5.55),
-    battery: new THREE.Vector3(3.50, 3.98, -1.42),
-    grid: new THREE.Vector3(GRID_BOX_POSITION.x, 1.72, GRID_BOX_POSITION.z),
-    audi: new THREE.Vector3(5.00, 1.52, 1.00)
+    // Diese Punkte markieren jeweils die Oberkante des echten 3D-Objekts.
+    // Die Karte wird per CSS vollständig oberhalb dieses Punktes angeordnet,
+    // statt mit ihrer Mitte halb im Gerät zu stehen.
+    battery: new THREE.Vector3(3.50, 3.66, -1.42),
+    grid: new THREE.Vector3(GRID_BOX_POSITION.x, 1.18, GRID_BOX_POSITION.z),
+    audi: new THREE.Vector3(5.00, 1.72, 1.00)
 };
 
 const labelElements = {};
@@ -2936,10 +3100,11 @@ function setFlowState(flow, active, reverse = false) {
     flow.reverse = reverse;
     // Die Installation selbst bleibt einheitlich dunkel. Erst der tatsächliche
     // Stromfluss legt eine farbige Lichtspur und wandernde Energiepunkte darüber.
-    flow.tubeMaterial.opacity = active ? 0.92 : 0;
+    const layerVisible = flow.isInterior ? cutawayVisible : !cutawayVisible;
+    flow.tubeMaterial.opacity = active && layerVisible ? 0.92 : 0;
     flow.pulses.forEach((pulse) => {
         pulse.material.opacity = active ? 1 : 0;
-        pulse.visible = active;
+        pulse.visible = active && layerVisible;
     });
 }
 
@@ -3018,16 +3183,53 @@ function updateLiveUi() {
     menuStopThreshold.textContent = Math.round(raw.offThreshold) + " %";
 }
 
-const cutawayVisible = false;
+const CUTAWAY_ENTER_ZOOM = 2.34;
+const CUTAWAY_EXIT_ZOOM = 2.14;
+let cutawayVisible = false;
+let cutawayBlend = 0;
+let cutawayTarget = 0;
 
-function updateCutawayMode() {
-    // Bewusste Produktentscheidung: Auch beim maximalen Zoom bleibt die
-    // fotonahe Außenansicht erhalten. Etablierte Energie-Apps vertiefen
-    // Geräte- und Flussdaten, statt eine vollständige Hausverdrahtung in die
-    // Übersicht zu legen. Die vorbereitete Innenansicht bleibt deaktiviert,
-    // bis ein glaubwürdiger, weicher Wand-/Nebelschnitt umgesetzt ist.
-    const detailLevel = state.zoom >= 1.36 ? "close" :
-        state.zoom >= 1.08 ? "near" : "overview";
+function setCutawayVisible(visible) {
+    if (cutawayVisible === visible)
+        return;
+    cutawayVisible = visible;
+    cutawayTarget = visible ? 1 : 0;
+    stage.classList.toggle("house-cutaway", visible);
+    if (visible)
+        interiorHouse.group.visible = true;
+    [pergolaModel, solarBankModel, gridBoxModel,
+        vehicleModels.audi.slot, vehicleModels.yeti.slot,
+        vehicleModels.fox.slot, vehicleModels.karoq.slot].forEach((model) => {
+        model.visible = !visible;
+    });
+    updateInteriorElectricity(simulatedHouseLoad, new Date());
+    setExteriorFlowVisibility(!visible);
+
+    // Außen liegende Ladekabel und Stecker würden in der offenen
+    // Puppenhausansicht durch Zimmer laufen. Beim Zurückzoomen erscheinen sie
+    // wieder exakt passend zum echten Steckerstatus.
+    const raw = componentData().raw;
+    chargingConnection.attached.visible = !visible && raw.plugConnected;
+    chargingConnection.loose.visible = !visible && !raw.plugConnected;
+    chargingConnection.attachedCable.visible = !visible && raw.plugConnected;
+    chargingConnection.dockedCable.visible = !visible && !raw.plugConnected;
+}
+
+function updateCutawayMode(delta = 0.016) {
+    const shouldShowInterior = cutawayVisible ?
+        state.zoom >= CUTAWAY_EXIT_ZOOM : state.zoom >= CUTAWAY_ENTER_ZOOM;
+    setCutawayVisible(shouldShowInterior);
+    cutawayBlend = THREE.MathUtils.damp(cutawayBlend, cutawayTarget, 6.5, delta);
+    if (Math.abs(cutawayBlend - cutawayTarget) < 0.002)
+        cutawayBlend = cutawayTarget;
+    applyExteriorFade(cutawayBlend);
+    // Beim Herauszoomen verschwindet die helle Innen-Dachhälfte, bevor das
+    // rote Außendach wieder eingeblendet wird. So gibt es keinen kurzen
+    // weißen Doppel-Dachzustand während des Übergangs.
+    interiorHouse.group.visible = cutawayVisible || cutawayBlend > 0.44;
+
+    const detailLevel = cutawayVisible ? "interior" :
+        state.zoom >= 1.36 ? "close" : state.zoom >= 1.08 ? "near" : "overview";
     stage.dataset.detailLevel = detailLevel;
 }
 
@@ -3045,7 +3247,11 @@ function updateLabelPositions() {
         const edgeMarginX = expanded ? Math.min(116, rect.width * 0.34) :
             Math.min(64, rect.width * 0.22);
         const x = THREE.MathUtils.clamp(rawX, edgeMarginX, rect.width - edgeMarginX);
-        const y = THREE.MathUtils.clamp(rawY, 30, rect.height - 42);
+        // Weil die Karte mit ihrer Unterkante am Anker sitzt, muss am oberen
+        // Bildrand ihre komplette Höhe berücksichtigt werden.
+        const topGuard = expanded ? Math.min(218, rect.height * 0.43) :
+            Math.min(112, rect.height * 0.26);
+        const y = THREE.MathUtils.clamp(rawY, topGuard, rect.height - 28);
         const element = labelElements[id];
         element.style.left = x + "px";
         element.style.top = y + "px";
@@ -3073,9 +3279,8 @@ function updateLabelPositions() {
         const y = expanded ? THREE.MathUtils.clamp(rawY, 66, rect.height - 66) : rawY;
         element.style.left = x + "px";
         element.style.top = y + "px";
-        // Die Werte bleiben unabhängig vom Blickwinkel waagerecht lesbar,
-        // ihr Mittelpunkt folgt weiterhin exakt dem jeweiligen Modul.
-        element.style.setProperty("--string-label-angle", "0deg");
+        // Das Overlay erhält keinerlei 3D-Winkel. Nur sein Mittelpunkt folgt
+        // dem Modul; Text und Zusatzinformationen bleiben immer waagerecht.
         element.style.setProperty("--string-label-scale", THREE.MathUtils.clamp(
             0.64 + state.zoom * 0.32,
             0.82,
@@ -3409,7 +3614,7 @@ function animate(time) {
     state.zoom = THREE.MathUtils.damp(state.zoom, state.targetZoom, 10, delta);
     world.rotation.y = state.yaw;
     updateCameraTransform();
-    updateCutawayMode();
+    updateCutawayMode(delta);
 
     if (Math.floor(seconds) !== Math.floor(seconds - delta))
         updatePanelDetails();

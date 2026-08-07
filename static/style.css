@@ -306,8 +306,23 @@ header p{
     text-align:left;
     text-shadow:0 1px 2px rgba(2,6,23,.9);
     pointer-events:auto;
-    transform:translate(-50%,-50%) scale(var(--scene-label-scale,1));
+    transform:translate(-50%,calc(-100% - 10px)) scale(var(--scene-label-scale,1));
+    transform-origin:50% 100%;
     transition:filter .2s ease,opacity .2s ease,border-color .2s ease;
+}
+
+.house-scene-label::after{
+    content:"";
+    position:absolute;
+    top:100%;
+    left:50%;
+    width:2px;
+    height:10px;
+    border-radius:999px;
+    background:linear-gradient(var(--scene-color,#5eead4),rgba(226,232,240,.25));
+    box-shadow:0 0 5px color-mix(in srgb,var(--scene-color,#5eead4) 42%,transparent);
+    transform:translateX(-50%);
+    pointer-events:none;
 }
 
 .house-scene-head,
@@ -530,7 +545,9 @@ header p{
     line-height:1;
     white-space:nowrap;
     pointer-events:auto;
-    transform:translate(-50%,-50%) rotate(var(--string-label-angle,0deg)) scale(var(--string-label-scale,.88));
+    /* Reine Bildschirmbeschriftung: Sie folgt dem Modulmittelpunkt, übernimmt
+       aber weder Drehung noch Neigung der 3D-Pergola. */
+    transform:translate(-50%,-50%) scale(var(--string-label-scale,.88));
     transform-origin:center;
     text-shadow:
         0 2px 4px rgba(2,6,23,1),
@@ -797,18 +814,18 @@ header p{
     left:50%;
     display:none;
     max-width:calc(100% - 32px);
-    padding:7px 11px;
+    padding:8px 13px;
     border:1px solid rgba(251,146,60,.52);
     border-radius:999px;
-    background:rgba(30,20,15,.84);
+    background:linear-gradient(135deg,rgba(15,23,42,.94),rgba(30,41,59,.88));
     color:#ffedd5;
-    font-size:9px;
+    font-size:10px;
     font-weight:900;
     letter-spacing:.04em;
     text-align:center;
     white-space:nowrap;
     transform:translateX(-50%);
-    box-shadow:0 4px 18px rgba(2,6,23,.44);
+    box-shadow:0 7px 24px rgba(2,6,23,.52),0 0 14px rgba(251,146,60,.14);
     pointer-events:none;
 }
 
@@ -820,13 +837,18 @@ header p{
     position:absolute;
     z-index:5;
     display:none;
-    padding:3px 5px;
+    min-width:66px;
+    padding:5px 7px;
+    border:1px solid rgba(148,163,184,.28);
+    border-radius:8px;
+    background:rgba(7,15,27,.76);
     color:#cbd5e1;
-    font-size:8px;
+    font-size:8.8px;
     font-weight:800;
     line-height:1.15;
     text-align:center;
     text-shadow:0 2px 4px #020617,1px 0 #020617,-1px 0 #020617;
+    box-shadow:0 4px 12px rgba(2,6,23,.34);
     transform:translate(-50%,-50%) scale(var(--device-label-scale,1));
     pointer-events:none;
 }
@@ -839,6 +861,8 @@ header p{
 
 .house-device-label.active{
     color:#ffedd5;
+    border-color:rgba(251,146,60,.62);
+    background:rgba(67,38,20,.82);
     filter:drop-shadow(0 0 5px #fb923c);
 }
 
