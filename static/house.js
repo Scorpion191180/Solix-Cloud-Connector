@@ -1297,8 +1297,12 @@ function createHouse() {
         [2.42, 1.02, INDIVIDUAL_OPENINGS.window.whiteCurtain],
         [3.82, 0.62, INDIVIDUAL_OPENINGS.window.brownDivided],
         [5.22, 1.02, INDIVIDUAL_OPENINGS.window.brownDoubleCurtain]
-    ].forEach(([z, width, opening]) =>
-        createWindow(house, [-3.30, 3.70, z], [width, 1.08], "side-back", opening));
+    ].forEach(([z, width, opening]) => {
+        // Das obere Fenster im braunen Schindelabschnitt braucht wegen der
+        // vorgehängten Fassadenschicht eine weiter außen liegende Ebene.
+        const facadeX = z > 4.5 ? -3.39 : -3.30;
+        createWindow(house, [facadeX, 3.70, z], [width, 1.08], "side-back", opening);
+    });
     createDoor(house, [-3.285, 3.58, -3.62], [1.18, 1.86], "side-back",
         INDIVIDUAL_OPENINGS.door.balconyDouble);
     createJulietGuard(house, -3.62);
@@ -1310,7 +1314,8 @@ function createHouse() {
         INDIVIDUAL_OPENINGS.window.brownNarrow);
     createWoodDoorWithCanopy(house, [-3.30, 1.34, 1.80],
         INDIVIDUAL_OPENINGS.door.rearDecorative, [1.56, 1.92]);
-    createWindow(house, [-3.30, 1.48, 5.08], [1.24, 1.14], "side-back",
+    // Auch das untere Fenster sitzt sichtbar vor den braunen Schindeln.
+    createWindow(house, [-3.39, 1.48, 5.08], [1.24, 1.14], "side-back",
         INDIVIDUAL_OPENINGS.window.brownDoubleCurtain);
 
     // Weiße Heckenseite: zwei Fensterreihen; laut Foto gibt es hier keine Tür.
@@ -2018,7 +2023,7 @@ function createVehicles() {
     // prozeduralen Platzhalter. Getrennte Vorder-/Heckpositionen verhindern,
     // dass das Kennzeichen sichtbar vor dem vorgesehenen Ausschnitt schwebt.
     addVehiclePlates(audiSlot, "FDS-LD-900", {
-        frontDepth: 2.07, rearDepth: 1.985, frontY: 0.52, rearY: 0.68
+        frontDepth: 2.07, rearDepth: 1.985, frontY: 0.52, rearY: 0.82
     });
 
     // IMG_7378: schwarzer Skoda Yeti mittig, kleiner schwarzer VW Fox ganz rechts.
@@ -2058,7 +2063,7 @@ function createVehicles() {
     karoqFallback.scale.set(1.12, 1.14, 1.14);
     karoqSlot.add(karoqFallback);
     addVehiclePlates(karoqSlot, "FDS-KS-800", {
-        frontDepth: 2.03, rearDepth: 1.945, frontY: 0.52, rearY: 0.67
+        frontDepth: 2.03, rearDepth: 1.945, frontY: 0.52, rearY: 0.81
     });
 
     return {

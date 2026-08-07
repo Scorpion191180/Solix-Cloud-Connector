@@ -21,8 +21,8 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260807-60", dashboard)
-        self.assertIn("house.js?v=20260807-60", dashboard)
+        self.assertIn("style.css?v=20260807-61", dashboard)
+        self.assertIn("house.js?v=20260807-61", dashboard)
         self.assertIn("app.js?v=20260805-44", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
@@ -88,7 +88,8 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("Gartenfassade aus IMG_7397", script)
         self.assertIn("[0.16, 4.90, 2.45]", script)
         self.assertIn("[5.22, 1.02, INDIVIDUAL_OPENINGS.window.brownDoubleCurtain]", script)
-        self.assertIn('createWindow(house, [-3.30, 1.48, 5.08]', script)
+        self.assertIn("const facadeX = z > 4.5 ? -3.39 : -3.30", script)
+        self.assertIn('createWindow(house, [-3.39, 1.48, 5.08]', script)
         self.assertIn('THREE.MathUtils.degToRad(-60)', script)
         self.assertIn('addBox(pool, [1.62, 0.17, 5.55], deckWood, [-2.90, 1.04, 0]', script)
         self.assertIn("pool.position.set(-7.55, 0, -6.72)", script)
@@ -277,6 +278,7 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('.house-scene-label[data-component="pv"]', stylesheet)
         self.assertIn("chargingConnection.attachedCable.visible", script)
         self.assertIn("FDS-LD-900", script)
+        self.assertIn("frontY: 0.52, rearY: 0.82", script)
         self.assertIn("FDS-SR-700", script)
         self.assertIn("FDS-SL-600", script)
         self.assertNotIn("FDS-RS-700", script)
@@ -306,6 +308,7 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertTrue(asset.exists())
             self.assertLess(asset.stat().st_size, 1_500_000)
         self.assertIn("FDS-KS-800", script)
+        self.assertIn("frontY: 0.52, rearY: 0.81", script)
         self.assertNotIn(".house-stage.is-interacting .house-scene-label", stylesheet)
 
     def test_vehicle_assets_are_web_optimized_and_attributed(self) -> None:
