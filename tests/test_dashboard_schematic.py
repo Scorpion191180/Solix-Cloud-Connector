@@ -21,8 +21,8 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260807-59", dashboard)
-        self.assertIn("house.js?v=20260807-59", dashboard)
+        self.assertIn("style.css?v=20260807-60", dashboard)
+        self.assertIn("house.js?v=20260807-60", dashboard)
         self.assertIn("app.js?v=20260805-44", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
@@ -277,8 +277,14 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('.house-scene-label[data-component="pv"]', stylesheet)
         self.assertIn("chargingConnection.attachedCable.visible", script)
         self.assertIn("FDS-LD-900", script)
-        self.assertIn("FDS-RS-700", script)
-        self.assertIn("FDS-LS-600", script)
+        self.assertIn("FDS-SR-700", script)
+        self.assertIn("FDS-SL-600", script)
+        self.assertNotIn("FDS-RS-700", script)
+        self.assertNotIn("FDS-LS-600", script)
+        self.assertIn("pvMinutesIntoDay", script)
+        self.assertIn("point.minute / 1440 * 100", script)
+        self.assertIn("PV-Tagesverlauf von 00 bis 24 Uhr", script)
+        self.assertIn("door-gable-atlas-v4.jpg", script)
         self.assertIn("facade-wall.jpg", script)
         self.assertIn("roof-tiles.jpg", script)
         self.assertIn("front-reference.jpg", script)
@@ -294,6 +300,7 @@ class DashboardSchematicTests(unittest.TestCase):
             "garden-reference.jpg",
             "garage-gable-reference.jpg",
             "side-gable-reference.jpg",
+            "door-gable-atlas-v4.jpg",
         ):
             asset = ROOT / "static" / "textures" / "house" / filename
             self.assertTrue(asset.exists())

@@ -497,10 +497,23 @@ header p{
     fill:color-mix(in srgb,var(--scene-color,#facc15) 20%,transparent);
 }
 
+.house-sparkline .grid{
+    stroke:rgba(148,163,184,.20);
+    stroke-width:.45;
+    vector-effect:non-scaling-stroke;
+}
+
 .house-sparkline .line{
     fill:none;
     stroke:var(--scene-color,#facc15);
     stroke-width:2.2;
+    vector-effect:non-scaling-stroke;
+}
+
+.house-sparkline .point{
+    fill:#fff7c2;
+    stroke:var(--scene-color,#facc15);
+    stroke-width:1.1;
     vector-effect:non-scaling-stroke;
 }
 

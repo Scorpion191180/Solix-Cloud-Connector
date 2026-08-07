@@ -381,6 +381,11 @@ const housePhotoAtlases = {
         width: 1254,
         height: 1254
     },
+    doorGableV4: {
+        path: "/static/textures/house/door-gable-atlas-v4.jpg",
+        width: 1254,
+        height: 1254
+    },
     garageClean: {
         path: "/static/textures/house/garage-atlas-clean-v3.jpg",
         width: 1254,
@@ -693,12 +698,19 @@ const INDIVIDUAL_OPENINGS = {
         rearGlass: { atlas: "doorsIndividual", x: 170, y: 26, width: 284, height: 575, cleanAsset: true },
         balconyDouble: { atlas: "doorsIndividual", x: 719, y: 27, width: 444, height: 574, cleanAsset: true },
         modernEntrance: { atlas: "doorsIndividual", x: 186, y: 649, width: 248, height: 580, cleanAsset: true },
-        rearDecorative: { atlas: "doorsIndividual", x: 677, y: 654, width: 518, height: 569, cleanAsset: true }
+        rearDecorative: { atlas: "doorsIndividual", x: 677, y: 654, width: 518, height: 569, cleanAsset: true },
+        // IMG_7398: Die Türen des linken Balkons besitzen braune Rahmen wie
+        // die dortigen Fenster, rechts sind sie anthrazit. Beide Scheiben
+        // laufen ohne den zuvor fälschlich gezeigten horizontalen Mittelsteg
+        // über die komplette Türhöhe.
+        balconyLeft: { atlas: "doorGableV4", x: 184, y: 20, width: 262, height: 657, cleanAsset: true },
+        balconyRight: { atlas: "doorGableV4", x: 783, y: 22, width: 282, height: 657, cleanAsset: true }
     },
     garage: {
         door: { atlas: "garageClean", x: 696, y: 58, width: 487, height: 515, cleanAsset: true },
         window: { atlas: "garageClean", x: 129, y: 717, width: 362, height: 436, cleanAsset: true },
-        attic: { atlas: "garageClean", x: 826, y: 768, width: 224, height: 332, cleanAsset: true }
+        attic: { atlas: "garageClean", x: 826, y: 768, width: 224, height: 332, cleanAsset: true },
+        apex: { atlas: "doorGableV4", x: 97, y: 800, width: 429, height: 315, cleanAsset: true }
     }
 };
 
@@ -939,6 +951,18 @@ function createGable(parent) {
     shape.lineTo(3.22, 0);
     shape.lineTo(-3.22, 0);
     const geometry = new THREE.ShapeGeometry(shape);
+    // ShapeGeometry übernimmt seine UV-Werte direkt aus den Modellkoordinaten.
+    // Dadurch wurden die Schindeln im Dreieck ab dem Obergeschoss massiv
+    // gestreckt. Diese UVs führen das Raster der rechteckigen Wand nahtlos in
+    // gleicher Weltgröße bis zur Giebelspitze weiter.
+    const gablePositions = geometry.getAttribute("position");
+    const gableUvs = geometry.getAttribute("uv");
+    for (let index = 0; index < gablePositions.count; index += 1) {
+        const localX = gablePositions.getX(index);
+        const localY = gablePositions.getY(index);
+        gableUvs.setXY(index, (localX + 3.22) / 6.44, 1 + localY / 4.90);
+    }
+    gableUvs.needsUpdate = true;
     const triangle = addMesh(parent, geometry, materials.shingle, 0, 4.93, GABLE_Z);
     triangle.castShadow = true;
 
@@ -954,7 +978,8 @@ function createGable(parent) {
     [-1.15, 1.15].forEach((x, index) =>
         createWindow(parent, [x, 5.20, GABLE_Z + 0.12], [0.58, 0.84], "front",
             INDIVIDUAL_OPENINGS.garage.attic));
-    addBox(parent, [0.48, 0.25, 0.12], materials.darkTrim, [0, 6.36, GABLE_Z + 0.12]);
+    createWindow(parent, [0, 6.36, GABLE_Z + 0.12], [0.58, 0.34], "front",
+        INDIVIDUAL_OPENINGS.garage.apex);
 
     const rearGeometry = new THREE.ShapeGeometry(shape);
     const rearTriangle = addMesh(parent, rearGeometry, materials.wall, 0, 4.93, -GABLE_Z, {
@@ -1244,19 +1269,19 @@ function createHouse() {
     createWindow(house, [3.285, 3.66, 5.45], [1.24, 1.10], "side",
         INDIVIDUAL_OPENINGS.window.brownDoubleCurtain);
     createDoor(house, [3.285, 3.58, 4.10], [0.78, 1.86], "side",
-        INDIVIDUAL_OPENINGS.door.rearGlass);
+        INDIVIDUAL_OPENINGS.door.balconyLeft);
     createWindow(house, [3.285, 3.66, 2.72], [1.24, 1.10], "side",
         INDIVIDUAL_OPENINGS.window.brownDouble);
     createDoor(house, [3.285, 3.58, 1.45], [0.78, 1.86], "side",
-        INDIVIDUAL_OPENINGS.door.rearGlass);
+        INDIVIDUAL_OPENINGS.door.balconyLeft);
     createWindow(house, [3.285, 3.66, 0.18], [0.78, 1.10], "side",
         INDIVIDUAL_OPENINGS.window.modernDivided);
     createWindow(house, [3.285, 3.66, -1.42], [0.72, 1.10], "side",
         INDIVIDUAL_OPENINGS.window.modernCurtain);
     createDoor(house, [3.285, 3.58, -2.70], [0.78, 1.86], "side",
-        INDIVIDUAL_OPENINGS.door.rearGlass);
+        INDIVIDUAL_OPENINGS.door.balconyRight);
     createDoor(house, [3.285, 3.58, -4.06], [0.78, 1.86], "side",
-        INDIVIDUAL_OPENINGS.door.rearGlass);
+        INDIVIDUAL_OPENINGS.door.balconyRight);
     createFrontWoodDoor(house, [3.30, 1.35, -3.15], CLEAN_OPENINGS.door.wood);
     createDoor(house, [3.30, 1.35, -4.30], [0.80, 1.92], "side",
         INDIVIDUAL_OPENINGS.door.modernEntrance);
@@ -1960,17 +1985,23 @@ function createLicensePlateTexture(text) {
     return texture;
 }
 
-function addVehiclePlates(slot, text, halfLength) {
+function addVehiclePlates(slot, text, placement) {
+    const {
+        frontDepth,
+        rearDepth = frontDepth,
+        frontY = 0.52,
+        rearY = frontY
+    } = placement;
     const material = new THREE.MeshStandardMaterial({
         map: createLicensePlateTexture(text),
         roughness: 0.48,
         side: THREE.DoubleSide
     });
     const front = addMesh(slot, new THREE.PlaneGeometry(0.70, 0.16), material,
-        0, 0.52, halfLength + 0.03, { castShadow: false });
+        0, frontY, frontDepth, { castShadow: false });
     front.renderOrder = 6;
     const rear = addMesh(slot, new THREE.PlaneGeometry(0.70, 0.16), material,
-        0, 0.52, -halfLength - 0.03, { rotation: [0, Math.PI, 0], castShadow: false });
+        0, rearY, -rearDepth, { rotation: [0, Math.PI, 0], castShadow: false });
     rear.renderOrder = 6;
 }
 
@@ -1983,7 +2014,12 @@ function createVehicles() {
     audiFallback.scale.set(1.10, 1.17, 1.08);
     audiSlot.add(audiFallback);
     const audiBattery = createAudiBatteryPack(audiSlot);
-    addVehiclePlates(audiSlot, "FDS-LD-900", 2.04);
+    // Die Detailmodelle enden an der Heckklappe etwas früher als ihre
+    // prozeduralen Platzhalter. Getrennte Vorder-/Heckpositionen verhindern,
+    // dass das Kennzeichen sichtbar vor dem vorgesehenen Ausschnitt schwebt.
+    addVehiclePlates(audiSlot, "FDS-LD-900", {
+        frontDepth: 2.07, rearDepth: 1.985, frontY: 0.52, rearY: 0.68
+    });
 
     // IMG_7378: schwarzer Skoda Yeti mittig, kleiner schwarzer VW Fox ganz rechts.
     const yetiSlot = new THREE.Group();
@@ -1992,7 +2028,9 @@ function createVehicles() {
     const yetiFallback = createCar(0x1b2329, "skoda-yeti");
     yetiFallback.scale.set(1.04, 1.16, 1.08);
     yetiSlot.add(yetiFallback);
-    addVehiclePlates(yetiSlot, "FDS-LS-600", 1.91);
+    addVehiclePlates(yetiSlot, "FDS-SL-600", {
+        frontDepth: 1.94, rearDepth: 1.94
+    });
 
     const foxSlot = new THREE.Group();
     foxSlot.position.set(2.10, 0.02, 8.45);
@@ -2003,7 +2041,9 @@ function createVehicles() {
     const foxFallback = createCar(0x202327, "vw-fox");
     foxFallback.scale.set(0.82, 0.88, 0.80);
     foxSlot.add(foxFallback);
-    addVehiclePlates(foxSlot, "FDS-RS-700", 1.73);
+    addVehiclePlates(foxSlot, "FDS-SR-700", {
+        frontDepth: 1.76, rearDepth: 1.76
+    });
 
     // Vor dem linken Tor steht der schwarze Karoq ebenfalls mit seiner Front
     // zum Gebäude. Bis das Detailmodell geladen ist, bleibt ein gleich großer
@@ -2017,7 +2057,9 @@ function createVehicles() {
     const karoqFallback = createCar(0x14191d, "skoda-yeti");
     karoqFallback.scale.set(1.12, 1.14, 1.14);
     karoqSlot.add(karoqFallback);
-    addVehiclePlates(karoqSlot, "FDS-KS-800", 2.00);
+    addVehiclePlates(karoqSlot, "FDS-KS-800", {
+        frontDepth: 2.03, rearDepth: 1.945, frontY: 0.52, rearY: 0.67
+    });
 
     return {
         audi: { slot: audiSlot, fallback: audiFallback, battery: audiBattery },
@@ -3029,30 +3071,58 @@ function detailRowsHtml(rows) {
     ).join("");
 }
 
+function pvMinutesIntoDay(value) {
+    // Die Solix-API liefert ISO-Zeitstempel mit der in APP_TIMEZONE gesetzten
+    // Ortszeit. Die Uhrzeit wird direkt daraus gelesen, damit die Kurve auch
+    // dann an der richtigen Stelle bleibt, wenn das Dashboard aus einer
+    // anderen Browser-Zeitzone geöffnet wird.
+    const match = String(value ?? "").match(/T(\d{2}):(\d{2})/);
+    if (match) {
+        const hours = Number(match[1]);
+        const minutes = Number(match[2]);
+        if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59)
+            return hours * 60 + minutes;
+    }
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.getHours() * 60 + parsed.getMinutes();
+}
+
 function pvSparklineHtml(history, stringIndex = null) {
     const points = Array.isArray(history) ? history
         .map((point) => ({
             time: point?.time,
+            minute: pvMinutesIntoDay(point?.time),
             watts: stringIndex == null ? numberValue(point?.watts) :
                 numberValue(Array.isArray(point?.strings) ? point.strings[stringIndex] : null)
         }))
-        .filter((point) => point.watts != null) : [];
-    if (points.length < 2)
-        return '<span class="house-detail-row"><b>Tageskurve</b><span>baut sich live auf</span></span>';
+        .filter((point) => point.watts != null && point.minute != null)
+        .sort((left, right) => left.minute - right.minute) : [];
+    if (!points.length)
+        return '<span class="house-detail-row"><b>Tagesverlauf</b><span>baut sich live auf</span></span>';
     const max = Math.max(1, ...points.map((point) => point.watts));
-    const coordinates = points.map((point, index) => {
-        const x = points.length === 1 ? 0 : index / (points.length - 1) * 100;
+    const coordinates = points.map((point) => {
+        // Feste Achse von 00:00 bis 24:00 Uhr: Messwerte vom Vormittag bleiben
+        // links, der noch nicht vergangene Teil des Tages bleibt rechts leer.
+        const x = Math.max(0, Math.min(100, point.minute / 1440 * 100));
         const y = 31 - point.watts / max * 27;
-        return x.toFixed(1) + "," + y.toFixed(1);
+        return { x, y, text: x.toFixed(1) + "," + y.toFixed(1) };
     });
-    const area = ["0,34", ...coordinates, "100,34"].join(" ");
-    const first = formatTimestamp(points[0].time).replace(" Uhr", "");
+    const firstX = coordinates[0].x.toFixed(1);
+    const lastPoint = coordinates.at(-1);
+    const area = [firstX + ",34", ...coordinates.map((point) => point.text),
+        lastPoint.x.toFixed(1) + ",34"].join(" ");
     const last = formatTimestamp(points.at(-1).time).replace(" Uhr", "");
-    return '<svg class="house-sparkline" viewBox="0 0 100 34" preserveAspectRatio="none" aria-label="PV-Tageskurve">' +
+    return '<svg class="house-sparkline" viewBox="0 0 100 34" preserveAspectRatio="none" ' +
+        'aria-label="PV-Tagesverlauf von 00 bis 24 Uhr">' +
+        '<line class="grid" x1="25" y1="1" x2="25" y2="34"></line>' +
+        '<line class="grid" x1="50" y1="1" x2="50" y2="34"></line>' +
+        '<line class="grid" x1="75" y1="1" x2="75" y2="34"></line>' +
         '<polygon class="area" points="' + area + '"></polygon>' +
-        '<polyline class="line" points="' + coordinates.join(" ") + '"></polyline></svg>' +
-        '<span class="house-sparkline-caption"><span>' + escapeHtml(first) + '</span><span>max ' +
-        escapeHtml(formatPower(max)) + '</span><span>' + escapeHtml(last) + '</span></span>';
+        '<polyline class="line" points="' + coordinates.map((point) => point.text).join(" ") + '"></polyline>' +
+        '<circle class="point" cx="' + lastPoint.x.toFixed(1) + '" cy="' +
+        lastPoint.y.toFixed(1) + '" r="1.6"></circle></svg>' +
+        '<span class="house-sparkline-caption"><span>00:00</span><span>max ' +
+        escapeHtml(formatPower(max)) + ' · Stand ' + escapeHtml(last) + '</span><span>24:00</span></span>';
 }
 
 function renderComponentDetail(component) {
