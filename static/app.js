@@ -19,6 +19,12 @@ const automationReasons = {
     below_off_threshold_plug_already_off: "Akku unter 10 %: Smart Plug ist bereits ausgeschaltet.",
     cable_not_connected: "Ladestecker nicht verbunden: Smart Plug wurde sicher ausgeschaltet.",
     cable_not_connected_plug_already_off: "Ladestecker nicht verbunden: Smart Plug bleibt ausgeschaltet.",
+    audi_fully_charged: "Audi bei 100 %: Smart Plug wurde ausgeschaltet.",
+    audi_fully_charged_plug_already_off: "Audi bei 100 %: Smart Plug bleibt ausgeschaltet.",
+    audi_away: "Audi ist nicht am Haus: Smart Plug wurde ausgeschaltet.",
+    audi_away_plug_already_off: "Audi ist nicht am Haus: Smart Plug bleibt ausgeschaltet.",
+    audi_location_unknown: "Audi-Standort ist nicht sicher ermittelbar: Smart Plug wurde ausgeschaltet.",
+    audi_location_unknown_plug_already_off: "Audi-Standort ist nicht sicher ermittelbar: Smart Plug bleibt ausgeschaltet.",
     solix_soc_unknown: "Solix-Ladestand unbekannt: Smart Plug wurde sicher ausgeschaltet.",
     solix_soc_unknown_plug_already_off: "Solix-Ladestand unbekannt: Smart Plug bleibt ausgeschaltet.",
     manual_control: "Der Smart Plug wurde zuletzt manuell getestet.",
@@ -29,6 +35,9 @@ const automationDryRunReasons = {
     at_or_above_on_threshold: "Testbetrieb: Smart Plug würde jetzt eingeschaltet.",
     below_off_threshold: "Testbetrieb: Smart Plug würde jetzt ausgeschaltet.",
     cable_not_connected: "Testbetrieb: Smart Plug würde wegen des Ladesteckers ausgeschaltet.",
+    audi_fully_charged: "Testbetrieb: Smart Plug würde bei 100 % Audi-Ladestand ausgeschaltet.",
+    audi_away: "Testbetrieb: Smart Plug würde wegen des entfernten Audis ausgeschaltet.",
+    audi_location_unknown: "Testbetrieb: Smart Plug würde wegen des unbekannten Audi-Standorts ausgeschaltet.",
     solix_soc_unknown: "Testbetrieb: Smart Plug würde wegen unbekanntem Solix-Ladestand ausgeschaltet."
 };
 

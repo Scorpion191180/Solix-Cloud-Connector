@@ -6,15 +6,30 @@ from automation.controller import ChargingAutomation
 
 
 class FakeAudiClient:
-    def __init__(self, connected=True, stale=False, error=None):
+    def __init__(
+        self,
+        connected=True,
+        stale=False,
+        error=None,
+        battery_percent=50,
+        at_home=True,
+        presence_configured=False,
+    ):
         self.connected = connected
         self.stale = stale
         self.error = error
+        self.battery_percent = battery_percent
+        self.at_home = at_home
+        self.presence_configured = presence_configured
 
     async def get_live(self):
         return {
             "available": True,
             "plug_connected": self.connected,
+            "battery_percent": self.battery_percent,
+            "presence_configured": self.presence_configured,
+            "presence_available": self.at_home is not None,
+            "at_home": self.at_home,
             "stale": self.stale,
             "error": self.error,
         }
@@ -90,6 +105,36 @@ class ChargingAutomationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(solix.commands, [False])
         self.assertEqual(status["reason"], "cable_not_connected")
+
+    async def test_evaluation_turns_plug_off_when_audi_is_full(self):
+        solix = FakeSolixClient(80, state=True)
+        controller = self.make_controller(
+            solix, FakeAudiClient(True, battery_percent=100)
+        )
+
+        status = await controller.evaluate()
+
+        self.assertEqual(solix.commands, [False])
+        self.assertEqual(status["reason"], "audi_fully_charged")
+        self.assertEqual(status["audi_battery_percent"], 100)
+
+    async def test_evaluation_turns_plug_off_when_audi_drives_away(self):
+        solix = FakeSolixClient(80, state=True)
+        controller = self.make_controller(
+            solix,
+            FakeAudiClient(
+                True,
+                battery_percent=60,
+                at_home=False,
+                presence_configured=True,
+            ),
+        )
+
+        status = await controller.evaluate()
+
+        self.assertEqual(solix.commands, [False])
+        self.assertEqual(status["reason"], "audi_away")
+        self.assertIs(status["audi_at_home"], False)
 
     async def test_stale_connected_audi_data_cannot_keep_plug_on(self):
         solix = FakeSolixClient(80, state=True)

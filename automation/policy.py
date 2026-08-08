@@ -29,15 +29,33 @@ def decide_smartplug_state(
     current_state: bool | None,
     on_threshold: int = 30,
     off_threshold: int = 10,
+    audi_battery_percent: int | float | None = None,
+    audi_at_home: bool | None = None,
+    home_presence_configured: bool = False,
 ) -> AutomationDecision:
     """Decide whether the charging smart plug should change state.
 
     Safety rules deliberately win over the SOC hysteresis: charging is never
-    permitted with a disconnected/unknown cable or missing Solix SOC data.
+    permitted with a full Audi battery, a disconnected/unknown cable, missing
+    Solix SOC data or an Audi that is known to be away from home.  When the
+    private home geofence is configured, an unknown position is also treated
+    as unsafe so a cached cable state cannot keep the Smart Plug switched on
+    after the vehicle has driven away.
     """
 
     if not enabled:
         return AutomationDecision(None, "automation_disabled")
+
+    if home_presence_configured and audi_at_home is not True:
+        reason = "audi_away" if audi_at_home is False else "audi_location_unknown"
+        if current_state is False:
+            return AutomationDecision(None, f"{reason}_plug_already_off")
+        return AutomationDecision(False, reason)
+
+    if audi_battery_percent is not None and audi_battery_percent >= 100:
+        if current_state is False:
+            return AutomationDecision(None, "audi_fully_charged_plug_already_off")
+        return AutomationDecision(False, "audi_fully_charged")
 
     if cable_connected is not True:
         if current_state is False:

@@ -22,8 +22,8 @@ class DashboardSchematicTests(unittest.TestCase):
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
         self.assertIn("style.css?v=20260808-70", dashboard)
-        self.assertIn("house.js?v=20260808-70", dashboard)
-        self.assertIn("app.js?v=20260805-44", dashboard)
+        self.assertIn("house.js?v=20260808-71", dashboard)
+        self.assertIn("app.js?v=20260808-71", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
 
@@ -263,7 +263,10 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('addEventListener("contextmenu"', script)
         self.assertIn("state.targetPitch", script)
         self.assertIn("state.targetPanX", script)
-        self.assertIn("yaw: -1.567337267354423", script)
+        self.assertIn("yaw: 0", script)
+        self.assertIn("panX: 0.43", script)
+        self.assertIn("panY: 1.02", script)
+        self.assertIn("zoom: 0.85", script)
         self.assertIn("state.targetYaw = DEFAULT_VIEW.yaw", script)
         self.assertIn("Math.max(0, state.zoom - 1) * 0.20", script)
         self.assertIn("0.64 + state.zoom * 0.32", script)

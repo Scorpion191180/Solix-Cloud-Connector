@@ -64,6 +64,43 @@ class AutomationPolicyTests(unittest.TestCase):
         self.assertIs(decision.desired_state, False)
         self.assertEqual(decision.reason, "cable_not_connected")
 
+    def test_full_audi_battery_forces_off(self):
+        decision = decide_smartplug_state(
+            enabled=True,
+            cable_connected=True,
+            battery_percent=80,
+            audi_battery_percent=100,
+            current_state=True,
+        )
+        self.assertIs(decision.desired_state, False)
+        self.assertEqual(decision.reason, "audi_fully_charged")
+
+    def test_audi_away_forces_off_even_with_cached_connected_cable(self):
+        decision = decide_smartplug_state(
+            enabled=True,
+            cable_connected=True,
+            battery_percent=80,
+            audi_battery_percent=55,
+            audi_at_home=False,
+            home_presence_configured=True,
+            current_state=True,
+        )
+        self.assertIs(decision.desired_state, False)
+        self.assertEqual(decision.reason, "audi_away")
+
+    def test_unknown_location_forces_off_when_home_presence_is_configured(self):
+        decision = decide_smartplug_state(
+            enabled=True,
+            cable_connected=True,
+            battery_percent=80,
+            audi_battery_percent=55,
+            audi_at_home=None,
+            home_presence_configured=True,
+            current_state=True,
+        )
+        self.assertIs(decision.desired_state, False)
+        self.assertEqual(decision.reason, "audi_location_unknown")
+
     def test_unknown_cable_never_turns_on(self):
         decision = decide_smartplug_state(
             enabled=True,

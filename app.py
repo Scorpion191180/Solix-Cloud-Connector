@@ -127,6 +127,26 @@ async def manual_smartplug(
                 status_code=409,
                 detail="Einschalten ist nur bei verbundenem Audi-Ladestecker möglich",
             )
+        audi_battery_percent = audi_data.get("battery_percent")
+        if (
+            not isinstance(audi_battery_percent, bool)
+            and isinstance(audi_battery_percent, (int, float))
+            and audi_battery_percent >= 100
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Einschalten ist bei 100 % Audi-Ladestand gesperrt",
+            )
+        if (
+            audi_data.get("presence_configured") is True
+            and audi_data.get("at_home") is not True
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Einschalten ist nur möglich, wenn der Audi sicher am Haus erkannt wird"
+                ),
+            )
 
         solix_data = await client.get_live()
         battery_percent = solix_data.get("battery_percent")

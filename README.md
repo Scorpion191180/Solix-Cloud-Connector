@@ -31,6 +31,10 @@ Audi-Cache zusammen mit den aktuellen Solix-Daten ausgewertet:
   an. Der Startwert lässt sich im Dashboard geschützt zwischen **20 % und
   90 %** einstellen.
 - Solix-Akku **unter 10 %**: Smart Plug aus.
+- Audi-Akku bei **100 %**: Smart Plug aus.
+- Audi außerhalb des Heimradius: Smart Plug aus. Ist der Heimradius
+  eingerichtet und der Standort vorübergehend unbekannt (zum Beispiel während
+  des Wegfahrens), wird ebenfalls sicher ausgeschaltet.
 - Zwischen 10 % und dem gewählten Startwert bleibt der letzte Zustand
   bestehen. Diese Hysterese verhindert schnelles Ein-/Ausschalten an einem
   Grenzwert.

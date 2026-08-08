@@ -28,14 +28,15 @@ const menuStartThreshold = document.getElementById("menuStartThreshold");
 const menuStopThreshold = document.getElementById("menuStopThreshold");
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-// Diese Perspektive entspricht der gemeinsam festgelegten Audi-/Pergola-
-// Vorderansicht. Sie ist sowohl Startposition als auch Ziel des Reset-Knopfs.
+// Diese Perspektive entspricht der am 08.08.2026 festgelegten Übersicht mit
+// Garagen, Audi-Seite, Zufahrt und Pergola. Sie ist sowohl Startposition als
+// auch Ziel des Reset-Knopfs.
 const DEFAULT_VIEW = Object.freeze({
-    yaw: -1.567337267354423,
+    yaw: 0,
     pitch: -0.02485403197490183,
-    panX: -0.06990777953089873,
-    panY: 0.024679675328578947,
-    zoom: 1.2098821693994675
+    panX: 0.43,
+    panY: 1.02,
+    zoom: 0.85
 });
 const MIN_ZOOM = 0.55;
 const MAX_ZOOM = 3.10;

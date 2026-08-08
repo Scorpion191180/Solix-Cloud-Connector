@@ -79,6 +79,9 @@ class ChargingAutomation:
         self._last_battery_percent: int | float | None = None
         self._last_solix_stale = False
         self._last_cable_connected: bool | None = None
+        self._last_audi_battery_percent: int | float | None = None
+        self._last_audi_at_home: bool | None = None
+        self._home_presence_configured = False
         self._last_audi_stale = False
         self._last_audi_error: str | None = None
         self._smartplug: dict[str, Any] = {
@@ -146,6 +149,21 @@ class ChargingAutomation:
                 and not self._last_audi_stale
                 else None
             )
+            self._last_audi_battery_percent = (
+                self._number(audi_data.get("battery_percent"))
+                if audi_data.get("available") is True
+                and not self._last_audi_stale
+                else None
+            )
+            self._home_presence_configured = (
+                audi_data.get("presence_configured") is True
+            )
+            self._last_audi_at_home = (
+                audi_data.get("at_home")
+                if audi_data.get("presence_available") is True
+                and isinstance(audi_data.get("at_home"), bool)
+                else None
+            )
             self._last_solix_stale = solix_data.get("stale") is True
             self._last_battery_percent = (
                 None
@@ -166,6 +184,9 @@ class ChargingAutomation:
                 current_state=self._last_commanded_state,
                 on_threshold=self._on_threshold,
                 off_threshold=self._off_threshold,
+                audi_battery_percent=self._last_audi_battery_percent,
+                audi_at_home=self._last_audi_at_home,
+                home_presence_configured=self._home_presence_configured,
             )
             await self._apply(decision)
             return self.status()
@@ -233,6 +254,9 @@ class ChargingAutomation:
             "reason": self._last_reason,
             "error": self._last_error,
             "audi_plug_connected": self._last_cable_connected,
+            "audi_battery_percent": self._last_audi_battery_percent,
+            "audi_at_home": self._last_audi_at_home,
+            "audi_home_presence_configured": self._home_presence_configured,
             "audi_data_stale": self._last_audi_stale,
             "audi_error": self._last_audi_error,
             "solix_battery_percent": self._last_battery_percent,

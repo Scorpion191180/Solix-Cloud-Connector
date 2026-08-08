@@ -89,6 +89,58 @@ class ManualSmartPlugTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(error.exception.status_code, 409)
         set_power.assert_not_awaited()
 
+    async def test_on_is_blocked_when_audi_is_fully_charged(self):
+        with (
+            self.settings(),
+            patch.object(
+                audi_client,
+                "get_live",
+                AsyncMock(
+                    return_value={
+                        "available": True,
+                        "plug_connected": True,
+                        "battery_percent": 100,
+                    }
+                ),
+            ),
+            patch.object(client, "set_smartplug_power", AsyncMock()) as set_power,
+        ):
+            with self.assertRaises(HTTPException) as error:
+                await manual_smartplug(
+                    ManualSmartPlugCommand(enabled=True), "correct-secret"
+                )
+
+        self.assertEqual(error.exception.status_code, 409)
+        self.assertIn("100 %", error.exception.detail)
+        set_power.assert_not_awaited()
+
+    async def test_on_is_blocked_when_audi_is_away(self):
+        with (
+            self.settings(),
+            patch.object(
+                audi_client,
+                "get_live",
+                AsyncMock(
+                    return_value={
+                        "available": True,
+                        "plug_connected": True,
+                        "battery_percent": 60,
+                        "presence_configured": True,
+                        "at_home": False,
+                    }
+                ),
+            ),
+            patch.object(client, "set_smartplug_power", AsyncMock()) as set_power,
+        ):
+            with self.assertRaises(HTTPException) as error:
+                await manual_smartplug(
+                    ManualSmartPlugCommand(enabled=True), "correct-secret"
+                )
+
+        self.assertEqual(error.exception.status_code, 409)
+        self.assertIn("am Haus", error.exception.detail)
+        set_power.assert_not_awaited()
+
     async def test_on_is_blocked_when_solix_data_is_stale(self):
         with (
             self.settings(),
