@@ -75,6 +75,19 @@ class AutomationPolicyTests(unittest.TestCase):
         self.assertIs(decision.desired_state, False)
         self.assertEqual(decision.reason, "audi_fully_charged")
 
+    def test_full_audi_battery_is_reported_before_unknown_location(self):
+        decision = decide_smartplug_state(
+            enabled=True,
+            cable_connected=True,
+            battery_percent=80,
+            audi_battery_percent=100,
+            audi_at_home=None,
+            home_presence_configured=True,
+            current_state=False,
+        )
+        self.assertIsNone(decision.desired_state)
+        self.assertEqual(decision.reason, "audi_fully_charged_plug_already_off")
+
     def test_audi_away_forces_off_even_with_cached_connected_cable(self):
         decision = decide_smartplug_state(
             enabled=True,

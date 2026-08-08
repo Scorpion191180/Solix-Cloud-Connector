@@ -46,16 +46,16 @@ def decide_smartplug_state(
     if not enabled:
         return AutomationDecision(None, "automation_disabled")
 
+    if audi_battery_percent is not None and audi_battery_percent >= 100:
+        if current_state is False:
+            return AutomationDecision(None, "audi_fully_charged_plug_already_off")
+        return AutomationDecision(False, "audi_fully_charged")
+
     if home_presence_configured and audi_at_home is not True:
         reason = "audi_away" if audi_at_home is False else "audi_location_unknown"
         if current_state is False:
             return AutomationDecision(None, f"{reason}_plug_already_off")
         return AutomationDecision(False, reason)
-
-    if audi_battery_percent is not None and audi_battery_percent >= 100:
-        if current_state is False:
-            return AutomationDecision(None, "audi_fully_charged_plug_already_off")
-        return AutomationDecision(False, "audi_fully_charged")
 
     if cable_connected is not True:
         if current_state is False:
