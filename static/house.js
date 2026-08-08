@@ -2611,7 +2611,7 @@ function createGrassDetail() {
         const onForecourt = z > 4.55 && z < 15.35 && x > -6.5 && x < 6.8;
         const onAudiDrive = x > 3.15 && z > -6.55 && z < 6.7;
         const onRearPatio = x < -3.10 && x > -7.10 && z > -2.10 && z < 5.90;
-        const aroundPool = Math.hypot(x + 7.80, z + 4.95) < 3.10;
+        const aroundPool = Math.hypot(x + 7.19, z + 5.92) < 3.10;
         const aroundPond = Math.hypot((x + 4.85) / 1.35, (z - 14.78) / 0.98) < 1.18;
         const underPergola = Math.abs(x - PERGOLA_CENTER.x) < 1.55 &&
             Math.abs(z - PERGOLA_CENTER.z) < 2.25;
@@ -2770,10 +2770,10 @@ function createGarden() {
     const pool = new THREE.Group();
     // Aus dem Luftbild auf die reale Intex-Größe (ca. 5,5 × 2,7 m)
     // skaliert und parallel zur diagonalen Feldgrenze positioniert.
-    // Noch näher an die untere Grundstücksgrenze verschoben: Die breite
-    // Holzplattform liegt nun mit einem kleinen Laufabstand direkt am Zaun,
-    // während zwischen Pool und Haus ein deutlich breiterer Weg bleibt.
-    pool.position.set(-7.80, 0, -4.95);
+    // Gegenüber der letzten Vorschau einen Meter weiter von der Pergola weg.
+    // Die Bewegung verläuft parallel zum Zaun; die breite Holzplattform bleibt
+    // deshalb weiterhin nahezu bündig an der unteren Grundstücksgrenze.
+    pool.position.set(-7.19, 0, -5.92);
     pool.rotation.y = THREE.MathUtils.degToRad(-60);
     world.add(pool);
     const poolWall = new THREE.MeshStandardMaterial({ color: 0x374552, metalness: 0.22, roughness: 0.68 });
@@ -2957,35 +2957,41 @@ const gridBoxModel = createGridBox();
 const chargingConnection = createAudiChargeConnection();
 
 const AUDI_HOME_POSE = Object.freeze({ x: 5.00, z: 1.00, yaw: Math.PI });
-const AUDI_OFFSCREEN_POSE = Object.freeze({ x: 9.45, z: -18.50, yaw: Math.PI });
-const AUDI_ARRIVAL_ENTRY_POSE = Object.freeze({ x: 9.45, z: 20.50, yaw: Math.PI });
-// Der Audi setzt rechts an Fox und Ladesäule vorbei bis hinter die Reihe der
-// drei Garagenautos zurück. Auf dem freien Querstreifen fährt er hinter den
-// mittleren Yeti, wechselt dort in Vorwärtsfahrt und biegt erst anschließend
-// rechts auf die Straße ab.
+const AUDI_OFFSCREEN_POSE = Object.freeze({ x: 11.45, z: -18.50, yaw: Math.PI });
+const AUDI_ARRIVAL_ENTRY_POSE = Object.freeze({ x: 9.45, z: -18.50, yaw: 0 });
+// Der Audi setzt rechts an Fox und Ladesäule vorbei in einem weiten Bogen bis
+// deutlich hinter den mittleren Yeti zurück. Erst nach einem kurzen Halt fährt
+// er vorwärts aus dem Hof und ordnet sich auf der anderen Fahrbahnseite ein.
 const AUDI_DEPARTURE_ROUTE = [
-    { at: 0.00, pose: AUDI_HOME_POSE },
-    { at: 0.07, pose: AUDI_HOME_POSE },
-    { at: 0.27, pose: { x: 5.00, z: 7.00, yaw: Math.PI } },
-    { at: 0.39, pose: { x: 5.00, z: 10.90, yaw: Math.PI } },
-    { at: 0.50, pose: { x: 0.00, z: 11.20, yaw: Math.PI / 2 } },
-    { at: 0.56, pose: { x: 0.00, z: 11.20, yaw: Math.PI / 2 } },
-    { at: 0.68, pose: { x: 5.20, z: 11.20, yaw: Math.PI / 2 } },
-    { at: 0.77, pose: { x: 8.20, z: 10.65, yaw: 2.04 } },
-    { at: 0.84, pose: { x: 9.45, z: 8.40, yaw: Math.PI } },
-    { at: 1.00, pose: AUDI_OFFSCREEN_POSE }
+    { at: 0.00, pose: AUDI_HOME_POSE, motion: "hold" },
+    { at: 0.06, pose: AUDI_HOME_POSE, motion: "reverse" },
+    { at: 0.19, pose: { x: 5.00, z: 7.10, yaw: Math.PI }, motion: "reverse" },
+    { at: 0.30, pose: { x: 5.00, z: 11.70, yaw: Math.PI }, motion: "reverse" },
+    { at: 0.35, pose: { x: 4.60, z: 12.80, yaw: 2.79 }, motion: "reverse" },
+    { at: 0.40, pose: { x: 3.70, z: 13.55, yaw: 2.26 }, motion: "reverse" },
+    { at: 0.46, pose: { x: 2.10, z: 14.05, yaw: 1.87 }, motion: "reverse" },
+    { at: 0.51, pose: { x: 0.00, z: 14.15, yaw: Math.PI / 2 }, motion: "hold" },
+    { at: 0.57, pose: { x: 0.00, z: 14.15, yaw: Math.PI / 2 }, motion: "forward" },
+    { at: 0.68, pose: { x: 5.20, z: 14.15, yaw: Math.PI / 2 }, motion: "forward" },
+    { at: 0.74, pose: { x: 7.20, z: 13.85, yaw: 1.72 }, motion: "forward" },
+    { at: 0.79, pose: { x: 8.90, z: 12.80, yaw: 2.13 }, motion: "forward" },
+    { at: 0.84, pose: { x: 10.30, z: 11.00, yaw: 2.48 }, motion: "forward" },
+    { at: 0.88, pose: { x: 11.45, z: 8.70, yaw: Math.PI }, motion: "forward" },
+    { at: 1.00, pose: AUDI_OFFSCREEN_POSE, motion: "hold" }
 ];
-// Bei der Rückkehr fährt das Fahrzeug durch die große Hoföffnung. Es passiert
-// den Fox auf dessen rechter, straßenseitiger Seite und bleibt anschließend
-// in Vorwärtsfahrt bis zur echten Parkposition neben dem Haus.
+// Bei der Rückkehr kommt das Fahrzeug vom selben Straßenende auf der
+// Gegenfahrbahn zurück. Es biegt in einem weiten Linksbogen in den Hof ein,
+// passiert den Fox auf dessen rechter Seite und fährt vorwärts zum Stellplatz.
 const AUDI_ARRIVAL_ROUTE = [
-    { at: 0.00, pose: AUDI_ARRIVAL_ENTRY_POSE },
-    { at: 0.47, pose: { x: 9.45, z: 11.80, yaw: Math.PI } },
-    { at: 0.59, pose: { x: 8.75, z: 10.85, yaw: -2.58 } },
-    { at: 0.70, pose: { x: 6.30, z: 10.20, yaw: -1.84 } },
-    { at: 0.79, pose: { x: 4.82, z: 9.45, yaw: -2.72 } },
-    { at: 0.85, pose: { x: 4.82, z: 8.20, yaw: Math.PI } },
-    { at: 1.00, pose: AUDI_HOME_POSE }
+    { at: 0.00, pose: AUDI_ARRIVAL_ENTRY_POSE, motion: "forward" },
+    { at: 0.44, pose: { x: 9.45, z: 8.20, yaw: 0 }, motion: "forward" },
+    { at: 0.52, pose: { x: 9.20, z: 10.50, yaw: -0.35 }, motion: "forward" },
+    { at: 0.59, pose: { x: 8.30, z: 12.00, yaw: -0.82 }, motion: "forward" },
+    { at: 0.66, pose: { x: 6.70, z: 13.00, yaw: -1.20 }, motion: "forward" },
+    { at: 0.72, pose: { x: 5.20, z: 12.60, yaw: -1.82 }, motion: "forward" },
+    { at: 0.80, pose: { x: 4.75, z: 10.30, yaw: -2.80 }, motion: "forward" },
+    { at: 0.86, pose: { x: 4.80, z: 7.00, yaw: Math.PI }, motion: "forward" },
+    { at: 1.00, pose: AUDI_HOME_POSE, motion: "hold" }
 ];
 const audiPresenceMotion = {
     targetHome: null,
@@ -3007,15 +3013,56 @@ function setAudiPose(pose) {
     audiModel.rotation.y = pose.yaw;
 }
 
-function interpolateAudiPose(from, to, progress) {
-    const eased = progress * progress * (3 - 2 * progress);
-    audiModel.position.set(
-        THREE.MathUtils.lerp(from.x, to.x, eased),
-        0.02,
-        THREE.MathUtils.lerp(from.z, to.z, eased)
+function audiRouteTangent(route, index, motion) {
+    const previousMotion = index > 0 ? route[index - 1].motion : null;
+    const nextMotion = index < route.length - 1 ? route[index].motion : null;
+    // Bei Halt, Richtungswechsel sowie Anfang und Ende einer Fahrt ist die
+    // Geschwindigkeit null. Innerhalb einer Phase sorgt die zentrale
+    // Ableitung für identische Ein- und Austrittsgeschwindigkeit am Wegpunkt.
+    if (previousMotion !== motion || nextMotion !== motion)
+        return new THREE.Vector2(0, 0);
+    const before = route[index - 1];
+    const after = route[index + 1];
+    const timeSpan = Math.max(0.0001, after.at - before.at);
+    return new THREE.Vector2(
+        (after.pose.x - before.pose.x) / timeSpan,
+        (after.pose.z - before.pose.z) / timeSpan
     );
-    const yawDelta = Math.atan2(Math.sin(to.yaw - from.yaw), Math.cos(to.yaw - from.yaw));
-    audiModel.rotation.y = from.yaw + yawDelta * eased;
+}
+
+function interpolateAudiPose(route, fromIndex, toIndex, progress) {
+    const fromKeyframe = route[fromIndex];
+    const toKeyframe = route[toIndex];
+    const from = fromKeyframe.pose;
+    const to = toKeyframe.pose;
+    const motion = fromKeyframe.motion || toKeyframe.motion || "forward";
+    const t = THREE.MathUtils.clamp(progress, 0, 1);
+    const t2 = t * t;
+    const t3 = t2 * t;
+    const direction = motion === "reverse" ? -1 : 1;
+    const segmentDuration = Math.max(0.0001, toKeyframe.at - fromKeyframe.at);
+    const fromTangent = audiRouteTangent(route, fromIndex, motion).multiplyScalar(segmentDuration);
+    const toTangent = audiRouteTangent(route, toIndex, motion).multiplyScalar(segmentDuration);
+    const h00 = 2 * t3 - 3 * t2 + 1;
+    const h10 = t3 - 2 * t2 + t;
+    const h01 = -2 * t3 + 3 * t2;
+    const h11 = t3 - t2;
+    const x = h00 * from.x + h10 * fromTangent.x + h01 * to.x + h11 * toTangent.x;
+    const z = h00 * from.z + h10 * fromTangent.y + h01 * to.z + h11 * toTangent.y;
+    audiModel.position.set(x, 0.02, z);
+
+    // Die Fahrzeugausrichtung folgt der tatsächlichen Kurventangente. Beim
+    // Rückwärtsfahren zeigt die Front entgegengesetzt zur Bewegungsrichtung.
+    const dx = (6 * t2 - 6 * t) * from.x + (3 * t2 - 4 * t + 1) * fromTangent.x +
+        (-6 * t2 + 6 * t) * to.x + (3 * t2 - 2 * t) * toTangent.x;
+    const dz = (6 * t2 - 6 * t) * from.z + (3 * t2 - 4 * t + 1) * fromTangent.y +
+        (-6 * t2 + 6 * t) * to.z + (3 * t2 - 2 * t) * toTangent.y;
+    if (Math.hypot(dx, dz) > 0.0001)
+        audiModel.rotation.y = Math.atan2(dx * direction, dz * direction);
+    else {
+        const yawDelta = Math.atan2(Math.sin(to.yaw - from.yaw), Math.cos(to.yaw - from.yaw));
+        audiModel.rotation.y = from.yaw + yawDelta * t;
+    }
 }
 
 function followAudiRoute(route, progress) {
@@ -3030,7 +3077,7 @@ function followAudiRoute(route, progress) {
     const previous = route[nextIndex - 1];
     const next = route[nextIndex];
     const span = Math.max(0.0001, next.at - previous.at);
-    interpolateAudiPose(previous.pose, next.pose, (clamped - previous.at) / span);
+    interpolateAudiPose(route, nextIndex - 1, nextIndex, (clamped - previous.at) / span);
 }
 
 function setAudiConnectionForPresence(mode) {
@@ -3127,7 +3174,7 @@ function updateAudiPresenceMotion(time) {
     );
     if (motion.phase === "departing") {
         followAudiRoute(AUDI_DEPARTURE_ROUTE, progress);
-        setAudiBrakeLights(progress < 0.07 || (progress >= 0.50 && progress < 0.56));
+        setAudiBrakeLights(progress < 0.06 || (progress >= 0.51 && progress < 0.57));
     }
     else {
         followAudiRoute(AUDI_ARRIVAL_ROUTE, progress);
