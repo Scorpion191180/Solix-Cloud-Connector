@@ -437,6 +437,12 @@ class SolixSmartPlugTests(unittest.IsolatedAsyncioTestCase):
                 "device_pn": "A17C5",
                 "battery_soc": "92",
                 "battery_capacity": "2688",
+                "battery_energy": "2473",
+                "bat_charge_power": "310",
+                "bat_discharge_power": "0",
+                "output_power": "150",
+                "solar_power_1": "220",
+                "solar_power_2": "240",
                 "sub_package_num": 0,
             },
             "MAIN-SECRET": {
@@ -477,7 +483,31 @@ class SolixSmartPlugTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["charging_status"], "bypass_discharge")
         self.assertEqual(result["solarbank_count"], 2)
         self.assertEqual(result["selection"], "configured_model")
+        self.assertEqual(
+            result["secondary_solarbank"],
+            {
+                "available": True,
+                "status": None,
+                "model": "A17C5",
+                "battery_percent": 92,
+                "battery_energy_wh": 2473,
+                "battery_capacity_wh": 2688,
+                "battery_power": 310,
+                "battery_charge_power": 310,
+                "battery_discharge_power": 0,
+                "battery_flow_direction": "charging",
+                "system_output_power": 150,
+                "charging_status": None,
+                "pv_total": 460,
+                "pv1": 220,
+                "pv2": 240,
+                "firmware": None,
+                "wifi_signal": 0,
+                "last_update": result["last_update"],
+            },
+        )
         self.assertNotIn("MAIN-SECRET", str(result))
+        self.assertNotIn("SMALL-SECRET", str(result))
 
     async def test_multiple_banks_fallback_to_largest_system(self):
         devices = {

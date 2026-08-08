@@ -296,7 +296,7 @@ header p{
     border:1px solid rgba(226,232,240,.23);
     border-left:3px solid var(--scene-color,#5eead4);
     border-radius:10px;
-    background:linear-gradient(135deg,rgba(7,15,27,.88),rgba(15,23,42,.70));
+    background:linear-gradient(135deg,rgba(7,15,27,.58),rgba(15,23,42,.40));
     box-shadow:0 5px 16px rgba(2,6,23,.34);
     backdrop-filter:blur(8px) saturate(1.16);
     -webkit-backdrop-filter:blur(8px) saturate(1.16);
@@ -425,6 +425,7 @@ header p{
     max-width:202px;
     border-color:color-mix(in srgb,var(--scene-color,#5eead4) 76%,white 12%);
     box-shadow:0 12px 34px rgba(2,6,23,.62),0 0 18px color-mix(in srgb,var(--scene-color,#5eead4) 36%,transparent);
+    background:linear-gradient(135deg,rgba(7,15,27,.76),rgba(15,23,42,.62));
 }
 
 .house-detail-grid,
@@ -548,7 +549,9 @@ header p{
     padding:4px 6px;
     border:1px solid rgba(250,204,21,.46);
     border-radius:8px;
-    background:rgba(7,15,27,.78);
+    background:rgba(7,15,27,.50);
+    backdrop-filter:blur(7px) saturate(1.14);
+    -webkit-backdrop-filter:blur(7px) saturate(1.14);
     box-shadow:0 4px 12px rgba(2,6,23,.34),0 0 9px rgba(250,204,21,.18);
     color:#fff4a8;
     appearance:none;
@@ -580,7 +583,7 @@ header p{
     width:160px;
     padding:7px 8px;
     border-color:#fde047;
-    background:rgba(7,15,27,.94);
+    background:rgba(7,15,27,.76);
     box-shadow:0 10px 30px rgba(2,6,23,.62),0 0 15px rgba(250,204,21,.38);
 }
 
@@ -830,7 +833,7 @@ header p{
     padding:8px 13px;
     border:1px solid rgba(251,146,60,.52);
     border-radius:999px;
-    background:linear-gradient(135deg,rgba(15,23,42,.94),rgba(30,41,59,.88));
+    background:linear-gradient(135deg,rgba(15,23,42,.70),rgba(30,41,59,.58));
     color:#ffedd5;
     font-size:10px;
     font-weight:900;
@@ -854,7 +857,7 @@ header p{
     padding:5px 7px;
     border:1px solid rgba(148,163,184,.28);
     border-radius:8px;
-    background:rgba(7,15,27,.76);
+    background:rgba(7,15,27,.52);
     color:#cbd5e1;
     font-size:8.8px;
     font-weight:800;
@@ -875,7 +878,7 @@ header p{
 .house-device-label.active{
     color:#ffedd5;
     border-color:rgba(251,146,60,.62);
-    background:rgba(67,38,20,.82);
+    background:rgba(67,38,20,.62);
     filter:drop-shadow(0 0 5px #fb923c);
 }
 

@@ -80,6 +80,7 @@ const state = {
 const colors = {
     pv: "#facc15",
     battery: "#38bdf8",
+    battery3: "#2dd4bf",
     grid: "#a78bfa",
     audi: "#22c55e",
     inactive: "#64748b"
@@ -131,6 +132,9 @@ let interiorHouse = null;
 let pergolaModel = null;
 let solarBankModel = null;
 let solarBankBatteryVisual = null;
+let secondarySolarBankModel = null;
+let secondarySolarBankBatteryVisual = null;
+let balconyPanelModel = null;
 let audiBatteryVisual = null;
 const pondFish = [];
 
@@ -1049,6 +1053,15 @@ const BALCONY_RAIL_TOP_Y = BALCONY_FLOOR_Y + 0.78;
 // Die Solarbank steht auf dem rechten Balkon wandnah unter dem einzelnen
 // Fenster (z = -1,42). So bleiben beide Balkontüren und das Geländer frei.
 const SOLARBANK_POSITION = new THREE.Vector3(3.50, BALCONY_FLOOR_Y + 0.06, -1.42);
+// Die zweite, alleinstehende Solarbank 3 sitzt auf dem langen linken Balkon
+// unter dem zweiten echten Fenster von rechts (Fensterachse z = 2,72).
+const SECONDARY_SOLARBANK_POSITION = new THREE.Vector3(
+    3.50, BALCONY_FLOOR_Y + 0.06, 2.72
+);
+const BALCONY_PANEL_POSITIONS = [
+    new THREE.Vector3(4.49, BALCONY_FLOOR_Y + 0.47, 4.02),
+    new THREE.Vector3(4.49, BALCONY_FLOOR_Y + 0.47, 5.30)
+];
 // Der Hausanschluss steht am rechten Längszaun zwischen Audi-Stellplatz
 // und Pergola. Die Vorderseite zeigt zur Einfahrt beziehungsweise zum Haus.
 const GRID_BOX_POSITION = new THREE.Vector3(AUDI_SIDE_FENCE_X - 0.35, 0, -4.20);
@@ -1171,6 +1184,37 @@ function createPergolaPanels() {
                 [0, 0.055, row * panelLength / 10], { castShadow: false });
     });
     return pergola;
+}
+
+function createBalconySolarPanels() {
+    const group = new THREE.Group();
+    world.add(group);
+    const frameMaterial = new THREE.MeshStandardMaterial({
+        color: 0xc7d0d5,
+        metalness: 0.74,
+        roughness: 0.28
+    });
+    const panelHeight = PV_MODULE_WIDTH * 0.64;
+    const panelWidth = PV_MODULE_LENGTH * 0.64;
+
+    BALCONY_PANEL_POSITIONS.forEach((position, index) => {
+        const panel = new THREE.Group();
+        panel.position.copy(position);
+        panel.rotation.z = THREE.MathUtils.degToRad(-7);
+        panel.userData.pvString = "sb3pv" + (index + 1);
+        group.add(panel);
+        addBox(panel, [0.055, panelHeight + 0.06, panelWidth + 0.06],
+            frameMaterial, [0, 0, 0], { radius: 0.025 });
+        addBox(panel, [0.065, panelHeight, panelWidth], materials.solar,
+            [0.004, 0, 0], { radius: 0.018 });
+        for (let column = -2; column <= 2; column += 1)
+            addBox(panel, [0.070, panelHeight - 0.06, 0.010], frameMaterial,
+                [0.040, 0, column * panelWidth / 6], { castShadow: false });
+        for (let row = -3; row <= 3; row += 1)
+            addBox(panel, [0.070, 0.010, panelWidth - 0.06], frameMaterial,
+                [0.040, row * panelHeight / 8, 0], { castShadow: false });
+    });
+    return group;
 }
 
 function createBayWindow(parent) {
@@ -1588,6 +1632,74 @@ function createSolarBank() {
         kind: "solarbank",
         group: bank,
         gauges: batteryGauges,
+        level: null,
+        mode: "idle"
+    };
+    return bank;
+}
+
+function createSecondarySolarBank() {
+    const bank = new THREE.Group();
+    bank.position.copy(SECONDARY_SOLARBANK_POSITION);
+    bank.rotation.y = -Math.PI / 2;
+    bank.scale.setScalar(2);
+    world.add(bank);
+
+    const shell = new THREE.MeshPhysicalMaterial({
+        color: 0x737d82,
+        metalness: 0.66,
+        roughness: 0.30,
+        clearcoat: 0.42,
+        clearcoatRoughness: 0.25
+    });
+    const graphite = new THREE.MeshStandardMaterial({
+        color: 0x171d20,
+        metalness: 0.36,
+        roughness: 0.45
+    });
+    const display = new THREE.MeshPhysicalMaterial({
+        color: 0x061116,
+        metalness: 0.20,
+        roughness: 0.10,
+        clearcoat: 1
+    });
+    const status = new THREE.MeshStandardMaterial({
+        color: 0x5eead4,
+        emissive: 0x14b8a6,
+        emissiveIntensity: 4.0,
+        roughness: 0.22
+    });
+
+    // Einzelgerät ohne BP2700: dieselbe Haus-Skalierung wie die Solarbank 4,
+    // aber bewusst nur ein Gehäuse und eine Akkuanzeige.
+    const metre = 0.64;
+    const width = 0.460 * metre;
+    const height = 0.300 * metre;
+    const depth = 0.300 * metre;
+    const centerY = height / 2;
+    addBox(bank, [width, height, depth], graphite, [0, centerY, 0], { radius: 0.028 });
+    addBox(bank, [width - 0.016, height - 0.016, depth - 0.016], shell,
+        [0, centerY, -0.003], { radius: 0.024 });
+    addBox(bank, [width * 0.72, height * 0.28, 0.012], display,
+        [0, centerY + height * 0.17, -depth / 2 - 0.006], {
+            radius: 0.012,
+            castShadow: false
+        });
+    addBox(bank, [width * 0.38, 0.010, 0.014], status,
+        [0, centerY + height * 0.16, -depth / 2 - 0.014], {
+            castShadow: false
+        });
+    for (let index = -3; index <= 3; index += 1)
+        addBox(bank, [0.020, 0.010, depth * 0.62], graphite,
+            [index * width / 9, height + 0.002, 0], { castShadow: false });
+
+    const gauge = createVerticalBatteryGauge(bank,
+        [0, centerY - height * 0.08, -depth / 2 - 0.020],
+        [width * 0.86, height * 0.64, 0.022]);
+    secondarySolarBankBatteryVisual = {
+        kind: "solarbank",
+        group: bank,
+        gauges: [gauge],
         level: null,
         mode: "idle"
     };
@@ -2459,8 +2571,8 @@ function createGrassDetail() {
         const onForecourt = z > 4.55 && z < 15.35 && x > -6.5 && x < 6.8;
         const onAudiDrive = x > 3.15 && z > -6.55 && z < 6.7;
         const onRearPatio = x < -3.10 && x > -7.10 && z > -2.10 && z < 5.90;
-        const aroundPool = Math.hypot(x + 5.55, z + 3.70) < 3.10;
-        const aroundPond = Math.hypot((x + 7.15) / 1.35, (z - 12.55) / 0.98) < 1.18;
+        const aroundPool = Math.hypot(x + 6.65, z + 2.80) < 3.10;
+        const aroundPond = Math.hypot((x + 4.45) / 1.35, (z - 14.10) / 0.98) < 1.18;
         const underPergola = Math.abs(x - PERGOLA_CENTER.x) < 1.55 &&
             Math.abs(z - PERGOLA_CENTER.z) < 2.25;
         if (onHouse || onForecourt || onAudiDrive || onRearPatio || aroundPool || aroundPond || underPergola)
@@ -2484,9 +2596,10 @@ function createGrassDetail() {
 
 function createGoldfishPond() {
     const pond = new THREE.Group();
-    // IMG_7437: Der blau eingekreiste Teich liegt in der bepflanzten Ecke
-    // links vom Garagenvorplatz, nicht auf der Fahrfläche.
-    pond.position.set(-7.15, 0.035, 12.55);
+    // IMG_7437: Der blau eingekreiste Teich liegt dort, wo zuvor fälschlich
+    // zwei Bäume standen. Diese Baumgruppe rückt im Gegenzug in die alte
+    // Teichposition an der linken Grundstücksecke.
+    pond.position.set(-4.45, 0.035, 14.10);
     pond.rotation.y = THREE.MathUtils.degToRad(-12);
     world.add(pond);
 
@@ -2617,7 +2730,9 @@ function createGarden() {
     const pool = new THREE.Group();
     // Aus dem Luftbild auf die reale Intex-Größe (ca. 5,5 × 2,7 m)
     // skaliert und parallel zur diagonalen Feldgrenze positioniert.
-    pool.position.set(-5.55, 0, -3.70);
+    // Entlang der Feldgrenze verschoben: Die breite Holzplattform schließt am
+    // Zaun an, während zwischen Pool und Haus ein deutlich breiterer Weg bleibt.
+    pool.position.set(-6.65, 0, -2.80);
     pool.rotation.y = THREE.MathUtils.degToRad(-60);
     world.add(pool);
     const poolWall = new THREE.MeshStandardMaterial({ color: 0x374552, metalness: 0.22, roughness: 0.68 });
@@ -2656,14 +2771,12 @@ function createGarden() {
 
     createGoldfishPond();
 
-    // Gehölzgruppen gemäß Luftbild: dicht um den Teich an der Garagenstraße
-    // und in der hinteren Einbuchtung; ein markanter Laubbaum steht links neben
-    // dem Pool. Der Teich selbst bleibt von Baumkronen frei und gut sichtbar.
+    // Die beiden Bäume aus der neuen Teichposition stehen jetzt an der alten
+    // Teichstelle. Am Pool selbst gibt es laut Luftbild keinen Baum.
     [
-        [-1.10, 14.85, 0.72], [-3.65, 14.35, 0.86], [-5.25, 13.85, 0.76],
+        [-1.10, 14.85, 0.72], [-6.65, 12.25, 0.86], [-7.65, 12.75, 0.76],
         [-8.45, 11.25, 0.70], [-8.25, 4.10, 0.60]
     ].forEach(([x, z, scale]) => createDeciduousTree(x, z, scale));
-    createDeciduousTree(-4.72, -1.25, 0.68);
     [
         [-6.55, 10.15, 0.82], [-7.65, 6.15, 0.72], [-8.90, 2.55, 0.76],
         [-10.10, 0.35, 0.72], [-2.10, -9.25, 0.62], [-0.60, -9.75, 0.60]
@@ -2676,9 +2789,9 @@ function createGarden() {
         [7.20, -16.50], [-11.50, -1.00], [-9.00, 2.40],
         [-6.90, 4.40], [-8.70, 13.70]
     ], fence, 0.84);
-    // Kurzes straßenseitiges Stück an der Pergola; die große Einfahrt
-    // vor Audi und Garagen bleibt wie auf dem Foto offen.
-    createFencePath([[7.20, -16.50], [7.20, -6.55]], fence, 0.88);
+    // Der straßenseitige Zaun läuft von der Pergola bis auf Höhe des
+    // Garagengiebels. Erst dahinter bleibt die Einfahrt zu den drei Autos offen.
+    createFencePath([[7.20, -16.50], [7.20, 6.35]], fence, 0.88);
 }
 
 function createGridBox() {
@@ -2786,7 +2899,9 @@ function createAudiChargeConnection() {
 createGarden();
 exteriorHouse = createHouse();
 pergolaModel = createPergolaPanels();
+balconyPanelModel = createBalconySolarPanels();
 solarBankModel = createSolarBank();
+secondarySolarBankModel = createSecondarySolarBank();
 interiorHouse = createInteriorDollhouse();
 const vehicleModels = createVehicles();
 const audiModel = vehicleModels.audi.slot;
@@ -2798,30 +2913,32 @@ const chargingConnection = createAudiChargeConnection();
 const AUDI_HOME_POSE = Object.freeze({ x: 5.00, z: 1.00, yaw: Math.PI });
 const AUDI_OFFSCREEN_POSE = Object.freeze({ x: 9.45, z: -18.50, yaw: Math.PI });
 const AUDI_ARRIVAL_ENTRY_POSE = Object.freeze({ x: 9.45, z: 20.50, yaw: Math.PI });
-// Die Abfahrt bildet jetzt ein echtes Ausparkmanöver ab: erst gerade
-// zurücksetzen, anhalten, vorwärts in einem weiten Bogen auf die Straße
-// einscheren und dort parallel weiterfahren. Bei der Rückkehr kommt der Audi
-// aus der Gegenrichtung, biegt vorwärts auf den Stellplatz ein und setzt die
-// letzten Zentimeter gerade zurück.
+// Der Audi setzt rechts an Fox und Ladesäule vorbei bis hinter die Reihe der
+// drei Garagenautos zurück. Auf dem freien Querstreifen fährt er hinter den
+// mittleren Yeti, wechselt dort in Vorwärtsfahrt und biegt erst anschließend
+// rechts auf die Straße ab.
 const AUDI_DEPARTURE_ROUTE = [
     { at: 0.00, pose: AUDI_HOME_POSE },
-    { at: 0.10, pose: AUDI_HOME_POSE },
-    { at: 0.23, pose: { x: 5.00, z: 2.15, yaw: Math.PI } },
-    { at: 0.29, pose: { x: 5.00, z: 2.15, yaw: Math.PI } },
-    { at: 0.39, pose: { x: 5.22, z: 1.55, yaw: 2.94 } },
-    { at: 0.52, pose: { x: 6.25, z: 0.34, yaw: 2.43 } },
-    { at: 0.66, pose: { x: 8.10, z: -0.46, yaw: 2.73 } },
-    { at: 0.74, pose: { x: 9.45, z: -1.10, yaw: Math.PI } },
+    { at: 0.07, pose: AUDI_HOME_POSE },
+    { at: 0.27, pose: { x: 5.00, z: 7.00, yaw: Math.PI } },
+    { at: 0.39, pose: { x: 5.00, z: 10.90, yaw: Math.PI } },
+    { at: 0.50, pose: { x: 0.00, z: 11.20, yaw: Math.PI / 2 } },
+    { at: 0.56, pose: { x: 0.00, z: 11.20, yaw: Math.PI / 2 } },
+    { at: 0.68, pose: { x: 5.20, z: 11.20, yaw: Math.PI / 2 } },
+    { at: 0.77, pose: { x: 8.20, z: 10.65, yaw: 2.04 } },
+    { at: 0.84, pose: { x: 9.45, z: 8.40, yaw: Math.PI } },
     { at: 1.00, pose: AUDI_OFFSCREEN_POSE }
 ];
+// Bei der Rückkehr fährt das Fahrzeug durch die große Hoföffnung. Es passiert
+// den Fox auf dessen rechter, straßenseitiger Seite und bleibt anschließend
+// in Vorwärtsfahrt bis zur echten Parkposition neben dem Haus.
 const AUDI_ARRIVAL_ROUTE = [
     { at: 0.00, pose: AUDI_ARRIVAL_ENTRY_POSE },
-    { at: 0.48, pose: { x: 9.45, z: 3.75, yaw: Math.PI } },
-    { at: 0.58, pose: { x: 9.18, z: 2.05, yaw: -3.00 } },
-    { at: 0.69, pose: { x: 8.05, z: 0.70, yaw: -2.45 } },
-    { at: 0.80, pose: { x: 6.48, z: 0.03, yaw: -2.56 } },
-    { at: 0.89, pose: { x: 5.20, z: 0.10, yaw: -3.02 } },
-    { at: 0.94, pose: { x: 5.20, z: 0.10, yaw: Math.PI } },
+    { at: 0.47, pose: { x: 9.45, z: 11.80, yaw: Math.PI } },
+    { at: 0.59, pose: { x: 8.75, z: 10.85, yaw: -2.58 } },
+    { at: 0.70, pose: { x: 6.30, z: 10.20, yaw: -1.84 } },
+    { at: 0.79, pose: { x: 4.82, z: 9.45, yaw: -2.72 } },
+    { at: 0.85, pose: { x: 4.82, z: 8.20, yaw: Math.PI } },
     { at: 1.00, pose: AUDI_HOME_POSE }
 ];
 const audiPresenceMotion = {
@@ -2919,7 +3036,7 @@ function startAudiPresenceTransition(atHome, forceMotion = false) {
 
     audiPresenceMotion.phase = atHome ? "arriving" : "departing";
     audiPresenceMotion.startedAt = performance.now();
-    audiPresenceMotion.duration = atHome ? 12400 : 10800;
+    audiPresenceMotion.duration = atHome ? 13500 : 15000;
     audiModel.visible = !cutawayVisible;
     setAudiPose(atHome ? AUDI_ARRIVAL_ENTRY_POSE : AUDI_HOME_POSE);
     setAudiConnectionForPresence("driving");
@@ -2939,12 +3056,12 @@ function runAudiPresenceDemo() {
         () => startAudiPresenceTransition(false, true), 900
     ));
     audiPresenceDemoTimers.push(window.setTimeout(
-        () => startAudiPresenceTransition(true, true), 12900
+        () => startAudiPresenceTransition(true, true), 17300
     ));
     audiPresenceDemoTimers.push(window.setTimeout(() => {
         audiPresenceDemoActive = false;
         audiPresenceDemoTimers = [];
-    }, 26300));
+    }, 32100));
 }
 
 function updateAudiPresenceMotion(time) {
@@ -2964,11 +3081,11 @@ function updateAudiPresenceMotion(time) {
     );
     if (motion.phase === "departing") {
         followAudiRoute(AUDI_DEPARTURE_ROUTE, progress);
-        setAudiBrakeLights(progress < 0.10 || (progress >= 0.23 && progress < 0.29));
+        setAudiBrakeLights(progress < 0.07 || (progress >= 0.50 && progress < 0.56));
     }
     else {
         followAudiRoute(AUDI_ARRIVAL_ROUTE, progress);
-        setAudiBrakeLights((progress >= 0.89 && progress < 0.94) || progress >= 0.985);
+        setAudiBrakeLights(progress >= 0.985);
     }
     setAudiConnectionForPresence("driving");
 
@@ -3152,6 +3269,10 @@ const pvPanelAnchors = PERGOLA_PANEL_LAYOUT.map(([x, z], index) => ({
         PERGOLA_CENTER.z + z
     )
 }));
+const secondaryPvPanelAnchors = BALCONY_PANEL_POSITIONS.map((position, index) => ({
+    id: "sb3pv" + (index + 1),
+    anchor: new THREE.Vector3(position.x + 0.055, position.y, position.z)
+}));
 
 // Die vier Modulstränge verlassen die Anschlussdosen unter den Modulen. Sie
 // laufen einzeln in den beiden Kreuzfugen und bleiben damit von den sichtbaren
@@ -3191,6 +3312,24 @@ createFlow("pvTrunk", [
     [3.40, BALCONY_FLOOR_Y + 0.08, -1.42], [3.62, BALCONY_FLOOR_Y + 0.08, -1.42],
     [3.62, BALCONY_RAIL_CENTER_Y, -1.42]
 ], colors.pv, { cableRadius: 0.048, glowRadius: 0.075, pulseRadius: 0.13 });
+// Die beiden Balkonmodule bleiben bis zur kleinen Sammelstelle als einzelne
+// Stränge sichtbar. Danach folgt nur noch ein kurzer gemeinsamer Weg hinter
+// dem Geländer zur alleinstehenden Solarbank 3.
+const secondaryPvCombinerPoint = [4.47, BALCONY_FLOOR_Y + 0.12, 3.30];
+secondaryPvPanelAnchors.forEach((panel, index) => {
+    const panelPosition = BALCONY_PANEL_POSITIONS[index];
+    createFlow(panel.id, [
+        [panelPosition.x - 0.01, panelPosition.y, panelPosition.z],
+        [4.47, BALCONY_FLOOR_Y + 0.12, panelPosition.z],
+        secondaryPvCombinerPoint
+    ], colors.pv, { cableRadius: 0.032, glowRadius: 0.050, pulseRadius: 0.085 });
+});
+createFlow("secondaryPvTrunk", [
+    secondaryPvCombinerPoint,
+    [3.64, BALCONY_FLOOR_Y + 0.12, 3.30],
+    [3.64, BALCONY_FLOOR_Y + 0.12, SECONDARY_SOLARBANK_POSITION.z],
+    [3.64, BALCONY_RAIL_CENTER_Y, SECONDARY_SOLARBANK_POSITION.z]
+], colors.battery3, { cableRadius: 0.036, glowRadius: 0.058, pulseRadius: 0.095 });
 // Der Netzstrang erreicht die Wand zwischen den beiden unteren Haustüren,
 // wechselt oberhalb ihrer Rahmen in den Spalt der beiden Balkontüren und
 // steigt dort bis zur Traufe. Sein Dach- und Abstiegskanal ist gegenüber PV
@@ -3272,12 +3411,13 @@ const labelAnchors = {
     // Die Karte wird per CSS vollständig oberhalb dieses Punktes angeordnet,
     // statt mit ihrer Mitte halb im Gerät zu stehen.
     battery: new THREE.Vector3(3.50, 3.66, -1.42),
+    battery3: new THREE.Vector3(3.50, 3.34, 2.72),
     grid: new THREE.Vector3(GRID_BOX_POSITION.x, 1.18, GRID_BOX_POSITION.z),
     audi: new THREE.Vector3(5.00, 1.72, 1.00)
 };
 
 const labelElements = {};
-["pv", "battery", "grid", "audi"].forEach((id) => {
+["pv", "battery", "battery3", "grid", "audi"].forEach((id) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "house-scene-label";
@@ -3311,9 +3451,28 @@ pvPanelAnchors.forEach((panel, index) => {
     stage.appendChild(label);
     pvStringElements[panel.id] = label;
 });
+secondaryPvPanelAnchors.forEach((panel, index) => {
+    const label = document.createElement("button");
+    label.type = "button";
+    label.className = "house-string-label house-string-label-secondary";
+    label.dataset.string = panel.id;
+    label.innerHTML = `<strong>SB3 PV${index + 1} · --</strong>` +
+        '<span class="panel-mid-detail">36,8 V · -- A</span>' +
+        '<span class="panel-close-detail">Solarbank 3 · --</span>' +
+        '<span class="panel-expanded-detail">Live-Daten werden verbunden</span>' +
+        '<span class="house-string-more">Details öffnen</span>';
+    label.addEventListener("click", () => {
+        state.expandedComponent = null;
+        state.expandedPanel = state.expandedPanel === panel.id ? null : panel.id;
+        updateLiveUi();
+    });
+    stage.appendChild(label);
+    pvStringElements[panel.id] = label;
+});
 
 const objectBatteryAnchors = {
     battery: new THREE.Vector3(3.50, 3.48, -1.42),
+    battery3: new THREE.Vector3(3.50, 3.20, 2.72),
     audi: new THREE.Vector3(5.00, 0.72, 1.00)
 };
 const objectBatteryElements = {};
@@ -3347,7 +3506,8 @@ function setObjectBattery(id, percent, flowMode, powerWatts = null, secondaryDet
     indicator.querySelector(".house-object-battery-detail").innerHTML =
         `<span>${power != null && power >= 5 ? formatPower(power) + " · " + direction : direction}</span>` +
         detailLines.map((line) => `<span>${line}</span>`).join("");
-    const label = id === "battery" ? "Solarbank" : "Audi";
+    const label = id === "battery" ? "Solarbank 4" :
+        id === "battery3" ? "Solarbank 3" : "Audi";
     const motion = flowMode === "charging" ? " lädt" : flowMode === "discharging" ? " entlädt" : "";
     indicator.setAttribute("aria-label", label + ": " + (known ? Math.round(level) + " Prozent" + motion : "Ladestand unbekannt"));
 }
@@ -3446,12 +3606,14 @@ interiorHouse.devices.forEach((device) => {
 });
 
 let currentPvStringPowers = [null, null, null, null];
+let currentSecondaryPvStringPowers = [null, null];
 let simulatedHouseLoad = 0;
 let simulatedResidualLoad = 0;
 let lastRoutineMinute = -1;
 
 function updatePanelDetails() {
     const solix = state.data.solix || {};
+    const secondary = solix.secondary_solarbank || {};
     const dailyByString = Array.isArray(solix.pv_today_wh_by_string) ?
         solix.pv_today_wh_by_string : [];
     const history = Array.isArray(solix.pv_history) ? solix.pv_history : [];
@@ -3482,6 +3644,38 @@ function updatePanelDetails() {
         element.classList.toggle("active", watts != null && watts >= 5);
         element.setAttribute("aria-expanded", expanded ? "true" : "false");
         element.setAttribute("aria-label", "PV-Modul " + (index + 1) + ": " + formatPower(watts));
+    });
+    const secondaryTotal = currentSecondaryPvStringPowers.reduce(
+        (sum, value) => sum + (numberValue(value) ?? 0), 0
+    );
+    currentSecondaryPvStringPowers.forEach((power, index) => {
+        const id = "sb3pv" + (index + 1);
+        const element = pvStringElements[id];
+        const watts = numberValue(power);
+        const amps = watts == null ? null : Math.max(0, watts) / PV_MODULE_VMP;
+        element.querySelector("strong").textContent =
+            "SB3 PV" + (index + 1) + " · " + formatPower(watts);
+        element.querySelector(".panel-mid-detail").textContent =
+            "36,8 V · " + (amps == null ? "-- A" : amps.toLocaleString("de-DE", {
+                minimumFractionDigits: 1,
+                maximumFractionDigits: 2
+            }) + " A");
+        element.querySelector(".panel-close-detail").textContent =
+            "Anteil SB3 · " + (watts == null || secondaryTotal <= 0 ? "--" :
+                Math.round(watts / secondaryTotal * 100).toLocaleString("de-DE") + " %");
+        element.querySelector(".panel-expanded-detail").innerHTML =
+            '<span class="house-detail-row"><b>Aktuell</b><span>' +
+            escapeHtml(formatPower(watts)) + '</span></span>' +
+            '<span class="house-detail-row"><b>Ziel</b><span>Solarbank 3</span></span>' +
+            '<span class="house-detail-row"><b>Stand</b><span>' +
+            escapeHtml(formatTimestamp(secondary.last_update)) + '</span></span>';
+        const expanded = state.expandedPanel === id;
+        element.querySelector(".house-string-more").textContent = expanded ? "Weniger" : "Details öffnen";
+        element.classList.toggle("expanded", expanded);
+        element.classList.toggle("active", watts != null && watts >= 5);
+        element.setAttribute("aria-expanded", expanded ? "true" : "false");
+        element.setAttribute("aria-label", "Solarbank-3-PV-Modul " +
+            (index + 1) + ": " + formatPower(watts));
     });
 }
 
@@ -3615,6 +3809,7 @@ function renderComponentDetail(component) {
 
 function componentData() {
     const solix = state.data.solix || {};
+    const secondary = solix.secondary_solarbank || {};
     const automation = state.data.automation || {};
     const audi = state.data.audi || {};
     const smartPlug = automation.smartplug || {};
@@ -3643,6 +3838,22 @@ function componentData() {
     const batteryCapacityWh = numberValue(solix.battery_capacity_wh);
     const pvTodayWh = numberValue(solix.pv_today_wh);
     const pvHistory = Array.isArray(solix.pv_history) ? solix.pv_history : [];
+    const secondaryAvailable = secondary.available === true ||
+        secondary.model != null || secondary.battery_percent != null;
+    const secondaryPvStrings = [1, 2].map((number) =>
+        numberValue(secondary["pv" + number]));
+    const secondaryPvReported = numberValue(secondary.pv_total);
+    const secondaryPv = secondaryPvReported ??
+        (secondaryPvStrings.some((value) => value != null) ?
+            secondaryPvStrings.reduce((sum, value) => sum + (value ?? 0), 0) : null);
+    const secondarySoc = numberValue(secondary.battery_percent);
+    const secondaryCharge = numberValue(secondary.battery_charge_power) ?? 0;
+    const secondaryDischarge = numberValue(secondary.battery_discharge_power) ??
+        Math.max(0, -(numberValue(secondary.battery_power) ?? 0));
+    const secondaryEnergyWh = numberValue(secondary.battery_energy_wh);
+    const secondaryCapacityWh = numberValue(secondary.battery_capacity_wh);
+    const secondaryOutput = numberValue(secondary.system_output_power);
+    const secondaryUpdate = formatTimestamp(secondary.last_update);
     const smartPlugVoltage = numberValue(smartPlug.voltage_v);
     const smartPlugCurrent = numberValue(smartPlug.current_a);
     const onThreshold = numberValue(automation.on_threshold_percent) ?? 30;
@@ -3656,6 +3867,10 @@ function componentData() {
     const batteryStatus = solixStale ? "LETZTER STAND" :
         batteryCharge >= 5 ? "LÄDT · " + formatPower(batteryCharge) :
             batteryDischarge >= 5 ? "LIEFERT · " + formatPower(batteryDischarge) : "BEREIT";
+    const secondaryStatus = !secondaryAvailable ? "WIRD VERBUNDEN" :
+        solixStale ? "LETZTER STAND" :
+            secondaryCharge >= 5 ? "LÄDT · " + formatPower(secondaryCharge) :
+                secondaryDischarge >= 5 ? "LIEFERT · " + formatPower(secondaryDischarge) : "BEREIT";
     const gridStatus = solixStale ? "LETZTER STAND" : grid == null ? "KEIN WERT" :
         grid > 5 ? "BEZUG" : grid < -5 ? "EINSPEISUNG" : "RUHE";
     const audiStatus = audiAtHome === false ? "UNTERWEGS" :
@@ -3705,6 +3920,35 @@ function componentData() {
             ],
             chart: "",
             active: batteryCharge >= 5 || batteryDischarge >= 5
+        },
+        battery3: {
+            id: "battery3", label: "SOLARBANK 3", icon: "🔋", color: colors.battery3,
+            value: secondarySoc == null ? "--" : Math.round(secondarySoc) + " %",
+            status: secondaryStatus,
+            tone: solixStale || secondarySoc == null ? "muted" :
+                secondaryCharge >= 5 || secondaryDischarge >= 5 ? "active" : "idle",
+            detail: [
+                "Balkon-PV " + formatPower(secondaryPv),
+                secondaryEnergyWh == null ? "" :
+                    Math.round(secondaryEnergyWh).toLocaleString("de-DE") + " Wh gespeichert",
+                "ohne Zusatzspeicher"
+            ].filter(Boolean).join(" · "),
+            rows: [
+                ["Energiefluss", secondaryCharge >= 5 ? formatPower(secondaryCharge) + " hinein" :
+                    secondaryDischarge >= 5 ? formatPower(secondaryDischarge) + " heraus" : "bereit"],
+                ["Balkon-PV", secondaryPvStrings.map((value, index) =>
+                    "PV" + (index + 1) + " " + formatPower(value)).join(" · ")]
+            ],
+            advancedRows: [
+                ["Gespeichert", formatEnergy(secondaryEnergyWh)],
+                ["Kapazität", formatEnergy(secondaryCapacityWh)],
+                ["Hausabgabe", formatPower(secondaryOutput)],
+                ["Aufbau", "Solarbank 3 · keine Zusatzakkus"],
+                ["Modell", secondary.model || "--"],
+                ["Aktualisiert", secondaryUpdate]
+            ],
+            chart: "",
+            active: secondaryCharge >= 5 || secondaryDischarge >= 5
         },
         grid: {
             id: "grid", label: "STROMNETZ", icon: "🌐", color: colors.grid,
@@ -3759,6 +4003,8 @@ function componentData() {
         },
         raw: {
             pv, pvStrings, batterySoc, batteryCharge, batteryDischarge, batteryEnergyWh,
+            secondaryPv, secondaryPvStrings, secondarySoc, secondaryCharge,
+            secondaryDischarge, secondaryEnergyWh, secondaryCapacityWh, secondaryOutput,
             output, interiorLoad, grid, audiPower, charging, plugConnected, audiAtHome, solixStale,
             pvTodayWh, batteryCapacityWh, onThreshold, offThreshold
         }
@@ -3787,6 +4033,13 @@ function updateLiveUi() {
         currentPvStringPowers[index] = power;
     });
     setFlowState(flows.pvTrunk, raw.pv != null && raw.pv >= 5);
+    raw.secondaryPvStrings.forEach((power, index) => {
+        const id = "sb3pv" + (index + 1);
+        setFlowState(flows[id], power != null && power >= 5);
+        currentSecondaryPvStringPowers[index] = power;
+    });
+    setFlowState(flows.secondaryPvTrunk,
+        raw.secondaryPv != null && raw.secondaryPv >= 5);
     updatePanelDetails();
     setFlowState(flows.grid, raw.grid != null && Math.abs(raw.grid) >= 5, raw.grid < 0);
     setFlowState(flows.audiTrunk, raw.charging && raw.audiPower != null && raw.audiPower >= 5);
@@ -3803,6 +4056,15 @@ function updateLiveUi() {
         raw.batteryCharge >= 5 ? raw.batteryCharge : raw.batteryDischarge,
         ["2 × BP2700", raw.batteryEnergyWh == null ? "" :
             Math.round(raw.batteryEnergyWh).toLocaleString("de-DE") + " Wh gespeichert"].filter(Boolean));
+    const secondaryBatteryMode = raw.secondaryCharge >= 5 ? "charging" :
+        raw.secondaryDischarge >= 5 ? "discharging" : "idle";
+    setSchematicBatteryState(secondarySolarBankBatteryVisual,
+        raw.secondarySoc, secondaryBatteryMode);
+    setObjectBattery("battery3", raw.secondarySoc, secondaryBatteryMode,
+        raw.secondaryCharge >= 5 ? raw.secondaryCharge : raw.secondaryDischarge,
+        ["ohne Zusatzspeicher", raw.secondaryEnergyWh == null ? "" :
+            Math.round(raw.secondaryEnergyWh).toLocaleString("de-DE") +
+            " Wh gespeichert"].filter(Boolean));
     const audiData = state.data.audi || {};
     if (!audiPresenceDemoActive)
         startAudiPresenceTransition(audiData.at_home);
@@ -3820,7 +4082,7 @@ function updateLiveUi() {
     objectBatteryElements.audi.hidden = raw.audiAtHome === false;
     updateInteriorElectricity(raw.interiorLoad, new Date());
 
-    ["pv", "battery", "grid", "audi"].forEach((id) => {
+    ["pv", "battery", "battery3", "grid", "audi"].forEach((id) => {
         const component = components[id];
         const element = labelElements[id];
         element.innerHTML =
@@ -3870,7 +4132,7 @@ function setCutawayVisible(visible) {
     stage.classList.toggle("house-cutaway", visible);
     if (visible)
         interiorHouse.group.visible = true;
-    [pergolaModel, solarBankModel, gridBoxModel,
+    [pergolaModel, balconyPanelModel, solarBankModel, secondarySolarBankModel, gridBoxModel,
         vehicleModels.yeti.slot,
         vehicleModels.fox.slot, vehicleModels.karoq.slot].forEach((model) => {
         model.visible = !visible;
@@ -3946,7 +4208,7 @@ function updateLabelPositions() {
         ));
     });
 
-    pvPanelAnchors.forEach((panel) => {
+    [...pvPanelAnchors, ...secondaryPvPanelAnchors].forEach((panel) => {
         const anchor = world.localToWorld(panel.anchor.clone());
         const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
         const projected = anchor.project(camera);
@@ -4340,6 +4602,7 @@ function animate(time) {
     }
 
     animateSchematicBattery(solarBankBatteryVisual, seconds);
+    animateSchematicBattery(secondarySolarBankBatteryVisual, seconds);
     animateSchematicBattery(audiBatteryVisual, seconds);
     animatePondFish(seconds);
 

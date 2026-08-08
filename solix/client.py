@@ -378,6 +378,84 @@ class SolixClient:
         except (TypeError, ValueError):
             return 0
 
+    def _secondary_solarbank_payload_locked(
+        self, primary_solarbank: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Expose one additional bank without changing primary-bank selection.
+
+        The flat values returned by ``get_live`` intentionally continue to
+        describe the configured Solarbank 4 because the Audi automation reads
+        those fields.  A second system is therefore published only as a nested
+        display payload and never influences the switching thresholds.
+        """
+        assert self.api is not None
+        secondary_banks = [
+            device
+            for device in self.api.devices.values()
+            if device.get("type") == "solarbank" and device is not primary_solarbank
+        ]
+        if not secondary_banks:
+            return None
+
+        # Accounts with more than two systems remain deterministic.  Prefer a
+        # standalone bank (no expansion packs), then the largest such system.
+        solarbank = max(
+            secondary_banks,
+            key=lambda device: (
+                -self._number(device.get("sub_package_num")),
+                self._number(device.get("battery_capacity")),
+            ),
+        )
+        battery_percent = self._number(solarbank.get("battery_soc"))
+        battery_capacity_wh = self._number(solarbank.get("battery_capacity"))
+        battery_energy_wh = self._number(solarbank.get("battery_energy"))
+        if battery_energy_wh <= 0 and battery_capacity_wh > 0:
+            battery_energy_wh = round(
+                battery_capacity_wh * battery_percent / 100
+            )
+        battery_charge_power = self._number(
+            solarbank.get("bat_charge_power")
+        )
+        battery_discharge_power = self._number(
+            solarbank.get("bat_discharge_power")
+        )
+        pv_values = [
+            self._number(solarbank.get(f"solar_power_{number}"))
+            for number in range(1, 3)
+        ]
+        return {
+            "available": True,
+            "status": solarbank.get("status_desc"),
+            "model": solarbank.get("device_pn"),
+            "battery_percent": battery_percent,
+            "battery_energy_wh": battery_energy_wh,
+            "battery_capacity_wh": battery_capacity_wh,
+            "battery_power": (
+                battery_charge_power
+                if battery_charge_power > 0
+                else -battery_discharge_power
+            ),
+            "battery_charge_power": battery_charge_power,
+            "battery_discharge_power": battery_discharge_power,
+            "battery_flow_direction": (
+                "charging"
+                if battery_charge_power > 0
+                else "discharging"
+                if battery_discharge_power > 0
+                else "idle"
+            ),
+            "system_output_power": self._number(solarbank.get("output_power")),
+            "charging_status": solarbank.get("charging_status_desc"),
+            "pv_total": sum(pv_values),
+            "pv1": pv_values[0],
+            "pv2": pv_values[1],
+            "firmware": solarbank.get("sw_version"),
+            "wifi_signal": self._number(solarbank.get("wifi_signal")),
+            "last_update": (
+                self._last_refresh_at.isoformat() if self._last_refresh_at else None
+            ),
+        }
+
     def _record_pv_telemetry(
         self,
         pv_power_w: int,
@@ -537,6 +615,9 @@ class SolixClient:
             "solarbank_model": solarbank.get("device_pn"),
             "solarbank_count": solarbank_count,
             "selection": selection,
+            "secondary_solarbank": self._secondary_solarbank_payload_locked(
+                solarbank
+            ),
             "last_update": (
                 self._last_refresh_at.isoformat() if self._last_refresh_at else None
             ),
@@ -591,6 +672,7 @@ class SolixClient:
             "solarbank_model": None,
             "solarbank_count": 0,
             "selection": None,
+            "secondary_solarbank": None,
             "last_update": None,
             "data_age_seconds": None,
             "refresh_interval_seconds": self._cache_seconds,
