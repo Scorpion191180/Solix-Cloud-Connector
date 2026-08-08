@@ -1032,9 +1032,13 @@ const PV_MODULE_VMP = 36.79;
 // Hausanschluss rücken mit, während ihre Abstände zur Zauninnenseite erhalten
 // bleiben. Dadurch verschwindet der unnötig breite Grünstreifen.
 const AUDI_SIDE_FENCE_X = 7.20;
-const PERGOLA_CENTER = new THREE.Vector3(5.75, 0, -8.50);
+// Die Pergola steht in der unteren Grundstücksecke dicht am schrägen Zaun.
+// Der zusätzliche Abstand zum Haus schafft davor eine zusammenhängende Wiese.
+const PERGOLA_CENTER = new THREE.Vector3(5.75, 0, -13.10);
 const PERGOLA_SHIFT_X = PERGOLA_CENTER.x - 8.10;
 const pergolaX = (originalX) => originalX + PERGOLA_SHIFT_X;
+const PERGOLA_SHIFT_Z = PERGOLA_CENTER.z - (-8.50);
+const pergolaZ = (originalZ) => originalZ + PERGOLA_SHIFT_Z;
 const PERGOLA_ROOF_Y = 2.62;
 const PERGOLA_ROOF_PITCH = THREE.MathUtils.degToRad(12);
 const PERGOLA_PANEL_LAYOUT = [
@@ -1183,7 +1187,43 @@ function createPergolaPanels() {
             addBox(panel, [panelWidth - 0.08, 0.010, 0.010], frameMaterial,
                 [0, 0.055, row * panelLength / 10], { castShadow: false });
     });
+    createPergolaFurniture(pergola);
     return pergola;
+}
+
+function createPergolaFurniture(pergola) {
+    const furniture = new THREE.Group();
+    furniture.userData.hideInCutaway = true;
+    pergola.add(furniture);
+
+    const woven = new THREE.MeshStandardMaterial({ color: 0x111417, roughness: 0.94 });
+    const cushion = new THREE.MeshStandardMaterial({ color: 0x252a2e, roughness: 0.90 });
+    const tabletop = new THREE.MeshStandardMaterial({
+        color: 0x080a0c,
+        metalness: 0.22,
+        roughness: 0.62
+    });
+
+    // Schwarzer, niedriger Tisch in der Mitte der Sitzgruppe.
+    addBox(furniture, [0.72, 0.09, 1.08], tabletop, [0, 0.48, 0], { radius: 0.045 });
+    [-0.27, 0.27].forEach((x) => [-0.43, 0.43].forEach((z) =>
+        addBox(furniture, [0.07, 0.44, 0.07], woven, [x, 0.24, z], { radius: 0.018 })));
+
+    // Zweisitzer an der Hausseite, mit zwei getrennten Sitzpolstern.
+    addBox(furniture, [0.16, 0.88, 1.76], woven, [-1.02, 0.62, 0], { radius: 0.055 });
+    addBox(furniture, [0.62, 0.16, 1.62], woven, [-0.76, 0.38, 0], { radius: 0.050 });
+    [-0.80, 0.80].forEach((z) =>
+        addBox(furniture, [0.64, 0.58, 0.13], woven, [-0.76, 0.55, z], { radius: 0.045 }));
+    [-0.39, 0.39].forEach((z) =>
+        addBox(furniture, [0.54, 0.10, 0.67], cushion, [-0.73, 0.50, z], { radius: 0.060 }));
+
+    // Einzelne Sitzbank gegenüber, ebenfalls mit beiden Armlehnen.
+    addBox(furniture, [0.16, 0.88, 0.94], woven, [1.02, 0.62, 0.28], { radius: 0.055 });
+    addBox(furniture, [0.62, 0.16, 0.80], woven, [0.76, 0.38, 0.28], { radius: 0.050 });
+    [-0.41, 0.41].forEach((zOffset) =>
+        addBox(furniture, [0.64, 0.58, 0.13], woven,
+            [0.76, 0.55, 0.28 + zOffset], { radius: 0.045 }));
+    addBox(furniture, [0.54, 0.10, 0.68], cushion, [0.73, 0.50, 0.28], { radius: 0.060 });
 }
 
 function createBalconySolarPanels() {
@@ -2571,8 +2611,8 @@ function createGrassDetail() {
         const onForecourt = z > 4.55 && z < 15.35 && x > -6.5 && x < 6.8;
         const onAudiDrive = x > 3.15 && z > -6.55 && z < 6.7;
         const onRearPatio = x < -3.10 && x > -7.10 && z > -2.10 && z < 5.90;
-        const aroundPool = Math.hypot(x + 6.65, z + 2.80) < 3.10;
-        const aroundPond = Math.hypot((x + 4.45) / 1.35, (z - 14.10) / 0.98) < 1.18;
+        const aroundPool = Math.hypot(x + 7.80, z + 4.95) < 3.10;
+        const aroundPond = Math.hypot((x + 4.85) / 1.35, (z - 14.78) / 0.98) < 1.18;
         const underPergola = Math.abs(x - PERGOLA_CENTER.x) < 1.55 &&
             Math.abs(z - PERGOLA_CENTER.z) < 2.25;
         if (onHouse || onForecourt || onAudiDrive || onRearPatio || aroundPool || aroundPond || underPergola)
@@ -2599,7 +2639,7 @@ function createGoldfishPond() {
     // IMG_7437: Der blau eingekreiste Teich liegt dort, wo zuvor fälschlich
     // zwei Bäume standen. Diese Baumgruppe rückt im Gegenzug in die alte
     // Teichposition an der linken Grundstücksecke.
-    pond.position.set(-4.45, 0.035, 14.10);
+    pond.position.set(-4.85, 0.035, 14.78);
     pond.rotation.y = THREE.MathUtils.degToRad(-12);
     world.add(pond);
 
@@ -2730,9 +2770,10 @@ function createGarden() {
     const pool = new THREE.Group();
     // Aus dem Luftbild auf die reale Intex-Größe (ca. 5,5 × 2,7 m)
     // skaliert und parallel zur diagonalen Feldgrenze positioniert.
-    // Entlang der Feldgrenze verschoben: Die breite Holzplattform schließt am
-    // Zaun an, während zwischen Pool und Haus ein deutlich breiterer Weg bleibt.
-    pool.position.set(-6.65, 0, -2.80);
+    // Noch näher an die untere Grundstücksgrenze verschoben: Die breite
+    // Holzplattform liegt nun mit einem kleinen Laufabstand direkt am Zaun,
+    // während zwischen Pool und Haus ein deutlich breiterer Weg bleibt.
+    pool.position.set(-7.80, 0, -4.95);
     pool.rotation.y = THREE.MathUtils.degToRad(-60);
     world.add(pool);
     const poolWall = new THREE.MeshStandardMaterial({ color: 0x374552, metalness: 0.22, roughness: 0.68 });
@@ -2771,10 +2812,10 @@ function createGarden() {
 
     createGoldfishPond();
 
-    // Die beiden Bäume aus der neuen Teichposition stehen jetzt an der alten
-    // Teichstelle. Am Pool selbst gibt es laut Luftbild keinen Baum.
+    // Der zuvor mittig vor den Garagen stehende Baum rückt links neben den
+    // Teich. Am Pool selbst gibt es laut Luftbild weiterhin keinen Baum.
     [
-        [-1.10, 14.85, 0.72], [-6.65, 12.25, 0.86], [-7.65, 12.75, 0.76],
+        [-6.82, 14.58, 0.72], [-6.65, 12.25, 0.86], [-7.65, 12.75, 0.76],
         [-8.45, 11.25, 0.70], [-8.25, 4.10, 0.60]
     ].forEach(([x, z, scale]) => createDeciduousTree(x, z, scale));
     [
@@ -2785,10 +2826,15 @@ function createGarden() {
     // Der Holzzaun folgt jetzt der eingezeichneten Feld- und Gartengrenze,
     // statt das Grundstück als unzutreffendes Rechteck einzufassen.
     const fence = new THREE.MeshStandardMaterial({ color: 0x6a5848, roughness: 1 });
+    const rearFenceJunction = [-11.50, -6.42];
+    // Der von der Garagenseite kommende Zaun endet exakt auf Höhe der
+    // hinteren Hausecke. Der von rechts kommende Abschnitt wird bis zu diesem
+    // gemeinsamen Eckpunkt verlängert, sodass kein offener Spalt bleibt.
     createFencePath([
-        [7.20, -16.50], [-11.50, -1.00], [-9.00, 2.40],
-        [-6.90, 4.40], [-8.70, 13.70]
+        [-8.70, 13.70], [-6.90, 4.40], [-9.00, 2.40],
+        [-11.50, -1.00], rearFenceJunction
     ], fence, 0.84);
+    createFencePath([[7.20, -16.50], rearFenceJunction], fence, 0.84);
     // Der straßenseitige Zaun läuft von der Pergola bis auf Höhe des
     // Garagengiebels. Erst dahinter bleibt die Einfahrt zu den drei Autos offen.
     createFencePath([[7.20, -16.50], [7.20, 6.35]], fence, 0.88);
@@ -3278,25 +3324,25 @@ const secondaryPvPanelAnchors = BALCONY_PANEL_POSITIONS.map((position, index) =>
 // laufen einzeln in den beiden Kreuzfugen und bleiben damit von den sichtbaren
 // Modulflächen weg. Erst an der vorderen Pergola-Kante werden sie in der
 // Sammelbox zusammengeführt.
-const pvCombinerPoint = [pergolaX(7.12), 2.54, -6.66];
+const pvCombinerPoint = [pergolaX(7.12), 2.54, pergolaZ(-6.66)];
 const pvUnderPanelY = (worldX) => PERGOLA_ROOF_Y -
     Math.tan(PERGOLA_ROOF_PITCH) * (worldX - PERGOLA_CENTER.x) - 0.035;
 const pvRoutes = [
     [
-        [pergolaX(7.49), pvUnderPanelY(pergolaX(7.49)), -9.50], [pergolaX(8.02), pvUnderPanelY(pergolaX(8.02)), -9.50],
-        [pergolaX(8.02), pvUnderPanelY(pergolaX(8.02)), -8.56], [pergolaX(8.02), 2.54, -6.74], pvCombinerPoint
+        [pergolaX(7.49), pvUnderPanelY(pergolaX(7.49)), pergolaZ(-9.50)], [pergolaX(8.02), pvUnderPanelY(pergolaX(8.02)), pergolaZ(-9.50)],
+        [pergolaX(8.02), pvUnderPanelY(pergolaX(8.02)), pergolaZ(-8.56)], [pergolaX(8.02), 2.54, pergolaZ(-6.74)], pvCombinerPoint
     ],
     [
-        [pergolaX(8.71), pvUnderPanelY(pergolaX(8.71)), -9.50], [pergolaX(8.08), pvUnderPanelY(pergolaX(8.08)), -9.50],
-        [pergolaX(8.08), pvUnderPanelY(pergolaX(8.08)), -8.52], [pergolaX(8.08), 2.54, -6.70], pvCombinerPoint
+        [pergolaX(8.71), pvUnderPanelY(pergolaX(8.71)), pergolaZ(-9.50)], [pergolaX(8.08), pvUnderPanelY(pergolaX(8.08)), pergolaZ(-9.50)],
+        [pergolaX(8.08), pvUnderPanelY(pergolaX(8.08)), pergolaZ(-8.52)], [pergolaX(8.08), 2.54, pergolaZ(-6.70)], pvCombinerPoint
     ],
     [
-        [pergolaX(7.49), pvUnderPanelY(pergolaX(7.49)), -7.50], [pergolaX(8.14), pvUnderPanelY(pergolaX(8.14)), -7.50],
-        [pergolaX(8.14), pvUnderPanelY(pergolaX(8.14)), -8.48], [pergolaX(8.14), 2.54, -6.66], pvCombinerPoint
+        [pergolaX(7.49), pvUnderPanelY(pergolaX(7.49)), pergolaZ(-7.50)], [pergolaX(8.14), pvUnderPanelY(pergolaX(8.14)), pergolaZ(-7.50)],
+        [pergolaX(8.14), pvUnderPanelY(pergolaX(8.14)), pergolaZ(-8.48)], [pergolaX(8.14), 2.54, pergolaZ(-6.66)], pvCombinerPoint
     ],
     [
-        [pergolaX(8.71), pvUnderPanelY(pergolaX(8.71)), -7.50], [pergolaX(8.20), pvUnderPanelY(pergolaX(8.20)), -7.50],
-        [pergolaX(8.20), pvUnderPanelY(pergolaX(8.20)), -8.44], [pergolaX(8.20), 2.54, -6.62], pvCombinerPoint
+        [pergolaX(8.71), pvUnderPanelY(pergolaX(8.71)), pergolaZ(-7.50)], [pergolaX(8.20), pvUnderPanelY(pergolaX(8.20)), pergolaZ(-7.50)],
+        [pergolaX(8.20), pvUnderPanelY(pergolaX(8.20)), pergolaZ(-8.44)], [pergolaX(8.20), 2.54, pergolaZ(-6.62)], pvCombinerPoint
     ]
 ];
 pvPanelAnchors.forEach((panel, index) => {
@@ -3307,7 +3353,7 @@ pvPanelAnchors.forEach((panel, index) => {
 // bis zur Balkonplatte und anschließend direkt zur Anlage. Dadurch bleibt die
 // gelbe Leitung aus der Fensterzone heraus und ist vom Netzstrang getrennt.
 createFlow("pvTrunk", [
-    pvCombinerPoint, [pvCombinerPoint[0], 0.18, -6.66], [3.40, 0.18, -6.66],
+    pvCombinerPoint, [pvCombinerPoint[0], 0.18, pvCombinerPoint[2]], [3.40, 0.18, pvCombinerPoint[2]],
     [3.40, 0.18, -1.33], [3.40, BALCONY_FLOOR_Y + 0.08, -1.33],
     [3.40, BALCONY_FLOOR_Y + 0.08, -1.42], [3.62, BALCONY_FLOOR_Y + 0.08, -1.42],
     [3.62, BALCONY_RAIL_CENTER_Y, -1.42]
