@@ -132,6 +132,7 @@ let pergolaModel = null;
 let solarBankModel = null;
 let solarBankBatteryVisual = null;
 let audiBatteryVisual = null;
+const pondFish = [];
 
 function numberValue(value) {
     if (value == null || typeof value === "boolean")
@@ -2327,19 +2328,20 @@ function createTree(x, z, scale = 1) {
     addMesh(tree, new THREE.ConeGeometry(0.42, 1.18, 14), needles, 0, 4.78, 0, { castShadow: true });
 }
 
-// Aus der blauen Grundstücksgrenze im senkrechten Luftbild IMG_7436
-// abgeleitete, vereinfachte Polygonkontur. +X zeigt zur langen Straße,
-// +Z zur Garagenseite; die Feldgrenze verläuft diagonal im Nordosten.
+// Aus der blauen Grundstücksgrenze in IMG_7437 abgeleitete, vereinfachte
+// Polygonkontur. +X zeigt zur langen Straße, +Z zur Garagenseite. Der lange
+// diagonale Feldrand trifft die Straße erst deutlich hinter dem Haus; dadurch
+// bleibt der Zaun am hinteren Hauseck maßstäblich rund 2,5 m entfernt.
 const PROPERTY_BOUNDARY = [
-    [7.20, 6.75],
-    [7.20, -11.20],
+    [7.20, 11.20],
+    [7.20, -16.50],
     [-11.50, -1.00],
     [-9.00, 2.40],
     [-6.90, 4.40],
-    [-8.70, 9.20],
-    [-6.00, 10.70],
-    [-1.00, 12.00],
-    [4.70, 10.80]
+    [-8.70, 13.70],
+    [-6.20, 15.50],
+    [-1.10, 16.80],
+    [4.70, 15.70]
 ];
 
 function pointInPolygon(x, z, polygon) {
@@ -2454,13 +2456,14 @@ function createGrassDetail() {
         if (!pointInPolygon(x, z, PROPERTY_BOUNDARY))
             continue;
         const onHouse = Math.abs(x) < 3.85 && Math.abs(z) < 6.95;
-        const onForecourt = z > 4.55 && x > -4.0 && x < 6.5;
+        const onForecourt = z > 4.55 && z < 15.35 && x > -6.5 && x < 6.8;
         const onAudiDrive = x > 3.15 && z > -6.55 && z < 6.7;
         const onRearPatio = x < -3.10 && x > -7.10 && z > -2.10 && z < 5.90;
         const aroundPool = Math.hypot(x + 5.55, z + 3.70) < 3.10;
+        const aroundPond = Math.hypot((x + 7.15) / 1.35, (z - 12.55) / 0.98) < 1.18;
         const underPergola = Math.abs(x - PERGOLA_CENTER.x) < 1.55 &&
             Math.abs(z - PERGOLA_CENTER.z) < 2.25;
-        if (onHouse || onForecourt || onAudiDrive || onRearPatio || aroundPool || underPergola)
+        if (onHouse || onForecourt || onAudiDrive || onRearPatio || aroundPool || aroundPond || underPergola)
             continue;
         transform.position.set(x, 0.07, z);
         transform.rotation.set((random() - 0.5) * 0.22, random() * Math.PI, (random() - 0.5) * 0.22);
@@ -2479,10 +2482,85 @@ function createGrassDetail() {
     world.add(blades);
 }
 
+function createGoldfishPond() {
+    const pond = new THREE.Group();
+    // IMG_7437: Der blau eingekreiste Teich liegt in der bepflanzten Ecke
+    // links vom Garagenvorplatz, nicht auf der Fahrfläche.
+    pond.position.set(-7.15, 0.035, 12.55);
+    pond.rotation.y = THREE.MathUtils.degToRad(-12);
+    world.add(pond);
+
+    const basinMaterial = new THREE.MeshStandardMaterial({ color: 0x24362f, roughness: 0.96 });
+    const pondWater = materials.water.clone();
+    pondWater.color.set(0x176f83);
+    pondWater.opacity = 0.72;
+    pondWater.transmission = 0.18;
+    pondWater.depthWrite = false;
+    const basin = addMesh(pond, new THREE.CircleGeometry(1.12, 48), basinMaterial,
+        0, -0.02, 0, { rotation: [-Math.PI / 2, 0, 0], castShadow: false });
+    basin.scale.set(1.18, 0.82, 1);
+    const water = addMesh(pond, new THREE.CircleGeometry(1.04, 48), pondWater,
+        0, 0.045, 0, { rotation: [-Math.PI / 2, 0, 0], castShadow: false });
+    water.scale.set(1.18, 0.82, 1);
+    water.renderOrder = 4;
+
+    const stoneMaterial = new THREE.MeshStandardMaterial({ color: 0x77766e, roughness: 0.96 });
+    const stoneShade = new THREE.MeshStandardMaterial({ color: 0x99978d, roughness: 0.94 });
+    for (let index = 0; index < 28; index += 1) {
+        const angle = index / 28 * Math.PI * 2;
+        const radiusX = 1.24 + Math.sin(index * 2.7) * 0.05;
+        const radiusZ = 0.90 + Math.cos(index * 2.1) * 0.04;
+        const stone = addMesh(pond, new THREE.DodecahedronGeometry(0.13 + (index % 3) * 0.018, 0),
+            index % 4 === 0 ? stoneShade : stoneMaterial,
+            Math.cos(angle) * radiusX, 0.09, Math.sin(angle) * radiusZ);
+        stone.scale.set(1.25, 0.62, 0.90);
+        stone.rotation.y = angle;
+    }
+
+    const lilyMaterial = new THREE.MeshStandardMaterial({
+        color: 0x3f7d45,
+        roughness: 0.88,
+        side: THREE.DoubleSide
+    });
+    [[-0.52, -0.25, 0.15], [0.36, 0.27, 0.12], [0.66, -0.18, 0.10]].forEach(([x, z, radius]) => {
+        const lily = addMesh(pond, new THREE.CircleGeometry(radius, 18), lilyMaterial,
+            x, 0.075, z, { rotation: [-Math.PI / 2, 0, 0], castShadow: false });
+        lily.scale.y = 0.72;
+    });
+
+    const fishColors = [0xff8a18, 0xf5b942, 0xff6b14, 0xf1eee3, 0xe65319];
+    const random = seededNoise(7437);
+    for (let index = 0; index < 8; index += 1) {
+        const fish = new THREE.Group();
+        const fishMaterial = new THREE.MeshStandardMaterial({
+            color: fishColors[index % fishColors.length],
+            roughness: 0.46,
+            emissive: index === 3 ? 0x5b4b31 : 0x3d1503,
+            emissiveIntensity: 0.12
+        });
+        const body = addMesh(fish, new THREE.SphereGeometry(0.10, 12, 8), fishMaterial,
+            0, 0, 0, { castShadow: false });
+        body.scale.set(0.70, 0.42, 1.28);
+        addMesh(fish, new THREE.ConeGeometry(0.085, 0.16, 3), fishMaterial,
+            0, 0, -0.16, { rotation: [Math.PI / 2, 0, 0], castShadow: false });
+        fish.position.y = 0.085 + random() * 0.012;
+        fish.scale.setScalar(0.78 + random() * 0.48);
+        pond.add(fish);
+        pondFish.push({
+            group: fish,
+            phase: random() * Math.PI * 2,
+            speed: 0.16 + random() * 0.13,
+            radiusX: 0.28 + random() * 0.54,
+            radiusZ: 0.18 + random() * 0.38,
+            wobble: 0.7 + random() * 0.8
+        });
+    }
+}
+
 function createGarden() {
     // Große Umgebungsfläche und die tatsächliche, unregelmäßige Parzelle.
     // Außerhalb der Grenze bleibt die Wiese des Luftbilds sichtbar.
-    addBox(world, [34.0, 0.25, 34.0], materials.grass, [0, -0.18, 0], { castShadow: false });
+    addBox(world, [46.0, 0.25, 46.0], materials.grass, [0, -0.18, 0], { castShadow: false });
     addHorizontalPolygon(world, PROPERTY_BOUNDARY, materials.grass, -0.045);
 
     const roadMaterial = new THREE.MeshStandardMaterial({ color: 0x555b5f, roughness: 1 });
@@ -2494,40 +2572,41 @@ function createGarden() {
     // Lange Straße an der Vorderseite und die quer anschließende Straße
     // an der Garagenseite. Beide reichen über den Bildausschnitt hinaus.
     addHorizontalPolygon(world, [
-        [7.82, -12.10], [13.20, -14.20], [13.20, 10.30],
-        [8.00, 9.00], [7.82, 6.75]
+        [7.82, -18.80], [13.20, -20.20], [13.20, 22.40],
+        [8.00, 21.20], [7.82, 11.20]
     ], roadMaterial, -0.025);
     addHorizontalPolygon(world, [
-        [8.00, 9.00], [13.20, 10.30], [7.20, 14.80], [-1.20, 15.50],
-        [-7.80, 13.10], [-9.40, 10.20], [-8.70, 9.20],
-        [-6.00, 10.70], [-1.00, 12.00], [4.70, 10.80]
+        [8.00, 14.10], [13.20, 15.40], [7.20, 20.20], [-1.20, 20.90],
+        [-8.50, 18.20], [-10.10, 15.10], [-8.70, 13.70],
+        [-6.20, 15.50], [-1.10, 16.80], [4.70, 15.70]
     ], roadMaterial, -0.022);
 
     // Gehwege folgen den beiden Straßenseiten der blauen Grenze.
     addHorizontalPolygon(world, [
-        [7.20, -11.20], [7.82, -12.10], [7.82, 6.75], [7.20, 6.75]
+        [7.20, -16.50], [7.82, -18.80], [7.82, 11.20], [7.20, 11.20]
     ], sidewalkMaterial, 0.006);
     addHorizontalPolygon(world, [
-        [7.20, 6.75], [8.00, 9.00], [4.70, 11.55], [-1.10, 12.75],
-        [-6.20, 11.45], [-8.95, 9.70], [-8.70, 9.20],
-        [-6.00, 10.70], [-1.00, 12.00], [4.70, 10.80]
+        [7.20, 11.20], [8.00, 14.10], [4.70, 16.45], [-1.10, 17.55],
+        [-6.50, 16.25], [-9.45, 14.35], [-8.70, 13.70],
+        [-6.20, 15.50], [-1.10, 16.80], [4.70, 15.70]
     ], sidewalkMaterial, 0.008);
-    addBox(world, [0.12, 0.08, 17.95], curbMaterial, [7.18, 0.035, -2.225], { castShadow: false });
+    addBox(world, [0.12, 0.08, 27.70], curbMaterial, [7.18, 0.035, -2.65], { castShadow: false });
 
     // Unterbrochene Fahrbahnmarkierungen machen beide Straßenzüge auch
     // bei flacher Kameraperspektive eindeutig erkennbar.
-    for (let z = -11.0; z <= 8.0; z += 2.15)
+    for (let z = -18.0; z <= 21.0; z += 2.15)
         addBox(world, [0.10, 0.025, 1.10], markingMaterial, [10.55, 0.038, z], { castShadow: false });
-    for (let x = -6.4; x <= 7.0; x += 2.15)
-        addBox(world, [1.10, 0.025, 0.10], markingMaterial, [x, 0.038, 13.25], { castShadow: false });
+    for (let x = -7.2; x <= 7.0; x += 2.15)
+        addBox(world, [1.10, 0.025, 0.10], markingMaterial, [x, 0.038, 18.55], { castShadow: false });
 
     createGrassDetail();
 
     // Befestigte Flächen aus der Draufsicht: Garagenvorplatz, langer
     // straßenseitiger Stellplatz und der dunklere Hof auf der Gartenseite.
     addHorizontalPolygon(world, [
-        [-3.55, 5.85], [3.55, 5.85], [6.80, 7.10], [5.05, 10.70],
-        [-0.90, 11.65], [-3.70, 9.60]
+        [-3.55, 5.85], [3.55, 5.85], [6.80, 7.10], [6.55, 13.95],
+        [4.10, 15.15], [-1.20, 16.05], [-5.35, 14.55], [-6.35, 11.35],
+        [-3.70, 9.60]
     ], materials.paving, 0.022);
     addBox(world, [3.2, 0.07, 13.2], materials.paving, [4.80, 0.03, 0.20], { castShadow: false });
     addHorizontalPolygon(world, [
@@ -2575,11 +2654,14 @@ function createGarden() {
         addBox(lounger, [0.055, 0.36, 0.055], loungerFrame, [x, 0.03, -0.48]);
     });
 
-    // Gehölzgruppen gemäß Luftbild: dicht an der Garagenstraße und der
-    // hinteren Einbuchtung; ein markanter Laubbaum steht links neben dem Pool.
+    createGoldfishPond();
+
+    // Gehölzgruppen gemäß Luftbild: dicht um den Teich an der Garagenstraße
+    // und in der hinteren Einbuchtung; ein markanter Laubbaum steht links neben
+    // dem Pool. Der Teich selbst bleibt von Baumkronen frei und gut sichtbar.
     [
-        [-0.40, 11.05, 0.72], [-2.65, 10.65, 0.86], [-5.30, 9.95, 0.80],
-        [-7.55, 8.45, 0.72], [-8.25, 4.10, 0.60]
+        [-1.10, 14.85, 0.72], [-3.65, 14.35, 0.86], [-5.25, 13.85, 0.76],
+        [-8.45, 11.25, 0.70], [-8.25, 4.10, 0.60]
     ].forEach(([x, z, scale]) => createDeciduousTree(x, z, scale));
     createDeciduousTree(-4.72, -1.25, 0.68);
     [
@@ -2591,12 +2673,12 @@ function createGarden() {
     // statt das Grundstück als unzutreffendes Rechteck einzufassen.
     const fence = new THREE.MeshStandardMaterial({ color: 0x6a5848, roughness: 1 });
     createFencePath([
-        [7.20, -11.20], [-11.50, -1.00], [-9.00, 2.40],
-        [-6.90, 4.40], [-8.70, 9.20]
+        [7.20, -16.50], [-11.50, -1.00], [-9.00, 2.40],
+        [-6.90, 4.40], [-8.70, 13.70]
     ], fence, 0.84);
     // Kurzes straßenseitiges Stück an der Pergola; die große Einfahrt
     // vor Audi und Garagen bleibt wie auf dem Foto offen.
-    createFencePath([[7.20, -11.20], [7.20, -6.55]], fence, 0.88);
+    createFencePath([[7.20, -16.50], [7.20, -6.55]], fence, 0.88);
 }
 
 function createGridBox() {
@@ -2714,9 +2796,34 @@ const gridBoxModel = createGridBox();
 const chargingConnection = createAudiChargeConnection();
 
 const AUDI_HOME_POSE = Object.freeze({ x: 5.00, z: 1.00, yaw: Math.PI });
-const AUDI_REVERSE_POSE = Object.freeze({ x: 5.00, z: 5.20, yaw: Math.PI });
-const AUDI_ROAD_POSE = Object.freeze({ x: 7.65, z: 7.05, yaw: Math.PI / 2 });
-const AUDI_OFFSCREEN_POSE = Object.freeze({ x: 11.40, z: 7.05, yaw: Math.PI / 2 });
+const AUDI_OFFSCREEN_POSE = Object.freeze({ x: 9.45, z: -18.50, yaw: Math.PI });
+const AUDI_ARRIVAL_ENTRY_POSE = Object.freeze({ x: 9.45, z: 20.50, yaw: Math.PI });
+// Die Abfahrt bildet jetzt ein echtes Ausparkmanöver ab: erst gerade
+// zurücksetzen, anhalten, vorwärts in einem weiten Bogen auf die Straße
+// einscheren und dort parallel weiterfahren. Bei der Rückkehr kommt der Audi
+// aus der Gegenrichtung, biegt vorwärts auf den Stellplatz ein und setzt die
+// letzten Zentimeter gerade zurück.
+const AUDI_DEPARTURE_ROUTE = [
+    { at: 0.00, pose: AUDI_HOME_POSE },
+    { at: 0.10, pose: AUDI_HOME_POSE },
+    { at: 0.23, pose: { x: 5.00, z: 2.15, yaw: Math.PI } },
+    { at: 0.29, pose: { x: 5.00, z: 2.15, yaw: Math.PI } },
+    { at: 0.39, pose: { x: 5.22, z: 1.55, yaw: 2.94 } },
+    { at: 0.52, pose: { x: 6.25, z: 0.34, yaw: 2.43 } },
+    { at: 0.66, pose: { x: 8.10, z: -0.46, yaw: 2.73 } },
+    { at: 0.74, pose: { x: 9.45, z: -1.10, yaw: Math.PI } },
+    { at: 1.00, pose: AUDI_OFFSCREEN_POSE }
+];
+const AUDI_ARRIVAL_ROUTE = [
+    { at: 0.00, pose: AUDI_ARRIVAL_ENTRY_POSE },
+    { at: 0.48, pose: { x: 9.45, z: 3.75, yaw: Math.PI } },
+    { at: 0.58, pose: { x: 9.18, z: 2.05, yaw: -3.00 } },
+    { at: 0.69, pose: { x: 8.05, z: 0.70, yaw: -2.45 } },
+    { at: 0.80, pose: { x: 6.48, z: 0.03, yaw: -2.56 } },
+    { at: 0.89, pose: { x: 5.20, z: 0.10, yaw: -3.02 } },
+    { at: 0.94, pose: { x: 5.20, z: 0.10, yaw: Math.PI } },
+    { at: 1.00, pose: AUDI_HOME_POSE }
+];
 const audiPresenceMotion = {
     targetHome: null,
     phase: "idle",
@@ -2744,7 +2851,43 @@ function interpolateAudiPose(from, to, progress) {
         0.02,
         THREE.MathUtils.lerp(from.z, to.z, eased)
     );
-    audiModel.rotation.y = THREE.MathUtils.lerp(from.yaw, to.yaw, eased);
+    const yawDelta = Math.atan2(Math.sin(to.yaw - from.yaw), Math.cos(to.yaw - from.yaw));
+    audiModel.rotation.y = from.yaw + yawDelta * eased;
+}
+
+function followAudiRoute(route, progress) {
+    const clamped = THREE.MathUtils.clamp(progress, 0, 1);
+    let nextIndex = route.findIndex((keyframe) => keyframe.at >= clamped);
+    if (nextIndex <= 0) {
+        setAudiPose(route[0].pose);
+        return;
+    }
+    if (nextIndex < 0)
+        nextIndex = route.length - 1;
+    const previous = route[nextIndex - 1];
+    const next = route[nextIndex];
+    const span = Math.max(0.0001, next.at - previous.at);
+    interpolateAudiPose(previous.pose, next.pose, (clamped - previous.at) / span);
+}
+
+function setAudiConnectionForPresence(mode) {
+    const visible = !cutawayVisible;
+    if (mode === "home") {
+        const raw = componentData().raw;
+        chargingConnection.port.visible = visible;
+        chargingConnection.attached.visible = visible && raw.plugConnected;
+        chargingConnection.loose.visible = visible && !raw.plugConnected;
+        chargingConnection.attachedCable.visible = visible && raw.plugConnected;
+        chargingConnection.dockedCable.visible = visible && !raw.plugConnected;
+        return;
+    }
+    // Beim Fahren bleibt der Stecker sauber an der Ladesäule. So zieht das
+    // fest im Hof verlegte Kabel nicht unnatürlich hinter dem Auto her.
+    chargingConnection.port.visible = false;
+    chargingConnection.attached.visible = false;
+    chargingConnection.attachedCable.visible = false;
+    chargingConnection.loose.visible = visible;
+    chargingConnection.dockedCable.visible = visible;
 }
 
 function startAudiPresenceTransition(atHome, forceMotion = false) {
@@ -2760,6 +2903,7 @@ function startAudiPresenceTransition(atHome, forceMotion = false) {
         setAudiBrakeLights(false);
         setAudiPose(atHome ? AUDI_HOME_POSE : AUDI_OFFSCREEN_POSE);
         audiModel.visible = atHome && !cutawayVisible;
+        setAudiConnectionForPresence(atHome ? "home" : "away");
         return;
     }
 
@@ -2769,14 +2913,16 @@ function startAudiPresenceTransition(atHome, forceMotion = false) {
     if (previousTarget === null && atHome) {
         setAudiPose(AUDI_HOME_POSE);
         audiModel.visible = !cutawayVisible;
+        setAudiConnectionForPresence("home");
         return;
     }
 
     audiPresenceMotion.phase = atHome ? "arriving" : "departing";
     audiPresenceMotion.startedAt = performance.now();
-    audiPresenceMotion.duration = atHome ? 9000 : 8200;
+    audiPresenceMotion.duration = atHome ? 12400 : 10800;
     audiModel.visible = !cutawayVisible;
-    setAudiPose(atHome ? AUDI_OFFSCREEN_POSE : AUDI_HOME_POSE);
+    setAudiPose(atHome ? AUDI_ARRIVAL_ENTRY_POSE : AUDI_HOME_POSE);
+    setAudiConnectionForPresence("driving");
 }
 
 function runAudiPresenceDemo() {
@@ -2793,12 +2939,12 @@ function runAudiPresenceDemo() {
         () => startAudiPresenceTransition(false, true), 900
     ));
     audiPresenceDemoTimers.push(window.setTimeout(
-        () => startAudiPresenceTransition(true, true), 10500
+        () => startAudiPresenceTransition(true, true), 12900
     ));
     audiPresenceDemoTimers.push(window.setTimeout(() => {
         audiPresenceDemoActive = false;
         audiPresenceDemoTimers = [];
-    }, 20500));
+    }, 26300));
 }
 
 function updateAudiPresenceMotion(time) {
@@ -2807,6 +2953,8 @@ function updateAudiPresenceMotion(time) {
         const parkedHere = motion.targetHome !== false;
         audiModel.visible = !cutawayVisible && parkedHere;
         setAudiBrakeLights(false);
+        if (!parkedHere)
+            setAudiConnectionForPresence("away");
         return;
     }
 
@@ -2815,54 +2963,21 @@ function updateAudiPresenceMotion(time) {
         (time - motion.startedAt) / motion.duration, 0, 1
     );
     if (motion.phase === "departing") {
-        if (progress < 0.10) {
-            setAudiPose(AUDI_HOME_POSE);
-            setAudiBrakeLights(true);
-        }
-        else if (progress < 0.45) {
-            interpolateAudiPose(AUDI_HOME_POSE, AUDI_REVERSE_POSE, (progress - 0.10) / 0.35);
-            setAudiBrakeLights(false);
-        }
-        else if (progress < 0.57) {
-            setAudiPose(AUDI_REVERSE_POSE);
-            setAudiBrakeLights(true);
-        }
-        else if (progress < 0.76) {
-            interpolateAudiPose(AUDI_REVERSE_POSE, AUDI_ROAD_POSE, (progress - 0.57) / 0.19);
-            setAudiBrakeLights(false);
-        }
-        else {
-            interpolateAudiPose(AUDI_ROAD_POSE, AUDI_OFFSCREEN_POSE, (progress - 0.76) / 0.24);
-            setAudiBrakeLights(false);
-        }
+        followAudiRoute(AUDI_DEPARTURE_ROUTE, progress);
+        setAudiBrakeLights(progress < 0.10 || (progress >= 0.23 && progress < 0.29));
     }
     else {
-        if (progress < 0.40) {
-            const entryPose = { ...AUDI_OFFSCREEN_POSE, yaw: -Math.PI / 2 };
-            const roadPose = { ...AUDI_ROAD_POSE, yaw: -Math.PI / 2 };
-            interpolateAudiPose(entryPose, roadPose, progress / 0.40);
-            setAudiBrakeLights(false);
-        }
-        else if (progress < 0.62) {
-            const roadPose = { ...AUDI_ROAD_POSE, yaw: -Math.PI / 2 };
-            interpolateAudiPose(roadPose, AUDI_REVERSE_POSE, (progress - 0.40) / 0.22);
-            setAudiBrakeLights(false);
-        }
-        else if (progress < 0.90) {
-            interpolateAudiPose(AUDI_REVERSE_POSE, AUDI_HOME_POSE, (progress - 0.62) / 0.28);
-            setAudiBrakeLights(false);
-        }
-        else {
-            setAudiPose(AUDI_HOME_POSE);
-            setAudiBrakeLights(true);
-        }
+        followAudiRoute(AUDI_ARRIVAL_ROUTE, progress);
+        setAudiBrakeLights((progress >= 0.89 && progress < 0.94) || progress >= 0.985);
     }
+    setAudiConnectionForPresence("driving");
 
     if (progress >= 1) {
         motion.phase = "idle";
         setAudiBrakeLights(false);
         setAudiPose(motion.targetHome ? AUDI_HOME_POSE : AUDI_OFFSCREEN_POSE);
         audiModel.visible = motion.targetHome && !cutawayVisible;
+        setAudiConnectionForPresence(motion.targetHome ? "home" : "away");
     }
 }
 
@@ -3797,6 +3912,10 @@ function updateLabelPositions() {
     const rect = stage.getBoundingClientRect();
     const rootPosition = new THREE.Vector3();
     world.getWorldPosition(rootPosition);
+    // Audi-Karte und Akkuanzeige folgen auch während der Fahranimation dem
+    // Fahrzeug, statt am leeren Stellplatz zurückzubleiben.
+    labelAnchors.audi.set(audiModel.position.x, 1.72, audiModel.position.z);
+    objectBatteryAnchors.audi.set(audiModel.position.x, 0.72, audiModel.position.z);
     Object.entries(labelAnchors).forEach(([id, localAnchor]) => {
         const anchor = world.localToWorld(localAnchor.clone());
         const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
@@ -4156,6 +4275,24 @@ window.addEventListener("solix-dashboard-data", (event) => {
 });
 window.addEventListener("solix-audi-demo", runAudiPresenceDemo);
 
+function animatePondFish(seconds) {
+    if (reduceMotion)
+        return;
+    pondFish.forEach((fish, index) => {
+        const angle = fish.phase + seconds * fish.speed;
+        const ripple = Math.sin(seconds * fish.wobble + index * 1.7) * 0.08;
+        const nextAngle = angle + 0.015;
+        const x = Math.cos(angle) * (fish.radiusX + ripple);
+        const z = Math.sin(angle * 1.17) * fish.radiusZ;
+        const nextX = Math.cos(nextAngle) * (fish.radiusX + ripple);
+        const nextZ = Math.sin(nextAngle * 1.17) * fish.radiusZ;
+        fish.group.position.x = x;
+        fish.group.position.z = z;
+        fish.group.rotation.y = Math.atan2(nextX - x, nextZ - z);
+        fish.group.rotation.z = Math.sin(seconds * 1.9 + fish.phase) * 0.06;
+    });
+}
+
 if (window.ResizeObserver) {
     const observer = new ResizeObserver(resize);
     observer.observe(stage);
@@ -4204,6 +4341,7 @@ function animate(time) {
 
     animateSchematicBattery(solarBankBatteryVisual, seconds);
     animateSchematicBattery(audiBatteryVisual, seconds);
+    animatePondFish(seconds);
 
     updateLabelPositions();
     renderer.render(scene, camera);
