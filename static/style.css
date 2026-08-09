@@ -526,6 +526,49 @@ header p{
     font-size:6.8px;
 }
 
+.battery-use-title{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:6px;
+    margin-top:2px;
+    color:#f8fafc;
+    font-size:7px;
+}
+
+.battery-use-title > span{
+    display:flex;
+    align-items:center;
+    gap:3px;
+    color:#94a3b8;
+    font-size:6.4px;
+}
+
+.battery-use-title i{
+    width:6px;
+    height:3px;
+    border-radius:99px;
+}
+
+.battery-use-title i.charging{background:#4ade80;}
+.battery-use-title i.discharging{background:#fb7185;}
+
+.battery-use-segment{
+    stroke:#94a3b8;
+    stroke-width:2.35;
+    stroke-linecap:round;
+    vector-effect:non-scaling-stroke;
+}
+
+.battery-use-segment.charging{stroke:#4ade80;}
+.battery-use-segment.discharging{stroke:#fb7185;}
+.battery-use-point{
+    fill:#fff;
+    stroke:#2dd4bf;
+    stroke-width:1.2;
+    vector-effect:non-scaling-stroke;
+}
+
 .house-scene-label.active{
     border-color:color-mix(in srgb,var(--scene-color,#5eead4) 46%,transparent);
     filter:drop-shadow(0 0 4px color-mix(in srgb,var(--scene-color,#5eead4) 52%,transparent));
@@ -1024,6 +1067,47 @@ header p{
     font-size:11px;
     font-weight:800;
 }
+
+.house-menu-clean{
+    margin-top:8px;
+    border-color:rgba(251,191,36,.45);
+    background:rgba(146,64,14,.22);
+    color:#fef3c7;
+}
+
+.house-menu-clean-status{
+    margin:6px 2px 0;
+    color:#94a3b8;
+    font-size:9px;
+    line-height:1.3;
+}
+
+.house-weather{
+    position:absolute;
+    z-index:7;
+    top:max(12px,env(safe-area-inset-top));
+    right:max(12px,env(safe-area-inset-right));
+    display:flex;
+    align-items:center;
+    gap:8px;
+    min-width:116px;
+    padding:8px 11px;
+    border:1px solid rgba(226,232,240,.28);
+    border-radius:14px;
+    background:rgba(7,15,27,.66);
+    color:#f8fafc;
+    box-shadow:0 8px 28px rgba(2,6,23,.30);
+    backdrop-filter:blur(10px);
+    -webkit-backdrop-filter:blur(10px);
+    pointer-events:none;
+}
+
+.house-weather-icon{font-size:22px;line-height:1;}
+.house-weather strong,
+.house-weather small{display:block;white-space:nowrap;}
+.house-weather strong{font-size:13px;line-height:1.05;}
+.house-weather small{margin-top:2px;color:#cbd5e1;font-size:8px;}
+.house-weather.stale{opacity:.72;}
 
 .house-gesture,
 .house-reset{

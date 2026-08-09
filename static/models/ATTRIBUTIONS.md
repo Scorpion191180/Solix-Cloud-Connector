@@ -1,4 +1,4 @@
-# Vehicle model attributions
+# 3D model attributions
 
 The vehicle assets in this directory were simplified and compressed for this
 web application. The geometry and appearance may therefore differ from the
@@ -16,6 +16,13 @@ original downloads.
 - **Skoda Karoq 2019** — based on [“2019 Skoda Karoq”](https://sketchfab.com/3d-models/2019-skoda-karoq-7e359874ebe744158eddc37c9da8f487)
   by [BHP3D](https://sketchfab.com/BHP3D), licensed under
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+- **Animated horse** — model, rig and walk, run, idle and eating animations
+  are based on the
+  [Mesh2Motion horse assets](https://github.com/Mesh2Motion/mesh2motion-app),
+  dedicated to the public domain under
+  [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The web app
+  adds the chestnut coat and white blaze inspired by the owner's reference
+  photo.
 
 The optimized files use meshoptimizer compression. meshoptimizer/gltfpack is
 licensed under the [MIT License](https://github.com/zeux/meshoptimizer).

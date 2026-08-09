@@ -483,8 +483,10 @@ class SolixSmartPlugTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["charging_status"], "bypass_discharge")
         self.assertEqual(result["solarbank_count"], 2)
         self.assertEqual(result["selection"], "configured_model")
+        secondary = result["secondary_solarbank"]
+        history = secondary.pop("battery_history")
         self.assertEqual(
-            result["secondary_solarbank"],
+            secondary,
             {
                 "available": True,
                 "status": None,
@@ -501,11 +503,18 @@ class SolixSmartPlugTests(unittest.IsolatedAsyncioTestCase):
                 "pv_total": 460,
                 "pv1": 220,
                 "pv2": 240,
+                "pv_today_wh": 0,
                 "firmware": None,
                 "wifi_signal": 0,
                 "last_update": result["last_update"],
             },
         )
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]["battery_percent"], 92)
+        self.assertEqual(history[0]["charge_w"], 310)
+        self.assertEqual(history[0]["discharge_w"], 0)
+        self.assertEqual(history[0]["input_w"], 460)
+        self.assertEqual(history[0]["output_w"], 150)
         self.assertNotIn("MAIN-SECRET", str(result))
         self.assertNotIn("SMALL-SECRET", str(result))
 
@@ -562,6 +571,45 @@ class SolixSmartPlugTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first_strings, [0, 0, 0, 0])
         self.assertEqual(second_strings, [19, 19, 19, 19])
         self.assertEqual(third_strings, [19, 19, 19, 19])
+
+    def test_secondary_telemetry_records_charge_and_discharge_day_curve(self):
+        client = SolixClient()
+        start = datetime(2026, 8, 9, 7, 0, tzinfo=timezone.utc)
+
+        first_energy, first_curve = client._record_secondary_telemetry(
+            pv_power_w=300,
+            battery_percent=40,
+            battery_charge_power=180,
+            battery_discharge_power=0,
+            output_power=120,
+            observed_at=start,
+        )
+        second_energy, second_curve = client._record_secondary_telemetry(
+            pv_power_w=600,
+            battery_percent=42,
+            battery_charge_power=350,
+            battery_discharge_power=0,
+            output_power=180,
+            observed_at=start + timedelta(minutes=10),
+        )
+        third_energy, third_curve = client._record_secondary_telemetry(
+            pv_power_w=0,
+            battery_percent=39,
+            battery_charge_power=0,
+            battery_discharge_power=210,
+            output_power=210,
+            observed_at=start + timedelta(minutes=20),
+        )
+
+        self.assertEqual(first_energy, 0)
+        self.assertEqual(second_energy, 75)
+        self.assertEqual(third_energy, 125)
+        self.assertEqual(len(first_curve), 1)
+        self.assertEqual(len(second_curve), 2)
+        self.assertEqual(len(third_curve), 3)
+        self.assertEqual(second_curve[-1]["battery_percent"], 42)
+        self.assertEqual(second_curve[-1]["charge_w"], 350)
+        self.assertEqual(third_curve[-1]["discharge_w"], 210)
 
 
 if __name__ == "__main__":

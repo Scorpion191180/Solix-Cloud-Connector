@@ -136,6 +136,10 @@ Hauskoordinaten noch die von Audi gelieferte Parkposition, sondern nur
 `at_home=true/false`. Der Radius ist mit 120 Metern bewusst tolerant gegenüber
 GPS-Abweichungen. Audi liefert eine Parkposition und kein Live-GPS während der
 Fahrt; ein Wechsel wird deshalb nach dem Abstellen des Fahrzeugs erkannt.
+Die Live-Wetteranzeige verwendet dieselben serverseitigen Hauskoordinaten und
+gibt sie ebenfalls nicht an den Browser weiter. Falls für das Wetter ein
+anderer Punkt verwendet werden soll, können optional `HOUSE_LATITUDE` und
+`HOUSE_LONGITUDE` als private Render-Variablen gesetzt werden.
 
 `AUTOMATION_ENABLED` ist in `render.yaml` absichtlich standardmäßig `false`.
 Für den ersten gemeinsamen Test wird `AUTOMATION_ENABLED=true` zusammen mit

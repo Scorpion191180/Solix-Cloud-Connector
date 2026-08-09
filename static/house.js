@@ -20,13 +20,20 @@ const menuToggle = document.getElementById("houseMenuToggle");
 const menuPanel = document.getElementById("houseMenuPanel");
 const menuClose = document.getElementById("houseMenuClose");
 const menuCollapse = document.getElementById("houseMenuCollapse");
+const menuCleanHorse = document.getElementById("houseCleanHorse");
+const menuCleanStatus = document.getElementById("houseCleanStatus");
 const menuPvToday = document.getElementById("menuPvToday");
 const menuHousePower = document.getElementById("menuHousePower");
 const menuBatterySoc = document.getElementById("menuBatterySoc");
 const menuAudiSoc = document.getElementById("menuAudiSoc");
 const menuStartThreshold = document.getElementById("menuStartThreshold");
 const menuStopThreshold = document.getElementById("menuStopThreshold");
+const weatherPanel = document.getElementById("houseWeather");
+const weatherIcon = document.getElementById("houseWeatherIcon");
+const weatherTemp = document.getElementById("houseWeatherTemp");
+const weatherText = document.getElementById("houseWeatherText");
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const INTERIOR_VIEW_ENABLED = false;
 
 // Diese Perspektive entspricht der am 08.08.2026 festgelegten Übersicht mit
 // Garagen, Audi-Seite, Zufahrt und Pergola. Sie ist sowohl Startposition als
@@ -47,7 +54,7 @@ const state = {
     selected: "battery",
     expandedComponent: null,
     expandedPanel: null,
-    data: window.solixDashboardState || { solix: {}, automation: {}, audi: {} },
+    data: window.solixDashboardState || { solix: {}, automation: {}, audi: {}, weather: {} },
     pointers: new Map(),
     pointerStartX: 0,
     pointerStartY: 0,
@@ -137,7 +144,13 @@ let secondarySolarBankModel = null;
 let secondarySolarBankBatteryVisual = null;
 let balconyPanelModel = null;
 let audiBatteryVisual = null;
+let audiModel = null;
 const pondFish = [];
+let horse = null;
+const horseDroppings = [];
+const houseWindowLights = [];
+let streetLampLight = null;
+let streetLampBulb = null;
 
 function numberValue(value) {
     if (value == null || typeof value === "boolean")
@@ -734,6 +747,27 @@ const INDIVIDUAL_OPENINGS = {
     }
 };
 
+function registerExteriorRoomLight(group, position, size, frontZ = 0.045) {
+    const material = new THREE.MeshBasicMaterial({
+        color: 0xffc96b,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false
+    });
+    const glow = addBox(group, [size[0] * 0.70, size[1] * 0.73, 0.009], material,
+        [0, 0, frontZ], { castShadow: false, receiveShadow: false });
+    glow.renderOrder = 8;
+    const upperFloor = position[1] > 2.55;
+    const zone = position[2] > 2.4 ? "north" : position[2] < -2.4 ? "south" : "middle";
+    const kind = upperFloor ?
+        (zone === "north" ? "office" : zone === "middle" ? "bedroom" : "bath") :
+        (zone === "north" ? "kitchen" : zone === "middle" ? "living" : "utility");
+    const seed = Math.abs(Math.round(position[0] * 37 + position[1] * 53 + position[2] * 71));
+    houseWindowLights.push({ material, kind, seed, opacity: 0 });
+}
+
 function createWindow(parent, position, size, side = "front", photoSpec = null) {
     const group = new THREE.Group();
     group.position.set(...position);
@@ -769,6 +803,7 @@ function createWindow(parent, position, size, side = "front", photoSpec = null) 
         addBox(group, [size[0] + 0.30, 0.10, 0.24], materials.darkTrim, [0, -size[1] / 2 - 0.11, 0.035]);
         addBox(group, [size[0] + 0.22, 0.055, 0.18], materials.soffit, [0, size[1] / 2 + 0.11, -0.02], { castShadow: false });
     }
+    registerExteriorRoomLight(group, position, size, cleanAsset ? 0.035 : 0.125);
     return group;
 }
 
@@ -810,6 +845,10 @@ function createDoor(parent, position, size = [0.82, 1.96], side = "front", photo
         addMesh(group, new THREE.SphereGeometry(0.035, 10, 8), handle,
             size[0] * 0.34, -0.13, 0.12, { castShadow: false });
     }
+    // Verglaste Haus- und Balkontüren geben das simulierte Raumlicht genauso
+    // wie die Fenster nach außen ab. Die Ebene bleibt innerhalb des Rahmens.
+    if (photoSpec !== INDIVIDUAL_OPENINGS.door.rearDecorative)
+        registerExteriorRoomLight(group, position, size, cleanAsset ? 0.040 : 0.135);
     return group;
 }
 
@@ -1358,6 +1397,56 @@ function createFrontWoodDoor(parent, position, photoSpec = null) {
     }
 }
 
+function createHorseStableDoor(parent, position) {
+    const stable = new THREE.Group();
+    stable.position.set(...position);
+    stable.rotation.y = -Math.PI / 2;
+    parent.add(stable);
+
+    const frameWood = new THREE.MeshStandardMaterial({ color: 0x4a2e20, roughness: 0.94 });
+    const doorWood = new THREE.MeshStandardMaterial({ color: 0x6a4028, roughness: 0.92 });
+    const darkInterior = new THREE.MeshStandardMaterial({
+        color: 0x17100b, emissive: 0x4a2b12, emissiveIntensity: 0.22, roughness: 1
+    });
+    const straw = new THREE.MeshStandardMaterial({ color: 0xc79a43, roughness: 1 });
+    const metal = new THREE.MeshStandardMaterial({ color: 0x363636, metalness: 0.70, roughness: 0.45 });
+
+    // Offene, dunkle Laibung als echter Stalleingang. Sie sitzt in der freien
+    // Wandflaeche links vom kleinen Fenster; das Fenster selbst bleibt stehen.
+    addBox(stable, [1.36, 2.34, 0.10], darkInterior, [0, 0, 0.035], { castShadow: false });
+    [-0.75, 0.75].forEach((x) =>
+        addBox(stable, [0.13, 2.52, 0.18], frameWood, [x, 0.02, 0.11]));
+    addBox(stable, [1.62, 0.16, 0.22], frameWood, [0, 1.26, 0.11]);
+    addBox(stable, [1.38, 0.08, 1.15], straw, [0, -1.15, -0.44], { castShadow: false });
+    for (let index = 0; index < 16; index += 1) {
+        const tuft = addMesh(stable, new THREE.ConeGeometry(0.022, 0.26, 5), straw,
+            -0.58 + (index % 8) * 0.17, -1.00, 0.11 + Math.floor(index / 8) * 0.035,
+            { castShadow: false });
+        tuft.rotation.z = (index % 3 - 1) * 0.20;
+    }
+    [-0.63, -0.20, 0.23, 0.66].forEach((y) =>
+        addBox(stable, [1.18, 0.055, 0.025], frameWood, [0, y, 0.091], { castShadow: false }));
+    // Die breite Holztuer ist dauerhaft nach außen aufgeklappt und lässt den
+    // Blick auf Stroh, Holzboden und Futterraufe frei.
+    const leafHinge = new THREE.Group();
+    leafHinge.position.set(-0.70, 0, 0.22);
+    leafHinge.rotation.y = -1.18;
+    stable.add(leafHinge);
+    const leaf = addBox(leafHinge, [1.28, 2.26, 0.11], doorWood, [0.64, 0, 0], { radius: 0.025 });
+    [-0.76, -0.25, 0.25, 0.76].forEach((y) =>
+        addBox(leaf, [1.12, 0.07, 0.025], frameWood, [0, y, 0.07], { castShadow: false }));
+    [0.44, -0.44].forEach((x) =>
+        addBox(leaf, [0.08, 2.05, 0.025], frameWood, [x, 0, 0.07], { castShadow: false }));
+    addMesh(leaf, new THREE.TorusGeometry(0.07, 0.018, 8, 16), metal,
+        0.45, 0, 0.09, { rotation: [Math.PI / 2, 0, 0], castShadow: false });
+    addBox(stable, [0.82, 0.72, 0.18], frameWood, [0, -0.44, 0.13], { castShadow: false });
+    for (let slat = -0.30; slat <= 0.30; slat += 0.15)
+        addBox(stable, [0.06, 0.58, 0.08], metal, [slat, -0.42, 0.24], { castShadow: false });
+    const stableLampMaterial = new THREE.MeshBasicMaterial({ color: 0xffc66d, toneMapped: false });
+    addMesh(stable, new THREE.SphereGeometry(0.075, 12, 8), stableLampMaterial,
+        0.44, 0.76, 0.13, { castShadow: false });
+}
+
 function createHouse() {
     const house = new THREE.Group();
     world.add(house);
@@ -1423,6 +1512,7 @@ function createHouse() {
         INDIVIDUAL_OPENINGS.window.modernCurtain);
     createDoor(house, [-3.30, 1.34, -3.55], [0.82, 1.92], "side-back",
         INDIVIDUAL_OPENINGS.door.rearGlass);
+    createHorseStableDoor(house, [-3.34, 1.36, -1.58]);
     createWindow(house, [-3.30, 1.46, 0.18], [0.62, 1.10], "side-back",
         INDIVIDUAL_OPENINGS.window.brownNarrow);
     createWoodDoorWithCanopy(house, [-3.30, 1.34, 1.80],
@@ -2711,6 +2801,522 @@ function createGoldfishPond() {
     }
 }
 
+function horseCanStandAt(x, z) {
+    if (!pointInPolygon(x, z, PROPERTY_BOUNDARY))
+        return false;
+    const inStablePassage = x > -4.45 && x < -2.02 && Math.abs(z + 1.58) < 0.64;
+    const onHouse = Math.abs(x) < 4.05 && Math.abs(z) < 7.00 && !inStablePassage;
+    // Passgenaue, mit dem Pool gedrehte Sicherheitszone statt der früheren
+    // übergroßen Ellipse. Der echte Durchgang zwischen Pool und Haus bleibt
+    // damit breit genug für das Pferd.
+    const poolDeltaX = x + 7.19;
+    const poolDeltaZ = z + 5.92;
+    const poolAngle = THREE.MathUtils.degToRad(60);
+    const poolLocalX = poolDeltaX * Math.cos(poolAngle) - poolDeltaZ * Math.sin(poolAngle);
+    const poolLocalZ = poolDeltaX * Math.sin(poolAngle) + poolDeltaZ * Math.cos(poolAngle);
+    const atPool = poolLocalX > -2.84 && poolLocalX < 1.76 && Math.abs(poolLocalZ) < 2.49;
+    const atPond = Math.hypot((x + 4.85) / 1.55, (z - 14.78) / 1.25) < 1;
+    const atPergola = Math.abs(x - PERGOLA_CENTER.x) < 1.75 &&
+        Math.abs(z - PERGOLA_CENTER.z) < 2.55;
+    // Der Stellplatz bleibt auch bei einer Abwesenheit des Audis frei. Wenn
+    // der Wagen faehrt, wandert die Sperrflaeche mit ihm mit. So kann das
+    // Pferd weder durch den Wagen laufen noch dessen Rueckkehrweg blockieren.
+    let atAudi = Math.abs(x - 5.00) < 1.55 && Math.abs(z - 1.00) < 2.62;
+    if (audiModel) {
+        const deltaX = x - audiModel.position.x;
+        const deltaZ = z - audiModel.position.z;
+        const cos = Math.cos(-audiModel.rotation.y);
+        const sin = Math.sin(-audiModel.rotation.y);
+        const localX = deltaX * cos - deltaZ * sin;
+        const localZ = deltaX * sin + deltaZ * cos;
+        atAudi ||= Math.abs(localX) < 1.55 && Math.abs(localZ) < 2.62;
+    }
+    const atParkedCars = z > 7.0 && z < 13.8 && x > -4.6 && x < 3.6;
+    const landscapeObstacles = [
+        [-6.82, 14.58, 1.05], [-6.65, 12.25, 1.22], [-7.65, 12.75, 1.12],
+        [-8.45, 11.25, 1.02], [-8.25, 4.10, 0.92],
+        [-6.55, 10.15, 0.90], [-7.65, 6.15, 0.82], [-8.90, 2.55, 0.86],
+        [-10.10, 0.35, 0.82], [-2.10, -9.25, 0.76], [-0.60, -9.75, 0.74]
+    ];
+    const atLandscape = landscapeObstacles.some(([obstacleX, obstacleZ, radius]) =>
+        Math.hypot(x - obstacleX, z - obstacleZ) < radius + 0.72);
+    return !(onHouse || atPool || atPond || atPergola || atAudi || atParkedCars || atLandscape);
+}
+
+function horseIsOnGrass(x, z) {
+    if (!horseCanStandAt(x, z))
+        return false;
+    if (x > -4.45 && x < -2.02 && Math.abs(z + 1.58) < 0.64)
+        return false;
+    const onForecourt = z > 4.55 && z < 15.35 && x > -6.5 && x < 6.8;
+    const onAudiDrive = x > 3.15 && z > -6.55 && z < 6.7;
+    const onRearPatio = x < -3.10 && x > -7.10 && z > -2.10 && z < 5.90;
+    return !(onForecourt || onAudiDrive || onRearPatio);
+}
+
+function horsePathIsClear(startX, startZ, endX, endZ) {
+    const distance = Math.hypot(endX - startX, endZ - startZ);
+    const steps = Math.max(1, Math.ceil(distance / 0.28));
+    for (let step = 1; step <= steps; step += 1) {
+        const progress = step / steps;
+        if (!horseCanStandAt(
+            THREE.MathUtils.lerp(startX, endX, progress),
+            THREE.MathUtils.lerp(startZ, endZ, progress)
+        ))
+            return false;
+    }
+    return true;
+}
+
+function chooseHorseTarget(random, origin = null) {
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+        const x = -10.8 + random() * 17.4;
+        const z = -15.8 + random() * 31.1;
+        if (horseCanStandAt(x, z) && (!origin ||
+            horsePathIsClear(origin.x, origin.z, x, z)))
+            return new THREE.Vector3(x, 0, z);
+    }
+    // Wenn ein entfernter Punkt nur durch ein Hindernis erreichbar waere,
+    // sucht das Pferd zuerst einen kurzen sicheren Zwischenweg. Das ist die
+    // eigentliche Anti-Festhaeng-Logik fuer Buesche, Baeume, Autos und Pool.
+    if (origin) {
+        for (let attempt = 0; attempt < 80; attempt += 1) {
+            const angle = random() * Math.PI * 2;
+            const radius = 1.3 + random() * 4.2;
+            const x = origin.x + Math.sin(angle) * radius;
+            const z = origin.z + Math.cos(angle) * radius;
+            if (horseCanStandAt(x, z) && horsePathIsClear(origin.x, origin.z, x, z))
+                return new THREE.Vector3(x, 0, z);
+        }
+        return new THREE.Vector3(origin.x, 0, origin.z);
+    }
+    return new THREE.Vector3(0.50, 0, -8.20);
+}
+
+function setHorseAnimation(horseState, name, fadeSeconds = 0.30) {
+    if (!horseState?.actions || horseState.currentActionName === name)
+        return;
+    const next = horseState.actions[name] || horseState.actions.Idle;
+    if (!next)
+        return;
+    if (horseState.currentAction && horseState.currentAction !== next)
+        horseState.currentAction.fadeOut(fadeSeconds);
+    next.reset().setEffectiveWeight(1).fadeIn(fadeSeconds).play();
+    horseState.currentAction = next;
+    horseState.currentActionName = name;
+}
+
+function loadAnimatedHorse(horseState) {
+    vehicleLoader.load("/static/models/horse-animated.glb?v=77", (gltf) => {
+        const model = gltf.scene;
+        model.name = "Kastanienbraunes Gartenpferd";
+        // Das CC0-Modell blickt in seiner Quelldatei nach -Z. In der Szene
+        // entspricht +Z der Laufrichtung, daher diese einmalige Ausrichtung.
+        model.rotation.y = 0;
+        model.updateMatrixWorld(true);
+        let bounds = new THREE.Box3().setFromObject(model);
+        const size = bounds.getSize(new THREE.Vector3());
+        model.scale.setScalar(1.64 / Math.max(size.y, 0.001));
+        model.updateMatrixWorld(true);
+        bounds = new THREE.Box3().setFromObject(model);
+        const center = bounds.getCenter(new THREE.Vector3());
+        model.position.set(-center.x, -bounds.min.y, -center.z);
+
+        model.traverse((object) => {
+            if (!object.isMesh)
+                return;
+            object.castShadow = true;
+            object.receiveShadow = true;
+            const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
+            const tuned = sourceMaterials.map((source) => {
+                const material = source.clone();
+                // Kastanienbrauner Farbton aus IMG_3402. Die vorhandene
+                // Farbpalette behaelt dunkle Maehne, Schweif und Hufe.
+                material.color.setHex(0x9a5734);
+                material.metalness = 0;
+                material.roughness = 0.58;
+                material.clearcoat = 0.18;
+                material.clearcoatRoughness = 0.62;
+                material.needsUpdate = true;
+                return material;
+            });
+            object.material = Array.isArray(object.material) ? tuned : tuned[0];
+        });
+
+        // Eine helle Blesse wird am animierten Kopfknochen befestigt und
+        // bewegt sich deshalb natuerlich bei Gehen, Grasen und Rennen mit.
+        const headBone = model.getObjectByName("head");
+        if (headBone) {
+            const blazeMaterial = new THREE.MeshStandardMaterial({
+                color: 0xf4ecdc,
+                roughness: 0.90,
+                side: THREE.DoubleSide
+            });
+            const blaze = new THREE.Mesh(new THREE.SphereGeometry(0.075, 16, 12), blazeMaterial);
+            blaze.name = "Weisse Blesse";
+            blaze.position.set(0, 0.20, 0.055);
+            blaze.scale.set(0.48, 1.55, 0.20);
+            blaze.castShadow = false;
+            headBone.add(blaze);
+        }
+
+        horseState.group.add(model);
+        horseState.modelRoot = model;
+        horseState.headBone = headBone;
+        horseState.neckBones = [
+            model.getObjectByName("spine_5"),
+            model.getObjectByName("spine_6")
+        ].filter(Boolean);
+        horseState.fallback.visible = false;
+        horseState.mixer = new THREE.AnimationMixer(model);
+        horseState.actions = {};
+        gltf.animations.forEach((clip) => {
+            const action = horseState.mixer.clipAction(clip);
+            if (clip.name === "lay_to_idle") {
+                action.setLoop(THREE.LoopOnce, 1);
+                action.clampWhenFinished = true;
+            }
+            else {
+                action.setLoop(THREE.LoopRepeat, Infinity);
+            }
+            horseState.actions[clip.name] = action;
+        });
+        setHorseAnimation(horseState, "Walk", 0);
+    }, undefined, () => {
+        // Offline oder bei einem alten Browser bleibt das detaillierte
+        // prozedurale Pferd als sichere Rueckfallansicht erhalten.
+        horseState.fallback.visible = true;
+    });
+}
+
+function startHorseJourney(horseState, origin, forceGarden = false) {
+    const stableEntry = new THREE.Vector3(-4.24, 0, -1.58);
+    if (!forceGarden && horseState.elapsedSeconds >= horseState.nextStableAt &&
+        horsePathIsClear(origin.x, origin.z, stableEntry.x, stableEntry.z)) {
+        horseState.target = stableEntry;
+        horseState.navigation = "stable-entry";
+        horseState.mode = "walking";
+        return;
+    }
+    horseState.target = chooseHorseTarget(horseState.random, origin);
+    const distance = Math.hypot(
+        horseState.target.x - origin.x,
+        horseState.target.z - origin.z
+    );
+    // Nur laengere freie Strecken werden gelegentlich im Galopp genommen.
+    // Auf kurzen Wegen und in der Naehe der Hindernisse bleibt es beim Schritt.
+    horseState.mode = distance > 4.5 && horseState.random() < 0.20 ? "running" : "walking";
+    horseState.navigation = null;
+}
+
+function createHorse() {
+    const group = new THREE.Group();
+    group.position.set(0.50, 0, -8.20);
+    world.add(group);
+    const fallback = new THREE.Group();
+    group.add(fallback);
+    const coat = new THREE.MeshPhysicalMaterial({
+        color: 0x8b431f, roughness: 0.54, clearcoat: 0.34, clearcoatRoughness: 0.52
+    });
+    const coatLight = new THREE.MeshPhysicalMaterial({
+        color: 0xb7652d, roughness: 0.58, clearcoat: 0.28, clearcoatRoughness: 0.56
+    });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x261914, roughness: 0.96 });
+    const whiteMarking = new THREE.MeshStandardMaterial({ color: 0xf2ead9, roughness: 0.88 });
+    const hoof = new THREE.MeshStandardMaterial({ color: 0x28231f, roughness: 0.82 });
+    const eye = new THREE.MeshStandardMaterial({ color: 0x030303, roughness: 0.32 });
+    const body = addMesh(fallback, new THREE.SphereGeometry(0.72, 28, 18), coat,
+        0, 1.28, 0, { castShadow: true });
+    body.scale.set(1.25, 0.72, 0.62);
+    const chest = addMesh(fallback, new THREE.SphereGeometry(0.50, 24, 16), coatLight,
+        0, 1.34, 0.48, { castShadow: true });
+    chest.scale.set(0.82, 1.02, 0.74);
+
+    const headRig = new THREE.Group();
+    headRig.position.set(0, 1.54, 0.52);
+    fallback.add(headRig);
+    addMesh(headRig, new THREE.CylinderGeometry(0.27, 0.38, 0.94, 18), coat,
+        0, 0.28, 0.25, { rotation: [-0.42, 0, 0] });
+    const head = addMesh(headRig, new THREE.SphereGeometry(0.34, 24, 16), coatLight,
+        0, 0.67, 0.58, { castShadow: true });
+    head.scale.set(0.70, 0.76, 1.16);
+    const muzzle = addMesh(headRig, new THREE.SphereGeometry(0.24, 20, 14), dark,
+        0, 0.58, 0.88, { castShadow: true });
+    muzzle.scale.set(0.74, 0.62, 1.0);
+    // Weiße, unregelmäßig breite Blesse und helle Schnauzenkante aus der
+    // persönlichen Fotovorlage. Die Elemente liegen knapp vor dem Fell und
+    // wirken dadurch wie echte Abzeichen statt wie aufgeklebte Rechtecke.
+    const blazeTop = addMesh(headRig, new THREE.SphereGeometry(0.13, 18, 12), whiteMarking,
+        0, 0.82, 0.86, { castShadow: false });
+    blazeTop.scale.set(0.50, 1.36, 0.18);
+    const blazeLower = addMesh(headRig, new THREE.SphereGeometry(0.15, 18, 12), whiteMarking,
+        -0.015, 0.66, 0.99, { castShadow: false });
+    blazeLower.scale.set(0.46, 1.10, 0.16);
+    const paleMuzzle = addMesh(headRig, new THREE.SphereGeometry(0.17, 18, 12), whiteMarking,
+        0, 0.57, 1.075, { castShadow: false });
+    paleMuzzle.scale.set(0.72, 0.38, 0.20);
+    [-0.17, 0.17].forEach((x) => {
+        addMesh(headRig, new THREE.ConeGeometry(0.085, 0.28, 10), coat,
+            x, 1.00, 0.49, { rotation: [0.12, 0, x < 0 ? 0.16 : -0.16] });
+        addMesh(headRig, new THREE.SphereGeometry(0.035, 10, 8), eye,
+            x * 1.23, 0.76, 0.74, { castShadow: false });
+    });
+    for (let index = 0; index < 6; index += 1)
+        addMesh(headRig, new THREE.ConeGeometry(0.065, 0.30, 8), dark,
+            0, 0.80 - index * 0.13, 0.30 + index * 0.02,
+            { rotation: [0.16, 0, Math.PI / 2], castShadow: false });
+
+    const legs = [];
+    [[-0.43, 0.46], [0.43, 0.46], [-0.43, -0.48], [0.43, -0.48]].forEach(([x, z], index) => {
+        const leg = new THREE.Group();
+        leg.position.set(x, 1.10, z);
+        fallback.add(leg);
+        addMesh(leg, new THREE.CylinderGeometry(0.105, 0.085, 0.88, 12), coat,
+            0, -0.42, 0);
+        const lowerLegMaterial = index === 1 || index === 3 ? whiteMarking : dark;
+        addMesh(leg, new THREE.CylinderGeometry(0.075, 0.065, 0.56, 12), lowerLegMaterial,
+            0, -1.08, 0);
+        addBox(leg, [0.18, 0.13, 0.26], hoof, [0, -1.40, 0.04], { radius: 0.035 });
+        leg.userData.walkOffset = index % 2 ? Math.PI : 0;
+        legs.push(leg);
+    });
+    const tailRig = new THREE.Group();
+    tailRig.position.set(0, 1.48, -0.64);
+    fallback.add(tailRig);
+    for (let index = 0; index < 5; index += 1)
+        addMesh(tailRig, new THREE.ConeGeometry(0.15 - index * 0.018, 0.46, 10), dark,
+            0, -0.20 - index * 0.28, -index * 0.08,
+            { rotation: [0.24, 0, 0], castShadow: true });
+
+    const random = seededNoise(191180);
+    const horseState = {
+        group,
+        fallback,
+        headRig,
+        tailRig,
+        legs,
+        random,
+        target: chooseHorseTarget(random, group.position),
+        mode: "walking",
+        modeUntil: 0,
+        // Erster Haufen nach etwa 50–70 Minuten; danach ebenfalls nur
+        // ungefaehr stuendlich. Zeiten sind reale Sekunden bei offener App.
+        nextDroppingAt: 3000 + random() * 1200,
+        travelled: 0,
+        stuckFor: 0,
+        modelRoot: null,
+        mixer: null,
+        actions: null,
+        currentAction: null,
+        currentActionName: null,
+        headBone: null,
+        neckBones: [],
+        nextRestAt: 120 + random() * 180,
+        nextStableAt: 45 + random() * 75,
+        elapsedSeconds: 0,
+        navigation: null
+    };
+    loadAnimatedHorse(horseState);
+    return horseState;
+}
+
+function addHorseDropping() {
+    if (!horse || horseDroppings.length >= 14)
+        return;
+    const dropping = new THREE.Group();
+    dropping.position.set(horse.group.position.x, 0.055, horse.group.position.z - 0.42);
+    world.add(dropping);
+    const material = new THREE.MeshStandardMaterial({ color: 0x34251b, roughness: 1 });
+    [[-0.10, 0.04, 0.02, 0.10], [0.04, 0.06, -0.03, 0.12], [0.13, 0.035, 0.06, 0.08],
+        [-0.01, 0.10, 0.05, 0.09]].forEach(([x, y, z, radius]) =>
+        addMesh(dropping, new THREE.DodecahedronGeometry(radius, 0), material,
+            x, y, z, { castShadow: true }));
+    horseDroppings.push(dropping);
+    menuCleanStatus.textContent = horseDroppings.length +
+        (horseDroppings.length === 1 ? " Pferdehaufen im Garten." : " Pferdehaufen im Garten.");
+}
+
+function cleanHorseDroppings() {
+    horseDroppings.splice(0).forEach((dropping) => {
+        world.remove(dropping);
+        dropping.traverse((object) => {
+            if (object.geometry)
+                object.geometry.dispose();
+            if (object.material)
+                object.material.dispose();
+        });
+    });
+    menuCleanStatus.textContent = "Grundstück ist sauber.";
+}
+
+function createStreetLamp() {
+    const lamp = new THREE.Group();
+    // Straßenseitig direkt am Zaun, längs bis auf Höhe des mittleren Yeti
+    // versetzt. Dort bleibt die komplette Garagenzufahrt frei.
+    lamp.position.set(AUDI_SIDE_FENCE_X - 0.34, 0, 8.72);
+    world.add(lamp);
+    const metal = new THREE.MeshStandardMaterial({
+        color: 0x252b31, metalness: 0.72, roughness: 0.42
+    });
+    const glass = new THREE.MeshPhysicalMaterial({
+        color: 0xffe2ae, emissive: 0xffb45a, emissiveIntensity: 0,
+        transparent: true, opacity: 0.88, roughness: 0.16, transmission: 0.16
+    });
+    addMesh(lamp, new THREE.CylinderGeometry(0.105, 0.14, 3.75, 18), metal,
+        0, 1.88, 0);
+    addMesh(lamp, new THREE.CylinderGeometry(0.31, 0.37, 0.12, 20), metal,
+        0, 0.06, 0);
+    addBox(lamp, [0.68, 0.11, 0.11], metal, [0.26, 3.70, 0], { radius: 0.045 });
+    addBox(lamp, [0.46, 0.16, 0.34], metal, [0.58, 3.62, 0], { radius: 0.07 });
+    streetLampBulb = addBox(lamp, [0.34, 0.07, 0.24], glass,
+        [0.58, 3.52, 0], { radius: 0.025, castShadow: false });
+
+    streetLampLight = new THREE.SpotLight(0xffca80, 0, 16, Math.PI / 3.15, 0.48, 1.35);
+    streetLampLight.position.set(0.58, 3.48, 0);
+    streetLampLight.castShadow = true;
+    streetLampLight.shadow.mapSize.set(1024, 1024);
+    streetLampLight.shadow.bias = -0.0008;
+    streetLampLight.shadow.normalBias = 0.035;
+    streetLampLight.target.position.set(0.70, 0, 1.30);
+    lamp.add(streetLampLight);
+    lamp.add(streetLampLight.target);
+}
+
+function animateHorse(seconds, delta) {
+    if (!horse)
+        return;
+    horse.elapsedSeconds = seconds;
+    if (horse.mixer)
+        horse.mixer.update(delta);
+    if (reduceMotion) {
+        setHorseAnimation(horse, "Idle");
+        horse.headRig.rotation.x = 0;
+        return;
+    }
+    const position = horse.group.position;
+    if (horse.mode === "grazing") {
+        // Vollständige Originalanimation: Kopf bis zur Grasnarbe und beide
+        // Vorderbeine bleiben sichtbar; die dafür typische Spreizung ist
+        // bewusst wieder aktiviert.
+        setHorseAnimation(horse, "Eating");
+        horse.headRig.rotation.x = THREE.MathUtils.damp(horse.headRig.rotation.x, 1.08, 5, delta);
+        horse.headRig.position.y = THREE.MathUtils.damp(horse.headRig.position.y, 1.18, 5, delta);
+        horse.tailRig.rotation.z = Math.sin(seconds * 1.7) * 0.18;
+        if (seconds >= horse.modeUntil) {
+            startHorseJourney(horse, position);
+        }
+    }
+    else if (horse.mode === "resting") {
+        setHorseAnimation(horse, "Sleep");
+        horse.group.position.y = 0;
+        if (seconds >= horse.modeUntil) {
+            horse.mode = "rising";
+            horse.modeUntil = seconds + 2.8;
+            setHorseAnimation(horse, "lay_to_idle", 0.45);
+        }
+    }
+    else if (horse.mode === "rising") {
+        setHorseAnimation(horse, "lay_to_idle");
+        if (seconds >= horse.modeUntil)
+            startHorseJourney(horse, position);
+    }
+    else if (horse.mode === "stable-rest") {
+        setHorseAnimation(horse, "Idle");
+        if (seconds >= horse.modeUntil) {
+            horse.target = new THREE.Vector3(-4.24, 0, -1.58);
+            horse.navigation = "stable-exit";
+            horse.mode = "walking";
+        }
+    }
+    else {
+        horse.headRig.rotation.x = THREE.MathUtils.damp(horse.headRig.rotation.x, 0, 5, delta);
+        horse.headRig.position.y = THREE.MathUtils.damp(horse.headRig.position.y, 1.54, 5, delta);
+        const dx = horse.target.x - position.x;
+        const dz = horse.target.z - position.z;
+        const distance = Math.hypot(dx, dz);
+        if (distance < 0.35) {
+            if (horse.navigation === "stable-entry") {
+                horse.target = new THREE.Vector3(-2.20, 0, -1.58);
+                horse.navigation = "stable-inside";
+                horse.mode = "walking";
+                return;
+            }
+            if (horse.navigation === "stable-inside") {
+                horse.mode = "stable-rest";
+                horse.modeUntil = seconds + 9 + horse.random() * 14;
+                return;
+            }
+            if (horse.navigation === "stable-exit") {
+                horse.nextStableAt = seconds + 240 + horse.random() * 360;
+                startHorseJourney(horse, position, true);
+                return;
+            }
+            const hour = new Date().getHours();
+            const night = hour >= 22 || hour < 6;
+            const canRest = horseIsOnGrass(position.x, position.z) &&
+                seconds >= horse.nextRestAt && horse.random() < (night ? 0.32 : 0.055);
+            if (canRest) {
+                horse.mode = "resting";
+                horse.modeUntil = seconds + (night ? 35 + horse.random() * 55 : 12 + horse.random() * 20);
+                horse.nextRestAt = seconds + (night ? 240 + horse.random() * 360 : 780 + horse.random() * 900);
+            }
+            else if (horseIsOnGrass(position.x, position.z) && horse.random() < 0.68) {
+                horse.mode = "grazing";
+                horse.modeUntil = seconds + 5 + horse.random() * 9;
+            }
+            else {
+                startHorseJourney(horse, position);
+            }
+        }
+        else {
+            setHorseAnimation(horse, horse.mode === "running" ? "Run" : "Walk");
+            const targetYaw = Math.atan2(dx, dz);
+            const yawDelta = Math.atan2(
+                Math.sin(targetYaw - horse.group.rotation.y),
+                Math.cos(targetYaw - horse.group.rotation.y)
+            );
+            horse.group.rotation.y += yawDelta * Math.min(1, delta * 2.4);
+            const speed = horse.mode === "running" ? 1.52 : 0.48;
+            const nextX = position.x + Math.sin(horse.group.rotation.y) * speed * delta;
+            const nextZ = position.z + Math.cos(horse.group.rotation.y) * speed * delta;
+            if (horseCanStandAt(nextX, nextZ)) {
+                position.x = nextX;
+                position.z = nextZ;
+                horse.travelled += speed * delta;
+                horse.stuckFor = 0;
+            }
+            else {
+                startHorseJourney(horse, position);
+                horse.stuckFor += delta;
+                // Sollte eine neue Gartendekoration später versehentlich um
+                // das Pferd gebaut werden, wird es nach kurzer Zeit auf den
+                // nächsten sicheren Punkt versetzt und bleibt nie hängen.
+                if (horse.stuckFor > 1.6) {
+                    const rescue = chooseHorseTarget(horse.random, position);
+                    position.x = rescue.x;
+                    position.z = rescue.z;
+                    startHorseJourney(horse, position);
+                    horse.stuckFor = 0;
+                }
+            }
+            if (!horse.modelRoot) {
+                horse.legs.forEach((leg) => {
+                    leg.rotation.x = Math.sin(horse.travelled * 8.2 + leg.userData.walkOffset) * 0.42;
+                });
+                horse.tailRig.rotation.z = Math.sin(seconds * 2.2) * 0.24;
+                horse.group.position.y = Math.abs(Math.sin(horse.travelled * 8.2)) * 0.025;
+            }
+            else {
+                horse.group.position.y = 0;
+            }
+        }
+    }
+    if (seconds >= horse.nextDroppingAt) {
+        addHorseDropping();
+        horse.nextDroppingAt = seconds + 3000 + horse.random() * 1800;
+    }
+}
+
 function createGarden() {
     // Große Umgebungsfläche und die tatsächliche, unregelmäßige Parzelle.
     // Außerhalb der Grenze bleibt die Wiese des Luftbilds sichtbar.
@@ -2768,6 +3374,8 @@ function createGarden() {
         [-6.15, -1.85], [-3.25, -5.30]
     ], asphaltMaterial, 0.018);
 
+    createStreetLamp();
+
     const pool = new THREE.Group();
     // Aus dem Luftbild auf die reale Intex-Größe (ca. 5,5 × 2,7 m)
     // skaliert und parallel zur diagonalen Feldgrenze positioniert.
@@ -2777,7 +3385,7 @@ function createGarden() {
     pool.position.set(-7.19, 0, -5.92);
     pool.rotation.y = THREE.MathUtils.degToRad(-60);
     world.add(pool);
-    const poolWall = new THREE.MeshStandardMaterial({ color: 0x374552, metalness: 0.22, roughness: 0.68 });
+    const poolWall = new THREE.MeshStandardMaterial({ color: 0x2f3940, metalness: 0.08, roughness: 0.82 });
     addBox(pool, [1.82, 0.88, 3.55], poolWall, [0, 0.43, 0], { radius: 0.10 });
     addBox(pool, [1.58, 0.10, 3.30], materials.water, [0, 0.89, 0], { radius: 0.10, castShadow: false });
     const poolRail = new THREE.MeshStandardMaterial({ color: 0xd7d9d5, roughness: 0.50 });
@@ -2786,8 +3394,8 @@ function createGarden() {
 
     // Begehbare Holzumrandung mit einer breiten Liegefläche zum hinteren
     // Zaun. Die einzelnen Bretter behalten beim Drehen die Poolausrichtung.
-    const deckWood = new THREE.MeshStandardMaterial({ color: 0x8a5d3b, roughness: 0.88 });
-    const deckEdge = new THREE.MeshStandardMaterial({ color: 0x4b3024, roughness: 0.92 });
+    const deckWood = new THREE.MeshStandardMaterial({ color: 0x6f675b, roughness: 0.96 });
+    const deckEdge = new THREE.MeshStandardMaterial({ color: 0x403a33, roughness: 0.98 });
     [-1.14, 1.14].forEach((x) =>
         addBox(pool, [0.42, 0.14, 4.05], deckWood, [x, 0.91, 0], { radius: 0.025 }));
     addBox(pool, [2.70, 0.14, 0.42], deckWood, [0, 0.91, 1.98], { radius: 0.025 });
@@ -2795,6 +3403,43 @@ function createGarden() {
     addBox(pool, [1.02, 0.15, 4.05], deckWood, [-1.82, 0.91, 0], { radius: 0.025 });
     for (let z = -1.72; z <= 1.72; z += 0.20)
         addBox(pool, [0.94, 0.022, 0.05], deckEdge, [-1.82, 1.00, z], { castShadow: false });
+
+    // IMG_7439: Die Poolwände sind vollständig mit senkrechten, verwitterten
+    // Holzbrettern verkleidet. Schmale Fugen und leicht wechselnde Grautöne
+    // lassen die Verkleidung auch aus der Standardansicht ablesbar bleiben.
+    const claddingColors = [0x756b5d, 0x625a50, 0x84786a, 0x6b6257];
+    for (let z = -1.70, index = 0; z <= 1.70; z += 0.18, index += 1) {
+        const cladding = new THREE.MeshStandardMaterial({
+            color: claddingColors[index % claddingColors.length], roughness: 1
+        });
+        [-0.94, 0.94].forEach((x) =>
+            addBox(pool, [0.055, 0.78, 0.155], cladding, [x, 0.42, z], { castShadow: false }));
+    }
+    for (let x = -0.82, index = 0; x <= 0.82; x += 0.18, index += 1) {
+        const cladding = new THREE.MeshStandardMaterial({
+            color: claddingColors[(index + 2) % claddingColors.length], roughness: 1
+        });
+        [-1.82, 1.82].forEach((z) =>
+            addBox(pool, [0.155, 0.78, 0.055], cladding, [x, 0.42, z], { castShadow: false }));
+    }
+
+    // Blau-weißer Sichtschutz hinter der breiten Liegeseite, plus kurzes
+    // Seitenteil wie auf dem Foto. Die Streifen sind echte Geometrie und
+    // bleiben deshalb beim Drehen aus jedem Winkel sauber sichtbar.
+    const screenBlue = new THREE.MeshStandardMaterial({ color: 0x1d6aa5, roughness: 0.78, side: THREE.DoubleSide });
+    const screenWhite = new THREE.MeshStandardMaterial({ color: 0xe9eef0, roughness: 0.84, side: THREE.DoubleSide });
+    const screenPost = new THREE.MeshStandardMaterial({ color: 0x746a5b, roughness: 0.98 });
+    const screenX = -2.38;
+    [-2.02, -0.68, 0.68, 2.02].forEach((z) =>
+        addBox(pool, [0.09, 1.40, 0.09], screenPost, [screenX, 1.56, z]));
+    for (let stripe = 0; stripe < 10; stripe += 1)
+        addBox(pool, [0.035, 0.105, 4.12], stripe % 2 ? screenWhite : screenBlue,
+            [screenX + 0.01, 1.02 + stripe * 0.105, 0], { castShadow: false });
+    [-2.38, -1.72, -1.06].forEach((x) =>
+        addBox(pool, [0.09, 1.40, 0.09], screenPost, [x, 1.56, -2.03]));
+    for (let stripe = 0; stripe < 10; stripe += 1)
+        addBox(pool, [1.34, 0.105, 0.035], stripe % 2 ? screenWhite : screenBlue,
+            [-1.72, 1.02 + stripe * 0.105, -2.03], { castShadow: false });
 
     const lounger = new THREE.Group();
     lounger.position.set(-1.82, 1.03, 0.08);
@@ -2839,6 +3484,7 @@ function createGarden() {
     // Der straßenseitige Zaun läuft von der Pergola bis auf Höhe des
     // Garagengiebels. Erst dahinter bleibt die Einfahrt zu den drei Autos offen.
     createFencePath([[7.20, -16.50], [7.20, 6.35]], fence, 0.88);
+    horse = createHorse();
 }
 
 function createGridBox() {
@@ -2949,9 +3595,15 @@ pergolaModel = createPergolaPanels();
 balconyPanelModel = createBalconySolarPanels();
 solarBankModel = createSolarBank();
 secondarySolarBankModel = createSecondarySolarBank();
-interiorHouse = createInteriorDollhouse();
+// Die fruehere Puppenhausansicht ist bewusst vollstaendig aus dem laufenden
+// Rendering entfernt. Die schlanke Platzhalterstruktur haelt lediglich die
+// gemeinsamen Update-Pfade kompatibel und spart alle Innenraum-Meshes.
+interiorHouse = INTERIOR_VIEW_ENABLED ? createInteriorDollhouse() : {
+    group: new THREE.Group(),
+    devices: []
+};
 const vehicleModels = createVehicles();
-const audiModel = vehicleModels.audi.slot;
+audiModel = vehicleModels.audi.slot;
 audiBatteryVisual = vehicleModels.audi.battery;
 loadDetailedVehicles(vehicleModels);
 const gridBoxModel = createGridBox();
@@ -3240,7 +3892,8 @@ function applyExteriorFade(amount) {
         material.depthWrite = amount < 0.22 ? material.userData.baseDepthWrite : false;
     });
 }
-prepareExteriorFade(exteriorHouse);
+if (INTERIOR_VIEW_ENABLED)
+    prepareExteriorFade(exteriorHouse);
 
 const hemisphere = new THREE.HemisphereLight(0xd9efff, 0x34452d, 1.58);
 scene.add(hemisphere);
@@ -3264,6 +3917,210 @@ scene.add(fill);
 const warmBounce = new THREE.DirectionalLight(0xffc99a, 0.32);
 warmBounce.position.set(5, 3, 11);
 scene.add(warmBounce);
+
+const weatherVisual = {
+    data: {},
+    rain: null,
+    snow: null,
+    stars: null,
+    skyColor: new THREE.Color(0x9bc9e5),
+    wind: 0
+};
+scene.background = weatherVisual.skyColor;
+
+function createWeatherParticles() {
+    const random = seededNoise(844543);
+    const makePoints = (count, color, size) => {
+        const positions = new Float32Array(count * 3);
+        for (let index = 0; index < count; index += 1) {
+            positions[index * 3] = -12 + random() * 24;
+            positions[index * 3 + 1] = 0.3 + random() * 12;
+            positions[index * 3 + 2] = -17 + random() * 34;
+        }
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+        const material = new THREE.PointsMaterial({
+            color, size, transparent: true, opacity: 0.78,
+            depthWrite: false, sizeAttenuation: true
+        });
+        const points = new THREE.Points(geometry, material);
+        points.visible = false;
+        world.add(points);
+        return points;
+    };
+    weatherVisual.rain = makePoints(320, 0xbfe7ff, 0.055);
+    weatherVisual.snow = makePoints(230, 0xffffff, 0.105);
+
+    const starPositions = new Float32Array(180 * 3);
+    for (let index = 0; index < 180; index += 1) {
+        const angle = random() * Math.PI * 2;
+        const radius = 28 + random() * 12;
+        starPositions[index * 3] = Math.cos(angle) * radius;
+        starPositions[index * 3 + 1] = 9 + random() * 19;
+        starPositions[index * 3 + 2] = Math.sin(angle) * radius;
+    }
+    const starGeometry = new THREE.BufferGeometry();
+    starGeometry.setAttribute("position", new THREE.BufferAttribute(starPositions, 3));
+    weatherVisual.stars = new THREE.Points(starGeometry, new THREE.PointsMaterial({
+        color: 0xe6f2ff, size: 0.12, transparent: true, opacity: 0,
+        depthWrite: false, fog: false
+    }));
+    scene.add(weatherVisual.stars);
+}
+createWeatherParticles();
+
+function weatherDescription(code) {
+    const value = numberValue(code);
+    if (value == null)
+        return { icon: "◌", text: "Wetter wird verbunden" };
+    if (value === 0)
+        return { icon: "☀️", text: "Klar" };
+    if ([1, 2].includes(value))
+        return { icon: "🌤️", text: "Leicht bewölkt" };
+    if (value === 3)
+        return { icon: "☁️", text: "Bewölkt" };
+    if ([45, 48].includes(value))
+        return { icon: "🌫️", text: "Nebel" };
+    if ([51, 53, 55, 56, 57].includes(value))
+        return { icon: "🌦️", text: "Nieselregen" };
+    if ([61, 63, 65, 66, 67, 80, 81, 82].includes(value))
+        return { icon: "🌧️", text: "Regen" };
+    if ([71, 73, 75, 77, 85, 86].includes(value))
+        return { icon: "🌨️", text: "Schnee" };
+    if ([95, 96, 99].includes(value))
+        return { icon: "⛈️", text: "Gewitter" };
+    return { icon: "🌤️", text: "Wechselhaft" };
+}
+
+function updateWeatherScene(weather) {
+    weatherVisual.data = weather || {};
+    const description = weatherDescription(weather?.weather_code);
+    const temperature = numberValue(weather?.temperature_c);
+    const wind = numberValue(weather?.wind_speed_kmh);
+    weatherVisual.wind = wind ?? 0;
+    weatherIcon.textContent = description.icon;
+    weatherTemp.textContent = temperature == null ? "-- °C" :
+        temperature.toLocaleString("de-DE", { maximumFractionDigits: 1 }) + " °C";
+    weatherText.textContent = description.text +
+        (wind == null ? "" : " · " + Math.round(wind) + " km/h") +
+        (weather?.stale === true ? " · letzter Stand" : "");
+    weatherPanel.classList.toggle("stale", weather?.stale === true);
+}
+
+function minuteFromWeatherTime(value, fallback) {
+    const match = String(value ?? "").match(/T(\d{2}):(\d{2})/);
+    if (!match)
+        return fallback;
+    return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function smoothDaylight(minute, sunrise, sunset) {
+    const dawn = THREE.MathUtils.smoothstep(minute, sunrise - 35, sunrise + 35);
+    const dusk = 1 - THREE.MathUtils.smoothstep(minute, sunset - 35, sunset + 35);
+    return THREE.MathUtils.clamp(dawn * dusk, 0, 1);
+}
+
+function animateWeather(seconds, delta) {
+    const weather = weatherVisual.data || {};
+    const now = new Date();
+    const minute = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+    const sunrise = minuteFromWeatherTime(weather.sunrise, 390);
+    const sunset = minuteFromWeatherTime(weather.sunset, 1230);
+    const daylight = smoothDaylight(minute, sunrise, sunset);
+    const cloud = THREE.MathUtils.clamp((numberValue(weather.cloud_cover_percent) ?? 30) / 100, 0, 1);
+    const daylightColor = new THREE.Color(0x9bcdeb).lerp(new THREE.Color(0x9daab4), cloud * 0.48);
+    const nightColor = new THREE.Color(0x061326);
+    weatherVisual.skyColor.copy(nightColor).lerp(daylightColor, daylight);
+    const twilight = Math.max(0, 1 - Math.abs(daylight - 0.5) * 2);
+    weatherVisual.skyColor.lerp(new THREE.Color(0xe69b74), twilight * 0.20);
+    scene.fog.color.copy(weatherVisual.skyColor).multiplyScalar(0.80 + daylight * 0.16);
+    scene.fog.density = THREE.MathUtils.damp(
+        scene.fog.density,
+        0.010 + cloud * 0.006 + ((weather.weather_code === 45 || weather.weather_code === 48) ? 0.025 : 0),
+        3,
+        delta
+    );
+    hemisphere.intensity = 0.18 + daylight * (1.48 - cloud * 0.46);
+    sun.intensity = 0.05 + daylight * (3.8 - cloud * 2.2);
+    fill.intensity = 0.10 + daylight * 0.58;
+    warmBounce.intensity = 0.08 + daylight * 0.24 + twilight * 0.46;
+    renderer.toneMappingExposure = 0.60 + daylight * 0.50;
+
+    const daySpan = Math.max(1, sunset - sunrise);
+    const dayProgress = THREE.MathUtils.clamp((minute - sunrise) / daySpan, 0, 1);
+    const sunAngle = Math.PI * (0.08 + dayProgress * 0.84);
+    sun.position.set(Math.cos(sunAngle) * 18, 3 + Math.sin(sunAngle) * 18, 10);
+    weatherVisual.stars.material.opacity = Math.pow(1 - daylight, 1.8) * 0.88;
+    if (streetLampLight) {
+        const nightStrength = THREE.MathUtils.smoothstep(1 - daylight, 0.30, 0.82);
+        streetLampLight.intensity = THREE.MathUtils.damp(
+            streetLampLight.intensity, nightStrength * 34, 2.2, delta
+        );
+        if (streetLampBulb?.material)
+            streetLampBulb.material.emissiveIntensity = 0.18 + nightStrength * 4.6;
+    }
+
+    const rainAmount = (numberValue(weather.rain_mm) ?? numberValue(weather.precipitation_mm) ?? 0);
+    const snowAmount = numberValue(weather.snowfall_cm) ?? 0;
+    weatherVisual.rain.visible = rainAmount > 0.01;
+    weatherVisual.snow.visible = snowAmount > 0.001;
+    [[weatherVisual.rain, 8.8, 0.16], [weatherVisual.snow, 1.25, 0.38]].forEach(([system, speed, drift]) => {
+        if (!system.visible || reduceMotion)
+            return;
+        const positions = system.geometry.attributes.position.array;
+        for (let index = 0; index < positions.length; index += 3) {
+            positions[index] += weatherVisual.wind * 0.0025 * delta + Math.sin(seconds + index) * drift * delta;
+            positions[index + 1] -= speed * delta;
+            if (positions[index + 1] < 0.12) {
+                positions[index + 1] = 9 + (index % 31) * 0.09;
+                positions[index] = -12 + ((index * 17) % 240) / 10;
+            }
+        }
+        system.geometry.attributes.position.needsUpdate = true;
+    });
+}
+
+function exteriorRoomLightTarget(light, now) {
+    const minute = now.getHours() * 60 + now.getMinutes();
+    const dayNumber = Math.floor(now.getTime() / 86400000);
+    // Jeder Raum erhält eine kleine tägliche Verschiebung. Dadurch schalten
+    // die Lichter nicht jeden Tag sekundengenau gleich, bleiben aber in einem
+    // glaubwürdigen Tagesablauf für zwei berufstätige Personen.
+    const shift = ((light.seed * 17 + dayNumber * 11) % 25) - 12;
+    const localMinute = minute - shift;
+    const inRange = (start, end) => localMinute >= start && localMinute < end;
+    const pulse = (minutes = 12, duty = 0.72) => {
+        const bucket = Math.floor(localMinute / minutes);
+        const value = ((bucket * 37 + light.seed * 19 + dayNumber * 13) % 100) / 100;
+        return value < duty;
+    };
+    switch (light.kind) {
+    case "kitchen":
+        return (inRange(350, 465) && pulse(15, 0.82)) ||
+            (inRange(1065, 1245) && pulse(18, 0.78));
+    case "living":
+        return inRange(1080, 1390) && pulse(24, 0.88);
+    case "office":
+        return (inRange(405, 475) || inRange(1040, 1215)) && pulse(20, 0.64);
+    case "bedroom":
+        return (inRange(360, 430) && pulse(14, 0.58)) ||
+            (inRange(1290, 1438) && pulse(18, 0.76));
+    case "bath":
+        return (inRange(345, 465) || inRange(1260, 1375)) && pulse(9, 0.46);
+    default:
+        return (inRange(380, 455) || inRange(1030, 1300)) && pulse(11, 0.30);
+    }
+}
+
+function animateExteriorRoomLights(delta) {
+    const now = new Date();
+    houseWindowLights.forEach((light) => {
+        const target = exteriorRoomLightTarget(light, now) ? 0.72 : 0;
+        light.opacity = THREE.MathUtils.damp(light.opacity, target, target > 0 ? 1.8 : 1.1, delta);
+        light.material.opacity = light.opacity;
+        light.material.color.setHex(light.kind === "bath" ? 0xffe3ad : 0xffa84a);
+    });
+}
 
 const flows = {};
 
@@ -3457,22 +4314,26 @@ createFlow("audi", [
     [5.80, 0.16, -0.68], [5.80, 0.88, -0.68]
 ], colors.audi, { showCable: false });
 
-createFlow("houseMain", [
-    [3.62, 2.40, -1.42], [3.08, 2.40, -1.42], [3.08, 0.72, -1.42],
-    [-2.72, 0.72, -1.42], [-2.72, 1.38, -1.42], [-2.72, 1.38, -3.18]
-], "#fb923c", { interior: true, cableRadius: 0.018, glowRadius: 0.030, pulseRadius: 0.060 });
-interiorHouse.devices.forEach((device) => {
-    createFlow("room-" + device.id, [
-        [-2.72, 1.38, -3.18],
-        [-2.72, device.position.y, -3.18],
-        [-2.72, device.position.y, device.position.z],
-        [device.position.x, device.position.y, device.position.z]
-    ], "#fb923c", { interior: true, cableRadius: 0.016, glowRadius: 0.028, pulseRadius: 0.055 });
-});
+if (INTERIOR_VIEW_ENABLED) {
+    createFlow("houseMain", [
+        [3.62, 2.40, -1.42], [3.08, 2.40, -1.42], [3.08, 0.72, -1.42],
+        [-2.72, 0.72, -1.42], [-2.72, 1.38, -1.42], [-2.72, 1.38, -3.18]
+    ], "#fb923c", { interior: true, cableRadius: 0.018, glowRadius: 0.030, pulseRadius: 0.060 });
+    interiorHouse.devices.forEach((device) => {
+        createFlow("room-" + device.id, [
+            [-2.72, 1.38, -3.18],
+            [-2.72, device.position.y, -3.18],
+            [-2.72, device.position.y, device.position.z],
+            [device.position.x, device.position.y, device.position.z]
+        ], "#fb923c", { interior: true, cableRadius: 0.016, glowRadius: 0.028, pulseRadius: 0.055 });
+    });
+}
 
 function setInteriorFlowVisibility(visible) {
     ["houseMain", ...interiorHouse.devices.map((device) => "room-" + device.id)].forEach((id) => {
         const flow = flows[id];
+        if (!flow)
+            return;
         flow.cable.visible = visible;
         flow.tube.visible = visible;
         flow.pulses.forEach((pulse) => {
@@ -3687,7 +4548,8 @@ function animateSchematicBattery(visual, seconds) {
 const interiorBadge = document.createElement("span");
 interiorBadge.className = "house-cutaway-badge";
 interiorBadge.textContent = "INNENANSICHT · Zwei-Personen-Profil";
-stage.appendChild(interiorBadge);
+if (INTERIOR_VIEW_ENABLED)
+    stage.appendChild(interiorBadge);
 
 const interiorDeviceElements = {};
 interiorHouse.devices.forEach((device) => {
@@ -3798,6 +4660,10 @@ function deviceScheduled(device, now) {
 function updateInteriorElectricity(totalWatts, now = new Date()) {
     const total = Math.max(0, numberValue(totalWatts) ?? 0);
     simulatedHouseLoad = total;
+    if (!INTERIOR_VIEW_ENABLED) {
+        simulatedResidualLoad = total;
+        return;
+    }
     const scheduled = interiorHouse.devices.filter((device) => deviceScheduled(device, now));
     const scheduledBase = scheduled.reduce((sum, device) => sum + device.baseWatts, 0);
     const scale = scheduledBase > 0 ? Math.min(1, total / scheduledBase) : 0;
@@ -3895,9 +4761,50 @@ function pvSparklineHtml(history, stringIndex = null) {
         escapeHtml(formatPower(max)) + ' · Stand ' + escapeHtml(last) + '</span><span>24:00</span></span>';
 }
 
+function secondaryBatteryUsageChartHtml(history) {
+    const points = Array.isArray(history) ? history.map((point) => ({
+        time: point?.time,
+        minute: pvMinutesIntoDay(point?.time),
+        percent: numberValue(point?.battery_percent),
+        charge: numberValue(point?.charge_w) ?? 0,
+        discharge: numberValue(point?.discharge_w) ?? 0
+    })).filter((point) => point.minute != null && point.percent != null)
+        .sort((left, right) => left.minute - right.minute) : [];
+    if (!points.length)
+        return '<span class="house-detail-row"><b>Akkunutzung heute</b><span>baut sich live auf</span></span>';
+
+    const coordinates = points.map((point) => ({
+        ...point,
+        x: THREE.MathUtils.clamp(point.minute / 1440 * 100, 0, 100),
+        y: 31 - THREE.MathUtils.clamp(point.percent, 0, 100) / 100 * 27
+    }));
+    const segments = coordinates.slice(1).map((point, index) => {
+        const previous = coordinates[index];
+        const mode = point.charge >= 5 ? "charging" :
+            point.discharge >= 5 ? "discharging" : "idle";
+        return '<line class="battery-use-segment ' + mode + '" x1="' +
+            previous.x.toFixed(1) + '" y1="' + previous.y.toFixed(1) +
+            '" x2="' + point.x.toFixed(1) + '" y2="' + point.y.toFixed(1) +
+            '"></line>';
+    }).join("");
+    const last = coordinates.at(-1);
+    return '<span class="battery-use-title"><b>Akkunutzung heute</b>' +
+        '<span><i class="charging"></i>Laden <i class="discharging"></i>Entladen</span></span>' +
+        '<svg class="house-sparkline battery-use-chart" viewBox="0 0 100 34" preserveAspectRatio="none" ' +
+        'aria-label="Ladezustand und Lade- sowie Entladephasen der Solarbank 3 von 00 bis 24 Uhr">' +
+        '<line class="grid" x1="25" y1="1" x2="25" y2="34"></line>' +
+        '<line class="grid" x1="50" y1="1" x2="50" y2="34"></line>' +
+        '<line class="grid" x1="75" y1="1" x2="75" y2="34"></line>' +
+        segments + '<circle class="battery-use-point" cx="' + last.x.toFixed(1) +
+        '" cy="' + last.y.toFixed(1) + '" r="1.8"></circle></svg>' +
+        '<span class="house-sparkline-caption"><span>00:00</span><span>' +
+        Math.round(coordinates[0].percent) + ' % → ' + Math.round(last.percent) +
+        ' %</span><span>24:00</span></span>';
+}
+
 function renderComponentDetail(component) {
     return '<span class="house-detail-grid">' + detailRowsHtml(component.rows) + '</span>' +
-        '<span class="house-detail-advanced">' + detailRowsHtml(component.advancedRows) +
+        '<span class="house-detail-advanced">' + detailRowsHtml(component.advancedRows || []) +
         (component.chart || "") + '</span>';
 }
 
@@ -3947,7 +4854,9 @@ function componentData() {
     const secondaryEnergyWh = numberValue(secondary.battery_energy_wh);
     const secondaryCapacityWh = numberValue(secondary.battery_capacity_wh);
     const secondaryOutput = numberValue(secondary.system_output_power);
-    const secondaryUpdate = formatTimestamp(secondary.last_update);
+    const secondaryPvTodayWh = numberValue(secondary.pv_today_wh);
+    const secondaryBatteryHistory = Array.isArray(secondary.battery_history) ?
+        secondary.battery_history : [];
     const smartPlugVoltage = numberValue(smartPlug.voltage_v);
     const smartPlugCurrent = numberValue(smartPlug.current_a);
     const onThreshold = numberValue(automation.on_threshold_percent) ?? 30;
@@ -4022,26 +4931,17 @@ function componentData() {
             tone: solixStale || secondarySoc == null ? "muted" :
                 secondaryCharge >= 5 || secondaryDischarge >= 5 ? "active" : "idle",
             detail: [
-                "Balkon-PV " + formatPower(secondaryPv),
-                secondaryEnergyWh == null ? "" :
-                    Math.round(secondaryEnergyWh).toLocaleString("de-DE") + " Wh gespeichert",
-                "ohne Zusatzspeicher"
+                "Heute " + formatEnergy(secondaryPvTodayWh),
+                "Eingang " + formatPower(secondaryPv),
+                "Verbrauch " + formatPower(secondaryOutput)
             ].filter(Boolean).join(" · "),
             rows: [
-                ["Energiefluss", secondaryCharge >= 5 ? formatPower(secondaryCharge) + " hinein" :
-                    secondaryDischarge >= 5 ? formatPower(secondaryDischarge) + " heraus" : "bereit"],
-                ["Balkon-PV", secondaryPvStrings.map((value, index) =>
-                    "PV" + (index + 1) + " " + formatPower(value)).join(" · ")]
+                ["Heute erzeugt", formatEnergy(secondaryPvTodayWh)],
+                ["Aktueller Eingang", formatPower(secondaryPv)],
+                ["Aktueller Verbrauch", formatPower(secondaryOutput)]
             ],
-            advancedRows: [
-                ["Gespeichert", formatEnergy(secondaryEnergyWh)],
-                ["Kapazität", formatEnergy(secondaryCapacityWh)],
-                ["Hausabgabe", formatPower(secondaryOutput)],
-                ["Aufbau", "Solarbank 3 · keine Zusatzakkus"],
-                ["Modell", secondary.model || "--"],
-                ["Aktualisiert", secondaryUpdate]
-            ],
-            chart: "",
+            advancedRows: [],
+            chart: secondaryBatteryUsageChartHtml(secondaryBatteryHistory),
             active: secondaryCharge >= 5 || secondaryDischarge >= 5
         },
         grid: {
@@ -4099,6 +4999,7 @@ function componentData() {
             pv, pvStrings, batterySoc, batteryCharge, batteryDischarge, batteryEnergyWh,
             secondaryPv, secondaryPvStrings, secondarySoc, secondaryCharge,
             secondaryDischarge, secondaryEnergyWh, secondaryCapacityWh, secondaryOutput,
+            secondaryPvTodayWh, secondaryBatteryHistory,
             output, interiorLoad, grid, audiPower, charging, plugConnected, audiAtHome, solixStale,
             pvTodayWh, batteryCapacityWh, onThreshold, offThreshold
         }
@@ -4121,6 +5022,7 @@ function setFlowState(flow, active, reverse = false) {
 function updateLiveUi() {
     const components = componentData();
     const raw = components.raw;
+    updateWeatherScene(state.data.weather || {});
     raw.pvStrings.forEach((power, index) => {
         const id = "pv" + (index + 1);
         setFlowState(flows[id], power != null && power >= 5);
@@ -4247,6 +5149,16 @@ function setCutawayVisible(visible) {
 }
 
 function updateCutawayMode(delta = 0.016) {
+    if (!INTERIOR_VIEW_ENABLED) {
+        if (cutawayVisible)
+            setCutawayVisible(false);
+        cutawayBlend = THREE.MathUtils.damp(cutawayBlend, 0, 6.5, delta);
+        applyExteriorFade(cutawayBlend);
+        interiorHouse.group.visible = false;
+        stage.dataset.detailLevel = state.zoom >= 1.36 ? "close" :
+            state.zoom >= 1.08 ? "near" : "overview";
+        return;
+    }
     const shouldShowInterior = cutawayVisible ?
         state.zoom >= CUTAWAY_EXIT_ZOOM : state.zoom >= CUTAWAY_ENTER_ZOOM;
     setCutawayVisible(shouldShowInterior);
@@ -4624,6 +5536,7 @@ menuCollapse.addEventListener("click", () => {
     updateLiveUi();
     setMenuOpen(false);
 });
+menuCleanHorse.addEventListener("click", cleanHorseDroppings);
 
 window.addEventListener("solix-dashboard-data", (event) => {
     state.data = event.detail || state.data;
@@ -4699,6 +5612,9 @@ function animate(time) {
     animateSchematicBattery(secondarySolarBankBatteryVisual, seconds);
     animateSchematicBattery(audiBatteryVisual, seconds);
     animatePondFish(seconds);
+    animateHorse(seconds, delta);
+    animateWeather(seconds, delta);
+    animateExteriorRoomLights(delta);
 
     updateLabelPositions();
     renderer.render(scene, camera);

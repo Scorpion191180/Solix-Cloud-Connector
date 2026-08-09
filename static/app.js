@@ -11,6 +11,7 @@ let activeStartThreshold = 30;
 let latestSolixData = null;
 let latestAutomationData = null;
 let latestAudiData = null;
+let latestWeatherData = null;
 
 const automationReasons = {
     automation_disabled: "Die Ladeautomatik ist deaktiviert.",
@@ -263,7 +264,12 @@ function renderEnergyDiagram() {
         summaryParts.length ? summaryParts.join(" · ") : "Live-Energiefluss wird aufgebaut …"
     );
 
-    window.solixDashboardState = { solix, automation, audi };
+    window.solixDashboardState = {
+        solix,
+        automation,
+        audi,
+        weather: latestWeatherData || {}
+    };
     window.dispatchEvent(new CustomEvent("solix-dashboard-data", {
         detail: window.solixDashboardState
     }));
@@ -727,6 +733,19 @@ async function updateAudi() {
     }
 }
 
+async function updateWeather() {
+    try {
+        const response = await fetch("/api/weather", { cache: "no-store" });
+        if (!response.ok)
+            throw new Error("Wetter API: HTTP " + response.status);
+        latestWeatherData = await response.json();
+        renderEnergyDiagram();
+    }
+    catch (error) {
+        console.log(error);
+    }
+}
+
 async function setManualSmartPlug(enabled) {
 
     if (manualControlBusy)
@@ -781,6 +800,7 @@ async function setManualSmartPlug(enabled) {
 updateDashboard();
 updateAutomation();
 updateAudi();
+updateWeather();
 
 document.getElementById("smartPlugOn").addEventListener("click", () => setManualSmartPlug(true));
 document.getElementById("smartPlugOff").addEventListener("click", () => setManualSmartPlug(false));
@@ -805,5 +825,7 @@ setInterval(updateDashboard, 5000);
 setInterval(updateAutomation, 30000);
 
 setInterval(updateAudi, 30000);
+
+setInterval(updateWeather, 10 * 60 * 1000);
 
 setInterval(updateLastRefresh, 1000);

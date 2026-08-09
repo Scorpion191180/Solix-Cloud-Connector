@@ -7,7 +7,7 @@
 
 <title>☀️ Solix Control</title>
 
-<link rel="stylesheet" href="/static/style.css?v=20260808-70">
+<link rel="stylesheet" href="/static/style.css?v=20260809-77">
 
 <script type="importmap">
 {
@@ -202,17 +202,23 @@ Signalstärke
 </dl>
 <p class="house-menu-rule">Automatik: Laden ab <span id="menuStartThreshold">--</span>, Stopp unter <span id="menuStopThreshold">--</span>.</p>
 <button class="house-menu-action" id="houseMenuCollapse" type="button">Detailkarten schließen</button>
+<button class="house-menu-action house-menu-clean" id="houseCleanHorse" type="button">🧹 Grundstück reinigen</button>
+<p class="house-menu-clean-status" id="houseCleanStatus" aria-live="polite">Grundstück ist sauber.</p>
 </aside>
 <canvas
     id="houseCanvas"
     role="img"
     tabindex="0"
-    aria-label="Drehbares 3D-Modell des Grundstücks mit Pergola-PV, Solarbank, Stromnetz, Garage, Audi Q3 und zoombarer Innenansicht"
+    aria-label="Drehbares 3D-Modell des Grundstücks mit Pergola-PV, Solarbank, Stromnetz, Garage, Audi Q3, Pferd und Live-Wetter"
     aria-describedby="houseInstructions"
 >
 Dein Browser unterstützt die interaktive Hausansicht nicht.
 </canvas>
 <div class="house-gesture" id="houseInstructions">Ziehen: drehen · Zwei Finger/Rechtsklick: verschieben · Zoom: Details</div>
+<div class="house-weather" id="houseWeather" aria-live="polite">
+<span class="house-weather-icon" id="houseWeatherIcon" aria-hidden="true">◌</span>
+<span><strong id="houseWeatherTemp">-- °C</strong><small id="houseWeatherText">Wetter wird geladen</small></span>
+</div>
 <button class="house-reset" id="houseReset" type="button" aria-label="Zur Standardansicht zurückkehren">↺ Standardansicht</button>
 </div>
 
@@ -240,6 +246,9 @@ Dein Browser unterstützt die interaktive Hausansicht nicht.
 <a href="https://sketchfab.com/3d-models/2019-skoda-karoq-7e359874ebe744158eddc37c9da8f487" target="_blank" rel="noopener">„2019 Skoda Karoq“ von BHP3D</a> ·
 Audi: <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>,
 Yeti/Fox/Karoq: <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>.
+Pferd und Bewegungsanimationen:
+<a href="https://mesh2motion.org/" target="_blank" rel="noopener">Mesh2Motion</a> ·
+<a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener">CC0 1.0</a>.
 </p>
 
 </section>
@@ -619,8 +628,8 @@ Einstellungen
 
 </div>
 
-<script type="module" src="/static/house.js?v=20260808-71"></script>
-<script src="/static/app.js?v=20260808-71"></script>
+<script type="module" src="/static/house.js?v=20260809-77"></script>
+<script src="/static/app.js?v=20260809-77"></script>
 
 </body>
 </html>

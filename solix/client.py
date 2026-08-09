@@ -95,6 +95,11 @@ class SolixClient:
         # Zehn-Minuten-Punkte reichen für eine ruhige, kleine Tageskurve und
         # halten die öffentliche Live-Antwort trotzdem kompakt.
         self._pv_history: deque[dict[str, Any]] = deque(maxlen=144)
+        self._secondary_day = None
+        self._secondary_pv_today_wh = 0.0
+        self._secondary_last_sample_at: datetime | None = None
+        self._secondary_last_pv_power_w: int | None = None
+        self._secondary_history: deque[dict[str, Any]] = deque(maxlen=144)
 
     async def _ensure_api_locked(self) -> None:
         if self.api is not None:
@@ -379,7 +384,7 @@ class SolixClient:
             return 0
 
     def _secondary_solarbank_payload_locked(
-        self, primary_solarbank: dict[str, Any]
+        self, primary_solarbank: dict[str, Any], observed_at: datetime
     ) -> dict[str, Any] | None:
         """Expose one additional bank without changing primary-bank selection.
 
@@ -423,6 +428,15 @@ class SolixClient:
             self._number(solarbank.get(f"solar_power_{number}"))
             for number in range(1, 3)
         ]
+        system_output_power = self._number(solarbank.get("output_power"))
+        pv_today_wh, battery_history = self._record_secondary_telemetry(
+            pv_power_w=sum(pv_values),
+            battery_percent=battery_percent,
+            battery_charge_power=battery_charge_power,
+            battery_discharge_power=battery_discharge_power,
+            output_power=system_output_power,
+            observed_at=observed_at,
+        )
         return {
             "available": True,
             "status": solarbank.get("status_desc"),
@@ -444,17 +458,77 @@ class SolixClient:
                 if battery_discharge_power > 0
                 else "idle"
             ),
-            "system_output_power": self._number(solarbank.get("output_power")),
+            "system_output_power": system_output_power,
             "charging_status": solarbank.get("charging_status_desc"),
             "pv_total": sum(pv_values),
             "pv1": pv_values[0],
             "pv2": pv_values[1],
+            "pv_today_wh": pv_today_wh,
+            "battery_history": battery_history,
             "firmware": solarbank.get("sw_version"),
             "wifi_signal": self._number(solarbank.get("wifi_signal")),
             "last_update": (
                 self._last_refresh_at.isoformat() if self._last_refresh_at else None
             ),
         }
+
+    def _record_secondary_telemetry(
+        self,
+        *,
+        pv_power_w: int,
+        battery_percent: int,
+        battery_charge_power: int,
+        battery_discharge_power: int,
+        output_power: int,
+        observed_at: datetime,
+    ) -> tuple[int, list[dict[str, Any]]]:
+        """Build a compact Solarbank-3 day curve from the fresh live samples."""
+        local_time = observed_at.astimezone(self._pv_timezone)
+        local_day = local_time.date()
+        if self._secondary_day != local_day:
+            self._secondary_day = local_day
+            self._secondary_pv_today_wh = 0.0
+            self._secondary_last_sample_at = None
+            self._secondary_last_pv_power_w = None
+            self._secondary_history.clear()
+
+        if (
+            self._secondary_last_sample_at is not None
+            and self._secondary_last_pv_power_w is not None
+        ):
+            elapsed = (
+                observed_at - self._secondary_last_sample_at
+            ).total_seconds()
+            if 0 < elapsed <= 10 * 60:
+                average_power = (
+                    self._secondary_last_pv_power_w + pv_power_w
+                ) / 2
+                self._secondary_pv_today_wh += average_power * elapsed / 3600
+
+        self._secondary_last_sample_at = observed_at
+        self._secondary_last_pv_power_w = pv_power_w
+        sample = {
+            "time": local_time.isoformat(timespec="minutes"),
+            "battery_percent": battery_percent,
+            "charge_w": battery_charge_power,
+            "discharge_w": battery_discharge_power,
+            "input_w": pv_power_w,
+            "output_w": output_power,
+        }
+        bucket = (local_time.hour * 60 + local_time.minute) // 10
+        if (
+            self._secondary_history
+            and self._secondary_history[-1].get("bucket") == bucket
+        ):
+            self._secondary_history[-1] = {**sample, "bucket": bucket}
+        else:
+            self._secondary_history.append({**sample, "bucket": bucket})
+
+        public_history = [
+            {key: value for key, value in point.items() if key != "bucket"}
+            for point in self._secondary_history
+        ]
+        return round(self._secondary_pv_today_wh), public_history
 
     def _record_pv_telemetry(
         self,
@@ -576,8 +650,9 @@ class SolixClient:
             for number in range(1, 5)
         ]
         pv_total = sum(pv_values)
+        observed_at = datetime.now(timezone.utc)
         pv_today_wh, pv_history, pv_today_wh_by_string = self._record_pv_telemetry(
-            pv_total, datetime.now(timezone.utc), pv_values
+            pv_total, observed_at, pv_values
         )
 
         payload = {
@@ -616,7 +691,7 @@ class SolixClient:
             "solarbank_count": solarbank_count,
             "selection": selection,
             "secondary_solarbank": self._secondary_solarbank_payload_locked(
-                solarbank
+                solarbank, observed_at
             ),
             "last_update": (
                 self._last_refresh_at.isoformat() if self._last_refresh_at else None
