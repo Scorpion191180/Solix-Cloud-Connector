@@ -7,7 +7,7 @@
 
 <title>☀️ Solix Control</title>
 
-<link rel="stylesheet" href="/static/style.css?v=20260809-77">
+<link rel="stylesheet" href="/static/style.css?v=20260811-78">
 
 <script type="importmap">
 {
@@ -201,8 +201,24 @@ Signalstärke
 <div><dt>Audi</dt><dd id="menuAudiSoc">--</dd></div>
 </dl>
 <p class="house-menu-rule">Automatik: Laden ab <span id="menuStartThreshold">--</span>, Stopp unter <span id="menuStopThreshold">--</span>.</p>
+<p class="house-menu-clean-status" id="menuAutomationEvent" aria-live="polite">Letzter Schaltgrund wird geladen …</p>
+<div class="house-menu-limits" aria-label="Ladeautomatik einstellen">
+<label>Start <output id="menuStartValue" for="menuStartInput">30 %</output>
+<input id="menuStartInput" type="range" min="20" max="90" step="1" value="30"></label>
+<label>Stopp <output id="menuStopValue" for="menuStopInput">10 %</output>
+<input id="menuStopInput" type="range" min="0" max="89" step="1" value="10"></label>
+<input id="menuControlToken" class="house-menu-code" type="password" autocomplete="off"
+    placeholder="Steuer-Code" aria-label="Steuer-Code für Automatik-Limits">
+<button class="house-menu-action" id="menuSaveThresholds" type="button">Limits speichern</button>
+<p class="house-menu-clean-status" id="menuThresholdStatus" aria-live="polite">Stopp muss unter Start liegen.</p>
+</div>
 <button class="house-menu-action" id="houseMenuCollapse" type="button">Detailkarten schließen</button>
-<button class="house-menu-action house-menu-clean" id="houseCleanHorse" type="button">🧹 Grundstück reinigen</button>
+<div class="house-menu-care" aria-label="Tierpflege">
+<button class="house-menu-action" id="houseFeedAnimals" type="button">🌾 Füttern</button>
+<button class="house-menu-action" id="houseWaterAnimals" type="button">💧 Tränken</button>
+</div>
+<p class="house-menu-clean-status" id="houseCareStatus">Heu und Wasser werden geladen …</p>
+<button class="house-menu-action house-menu-clean" id="houseCleanHorse" type="button">🧹 Misten</button>
 <p class="house-menu-clean-status" id="houseCleanStatus" aria-live="polite">Grundstück ist sauber.</p>
 </aside>
 <canvas
@@ -479,11 +495,15 @@ Technische Details &amp; Steuerung anzeigen
 <p class="automation-reason" id="automationReason" aria-live="polite">
 Automatikstatus wird geladen …
 </p>
+<details class="automation-history">
+<summary>Schaltverlauf anzeigen</summary>
+<ol id="automationHistory"><li>Noch keine Schaltvorgänge gespeichert.</li></ol>
+</details>
 
 <div class="threshold-control" id="thresholdControl">
 <div class="threshold-copy">
-<strong>Solix-Startwert</strong>
-<span>Ab diesem Ladestand darf die Automatik den Audi-Ladevorgang starten.</span>
+<strong>Lade- und Stopp-Limits</strong>
+<span>Start schaltet die Ladung frei; unter Stopp wird sicher ausgeschaltet.</span>
 </div>
 <div class="threshold-value-row">
 <output id="startThresholdValue" for="startThreshold">30 %</output>
@@ -503,6 +523,11 @@ Automatikstatus wird geladen …
 <span>20 %</span>
 <span>90 %</span>
 </div>
+<div class="threshold-copy threshold-stop-copy"><strong>Solix-Stoppwert</strong></div>
+<div class="threshold-value-row"><output id="stopThresholdValue" for="stopThreshold">10 %</output></div>
+<input id="stopThreshold" type="range" min="0" max="89" step="1" value="10"
+    aria-label="Solix-Stoppwert" disabled>
+<div class="threshold-scale" aria-hidden="true"><span>0 %</span><span>89 %</span></div>
 <p class="threshold-status" id="thresholdStatus" aria-live="polite">
 Zum Speichern denselben Steuer-Code wie beim manuellen Test verwenden.
 </p>
@@ -628,8 +653,8 @@ Einstellungen
 
 </div>
 
-<script type="module" src="/static/house.js?v=20260809-77"></script>
-<script src="/static/app.js?v=20260809-77"></script>
+<script type="module" src="/static/house.js?v=20260811-78"></script>
+<script src="/static/app.js?v=20260811-78"></script>
 
 </body>
 </html>
