@@ -8,6 +8,7 @@ let thresholdBusy = false;
 let thresholdDirty = false;
 let thresholdControlAvailable = false;
 let activeStartThreshold = 30;
+let activeStopThreshold = 10;
 let latestSolixData = null;
 let latestAutomationData = null;
 let latestAudiData = null;
@@ -29,7 +30,8 @@ const automationReasons = {
     solix_soc_unknown: "Solix-Ladestand unbekannt: Smart Plug wurde sicher ausgeschaltet.",
     solix_soc_unknown_plug_already_off: "Solix-Ladestand unbekannt: Smart Plug bleibt ausgeschaltet.",
     manual_control: "Der Smart Plug wurde zuletzt manuell getestet.",
-    start_threshold_updated: "Der neue Startwert gilt ab der nächsten Prüfung."
+    start_threshold_updated: "Der neue Startwert gilt ab der nächsten Prüfung.",
+    thresholds_updated: "Die neuen Start- und Stoppwerte gelten ab der nächsten Prüfung."
 };
 
 const automationDryRunReasons = {
@@ -58,6 +60,41 @@ function getAutomationReason(data) {
         return "Solix-Akku zwischen " + stop + " % und " + start + " %: aktueller Zustand bleibt bestehen.";
 
     return automationReasons[data.reason] || "Automatik wartet auf neue Daten.";
+}
+
+function automationEventText(event, thresholds = {}) {
+    const eventData = {
+        ...event,
+        on_threshold_percent: thresholds.on_threshold_percent,
+        off_threshold_percent: thresholds.off_threshold_percent
+    };
+    const reason = getAutomationReason(eventData);
+    const timestamp = event.time ? new Date(event.time) : null;
+    const time = timestamp && !Number.isNaN(timestamp.getTime()) ?
+        timestamp.toLocaleString("de-DE", {
+            day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit"
+        }) : "Uhrzeit unbekannt";
+    const state = event.smartplug_state === true ? " · Plug EIN" :
+        event.smartplug_state === false ? " · Plug AUS" : "";
+    return time + " · " + (event.error || reason) + state;
+}
+
+function renderAutomationHistory(data) {
+    const events = Array.isArray(data.events) ? data.events.slice(-12).reverse() : [];
+    const last = events[0];
+    const menuEvent = document.getElementById("menuAutomationEvent");
+    if (menuEvent)
+        menuEvent.textContent = last ? "Zuletzt: " + automationEventText(last, data) :
+            "Noch kein Schaltvorgang gespeichert.";
+    const list = document.getElementById("automationHistory");
+    if (!list)
+        return;
+    list.replaceChildren(...(events.length ? events : [{ empty: true }]).map((event) => {
+        const item = document.createElement("li");
+        item.textContent = event.empty ? "Noch keine Schaltvorgänge gespeichert." :
+            automationEventText(event, data);
+        return item;
+    }));
 }
 
 function numericValue(value) {
@@ -370,10 +407,35 @@ function renderChargingFlow() {
 }
 
 function refreshThresholdControls() {
-    const slider = document.getElementById("startThreshold");
+    const sliders = [
+        document.getElementById("startThreshold"),
+        document.getElementById("stopThreshold"),
+        document.getElementById("menuStartInput"),
+        document.getElementById("menuStopInput")
+    ].filter(Boolean);
     const button = document.getElementById("saveStartThreshold");
-    slider.disabled = !thresholdControlAvailable || thresholdBusy;
+    sliders.forEach((slider) => slider.disabled = !thresholdControlAvailable || thresholdBusy);
     button.disabled = !thresholdControlAvailable || thresholdBusy || !thresholdDirty;
+    const menuButton = document.getElementById("menuSaveThresholds");
+    if (menuButton)
+        menuButton.disabled = !thresholdControlAvailable || thresholdBusy || !thresholdDirty;
+}
+
+function syncThresholdInputs(start, stop) {
+    ["startThreshold", "menuStartInput"].forEach((id) => {
+        const element = document.getElementById(id);
+        if (element) element.value = start;
+    });
+    ["stopThreshold", "menuStopInput"].forEach((id) => {
+        const element = document.getElementById(id);
+        if (element) element.value = stop;
+    });
+    document.getElementById("startThresholdValue").innerText = start + " %";
+    document.getElementById("stopThresholdValue").innerText = stop + " %";
+    document.getElementById("menuStartValue").innerText = start + " %";
+    document.getElementById("menuStopValue").innerText = stop + " %";
+    thresholdDirty = start !== activeStartThreshold || stop !== activeStopThreshold;
+    refreshThresholdControls();
 }
 
 function setBatteryColor(percent) {
@@ -548,6 +610,7 @@ async function updateAutomation() {
 
         const data = await response.json();
         latestAutomationData = data;
+        renderAutomationHistory(data);
         renderChargingFlow();
         renderEnergyDiagram();
         const badge = document.getElementById("automationStatus");
@@ -598,11 +661,15 @@ async function updateAutomation() {
         }
 
         const serverThreshold = Number(data.on_threshold_percent ?? 30);
+        const serverStopThreshold = Number(data.off_threshold_percent ?? 10);
         activeStartThreshold = serverThreshold;
+        activeStopThreshold = serverStopThreshold;
         document.getElementById("startRuleValue").innerText = serverThreshold + " %";
+        const ruleItems = document.querySelectorAll(".automation-rule span");
+        if (ruleItems[1])
+            ruleItems[1].innerHTML = "<b>AUS</b> bei Akku &lt; " + serverStopThreshold + " % oder getrenntem Stecker";
         if (!thresholdDirty && !thresholdBusy) {
-            document.getElementById("startThreshold").value = serverThreshold;
-            document.getElementById("startThresholdValue").innerText = serverThreshold + " %";
+            syncThresholdInputs(serverThreshold, serverStopThreshold);
         }
         refreshThresholdControls();
 
@@ -615,6 +682,9 @@ async function updateAutomation() {
     catch (e) {
 
         latestAutomationData = null;
+        const menuEvent = document.getElementById("menuAutomationEvent");
+        if (menuEvent)
+            menuEvent.textContent = "Schaltverlauf ist derzeit nicht erreichbar.";
         renderChargingFlow();
         renderEnergyDiagram();
         const badge = document.getElementById("automationStatus");
@@ -633,21 +703,29 @@ async function updateAutomation() {
 
 }
 
-async function saveStartThreshold() {
+async function saveStartThreshold(fromMenu = false) {
     if (thresholdBusy || !thresholdDirty)
         return;
 
-    const token = document.getElementById("controlToken").value.trim();
-    const status = document.getElementById("thresholdStatus");
+    const menuToken = document.getElementById("menuControlToken").value.trim();
+    const technicalToken = document.getElementById("controlToken").value.trim();
+    const token = fromMenu ? (menuToken || technicalToken) : (technicalToken || menuToken);
+    const status = document.getElementById(fromMenu ? "menuThresholdStatus" : "thresholdStatus");
     const selected = Number(document.getElementById("startThreshold").value);
+    const selectedStop = Number(document.getElementById("stopThreshold").value);
 
     if (!token) {
         status.innerText = "Bitte zuerst unten den Steuer-Code eingeben.";
         return;
     }
 
+    if (selectedStop >= selected) {
+        status.innerText = "Der Stoppwert muss unter dem Startwert liegen.";
+        return;
+    }
+
     if (!window.confirm(
-        "Solix-Startwert auf " + selected + " % setzen? Die Automatik verwendet ihn ab der nächsten Prüfung."
+        "Laden ab " + selected + " % und Stopp unter " + selectedStop + " % setzen?"
     ))
         return;
 
@@ -662,15 +740,22 @@ async function saveStartThreshold() {
                 "Content-Type": "application/json",
                 "X-Control-Token": token
             },
-            body: JSON.stringify({ on_threshold_percent: selected })
+            body: JSON.stringify({
+                on_threshold_percent: selected,
+                off_threshold_percent: selectedStop
+            })
         });
         const data = await response.json();
         if (!response.ok)
             throw new Error(data.detail || "Startwert konnte nicht gespeichert werden");
 
         activeStartThreshold = data.on_threshold_percent;
+        activeStopThreshold = data.off_threshold_percent;
         thresholdDirty = false;
-        status.innerText = "Startwert " + activeStartThreshold + " % gespeichert – aktiv ab der nächsten Minutenprüfung.";
+        status.innerText = "Limits gespeichert: Start " + activeStartThreshold +
+            " %, Stopp " + activeStopThreshold + " % – aktiv ab der nächsten Minutenprüfung.";
+        document.getElementById("thresholdStatus").innerText = status.innerText;
+        document.getElementById("menuThresholdStatus").innerText = status.innerText;
         await updateAutomation();
     }
     catch (e) {
@@ -804,13 +889,16 @@ updateWeather();
 
 document.getElementById("smartPlugOn").addEventListener("click", () => setManualSmartPlug(true));
 document.getElementById("smartPlugOff").addEventListener("click", () => setManualSmartPlug(false));
-document.getElementById("startThreshold").addEventListener("input", (event) => {
-    const selected = Number(event.target.value);
-    document.getElementById("startThresholdValue").innerText = selected + " %";
-    thresholdDirty = selected !== activeStartThreshold;
-    refreshThresholdControls();
-});
-document.getElementById("saveStartThreshold").addEventListener("click", saveStartThreshold);
+function thresholdInputChanged(event) {
+    const isStart = event.target.id === "startThreshold" || event.target.id === "menuStartInput";
+    const start = isStart ? Number(event.target.value) : Number(document.getElementById("startThreshold").value);
+    const stop = isStart ? Number(document.getElementById("stopThreshold").value) : Number(event.target.value);
+    syncThresholdInputs(start, stop);
+}
+["startThreshold", "stopThreshold", "menuStartInput", "menuStopInput"].forEach((id) =>
+    document.getElementById(id).addEventListener("input", thresholdInputChanged));
+document.getElementById("saveStartThreshold").addEventListener("click", () => saveStartThreshold(false));
+document.getElementById("menuSaveThresholds").addEventListener("click", () => saveStartThreshold(true));
 document.getElementById("technicalToggle").addEventListener("click", (event) => {
     const container = document.querySelector(".container");
     const open = container.classList.toggle("technical-open");
