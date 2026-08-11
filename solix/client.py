@@ -100,6 +100,10 @@ class SolixClient:
         self._secondary_last_sample_at: datetime | None = None
         self._secondary_last_pv_power_w: int | None = None
         self._secondary_history: deque[dict[str, Any]] = deque(maxlen=144)
+        # Five-minute temperature points for both independently selected
+        # systems.  288 points cover a rolling 24-hour chart.
+        self._primary_temperature_history: deque[dict[str, Any]] = deque(maxlen=288)
+        self._secondary_temperature_history: deque[dict[str, Any]] = deque(maxlen=288)
 
     async def _ensure_api_locked(self) -> None:
         if self.api is not None:
@@ -383,6 +387,67 @@ class SolixClient:
         except (TypeError, ValueError):
             return 0
 
+    @classmethod
+    def _battery_temperatures_c(cls, device: dict[str, Any]) -> list[float]:
+        """Return credible battery temperatures from REST or MQTT fields."""
+        candidate_keys = (
+            "battery_temperature", "battery_temp", "bat_temperature", "bat_temp",
+            "cell_temperature", "max_cell_temperature", "min_cell_temperature",
+            "temp_degree", "temperature", "temp",
+        )
+        sources: list[dict[str, Any]] = [device]
+        mqtt_data = device.get("mqtt_data")
+        if isinstance(mqtt_data, dict):
+            sources.insert(0, mqtt_data)
+        for container_key in (
+            "sub_package_info", "sub_package_list", "battery_packs", "pack_info"
+        ):
+            container = device.get(container_key)
+            if isinstance(container, list):
+                sources.extend(item for item in container if isinstance(item, dict))
+            elif isinstance(container, dict):
+                sources.extend(item for item in container.values() if isinstance(item, dict))
+
+        values: list[float] = []
+        for source in sources:
+            for key in candidate_keys:
+                if key not in source:
+                    continue
+                number = cls._optional_number(source.get(key))
+                if number is None:
+                    continue
+                value = float(number)
+                # Some firmwares publish tenths of a degree.
+                if 100 < abs(value) <= 1000:
+                    value /= 10
+                if -35 <= value <= 90 and all(abs(value - known) > 0.04 for known in values):
+                    values.append(round(value, 1))
+        return values
+
+    def _record_temperature(
+        self,
+        history: deque[dict[str, Any]],
+        temperatures: list[float],
+        observed_at: datetime,
+    ) -> list[dict[str, Any]]:
+        if temperatures:
+            local_time = observed_at.astimezone(self._pv_timezone)
+            bucket = int(observed_at.timestamp() // (5 * 60))
+            sample = {
+                "time": local_time.isoformat(timespec="minutes"),
+                "temperature_c": round(sum(temperatures) / len(temperatures), 1),
+                "temperatures_c": temperatures,
+                "bucket": bucket,
+            }
+            if history and history[-1].get("bucket") == bucket:
+                history[-1] = sample
+            else:
+                history.append(sample)
+        return [
+            {key: value for key, value in point.items() if key != "bucket"}
+            for point in history
+        ]
+
     def _secondary_solarbank_payload_locked(
         self, primary_solarbank: dict[str, Any], observed_at: datetime
     ) -> dict[str, Any] | None:
@@ -429,6 +494,10 @@ class SolixClient:
             for number in range(1, 3)
         ]
         system_output_power = self._number(solarbank.get("output_power"))
+        temperatures = self._battery_temperatures_c(solarbank)
+        temperature_history = self._record_temperature(
+            self._secondary_temperature_history, temperatures, observed_at
+        )
         pv_today_wh, battery_history = self._record_secondary_telemetry(
             pv_power_w=sum(pv_values),
             battery_percent=battery_percent,
@@ -465,6 +534,11 @@ class SolixClient:
             "pv2": pv_values[1],
             "pv_today_wh": pv_today_wh,
             "battery_history": battery_history,
+            "battery_temperature_c": (
+                round(sum(temperatures) / len(temperatures), 1) if temperatures else None
+            ),
+            "battery_temperatures_c": temperatures,
+            "battery_temperature_history": temperature_history,
             "firmware": solarbank.get("sw_version"),
             "wifi_signal": self._number(solarbank.get("wifi_signal")),
             "last_update": (
@@ -651,6 +725,10 @@ class SolixClient:
         ]
         pv_total = sum(pv_values)
         observed_at = datetime.now(timezone.utc)
+        temperatures = self._battery_temperatures_c(solarbank)
+        temperature_history = self._record_temperature(
+            self._primary_temperature_history, temperatures, observed_at
+        )
         pv_today_wh, pv_history, pv_today_wh_by_string = self._record_pv_telemetry(
             pv_total, observed_at, pv_values
         )
@@ -673,6 +751,11 @@ class SolixClient:
                 if battery_discharge_power > 0
                 else "idle"
             ),
+            "battery_temperature_c": (
+                round(sum(temperatures) / len(temperatures), 1) if temperatures else None
+            ),
+            "battery_temperatures_c": temperatures,
+            "battery_temperature_history": temperature_history,
             "system_output_power": to_int(solarbank.get("output_power")),
             "charging_status": solarbank.get("charging_status_desc"),
             "pv_total": pv_total,
