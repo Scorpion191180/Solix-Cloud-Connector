@@ -25,6 +25,7 @@ class ManualSmartPlugCommand(BaseModel):
 
 class AutomationSettingsUpdate(BaseModel):
     on_threshold_percent: int = Field(ge=20, le=90)
+    off_threshold_percent: int = Field(ge=0, le=89)
 
 
 def _manual_control_configured() -> bool:
@@ -196,13 +197,18 @@ async def update_automation_settings(
     settings: AutomationSettingsUpdate,
     x_control_token: str | None = Header(default=None),
 ):
-    """Change the protected runtime start threshold without switching now."""
+    """Change both protected hysteresis limits without switching now."""
     _authorize_manual_control(x_control_token)
-    status = await charging_automation.set_on_threshold(
-        settings.on_threshold_percent
-    )
+    try:
+        status = await charging_automation.set_thresholds(
+            settings.on_threshold_percent,
+            settings.off_threshold_percent,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {
         "ok": True,
         "on_threshold_percent": status["on_threshold_percent"],
+        "off_threshold_percent": status["off_threshold_percent"],
         "applies_on_next_evaluation": True,
     }
