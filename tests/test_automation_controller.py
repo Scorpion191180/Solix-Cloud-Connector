@@ -1,4 +1,5 @@
 import os
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -66,12 +67,17 @@ class FakeSolixClient:
 
 class ChargingAutomationTests(unittest.IsolatedAsyncioTestCase):
     def make_controller(self, solix, audi, enabled="true", dry_run="false"):
+        settings_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(settings_dir.cleanup)
         settings = {
             "AUTOMATION_ENABLED": enabled,
             "AUTOMATION_DRY_RUN": dry_run,
             "AUTOMATION_ON_SOC": "30",
             "AUTOMATION_OFF_SOC": "10",
             "AUTOMATION_INTERVAL_SECONDS": "900",
+            "AUTOMATION_SETTINGS_FILE": os.path.join(
+                settings_dir.name, "automation-settings.json"
+            ),
         }
         env = patch.dict(os.environ, settings, clear=False)
         env.start()
@@ -221,6 +227,19 @@ class ChargingAutomationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(status["on_threshold_percent"], 20)
         self.assertEqual(evaluated["last_action"], "turned_on")
+
+    async def test_thresholds_and_transition_events_are_reported(self):
+        solix = FakeSolixClient(35, state=False)
+        controller = self.make_controller(solix, FakeAudiClient(True))
+
+        await controller.set_thresholds(32, 8)
+        status = await controller.evaluate()
+
+        self.assertEqual(status["on_threshold_percent"], 32)
+        self.assertEqual(status["off_threshold_percent"], 8)
+        self.assertTrue(status["events"])
+        self.assertEqual(status["events"][-1]["reason"], "at_or_above_on_threshold")
+        self.assertIs(status["events"][-1]["smartplug_state"], True)
 
     async def test_start_threshold_rejects_values_below_20_percent(self):
         controller = self.make_controller(

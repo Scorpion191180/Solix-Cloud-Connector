@@ -23,23 +23,30 @@ class AutomationSettingsTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_authorized_user_can_select_20_percent(self):
-        updated_status = {"on_threshold_percent": 20}
+        updated_status = {
+            "on_threshold_percent": 20,
+            "off_threshold_percent": 8,
+        }
         with (
             self.settings(),
             patch.object(
                 charging_automation,
-                "set_on_threshold",
+                "set_thresholds",
                 AsyncMock(return_value=updated_status),
             ) as set_threshold,
         ):
             response = await update_automation_settings(
-                AutomationSettingsUpdate(on_threshold_percent=20),
+                AutomationSettingsUpdate(
+                    on_threshold_percent=20,
+                    off_threshold_percent=8,
+                ),
                 "correct-secret",
             )
 
-        set_threshold.assert_awaited_once_with(20)
+        set_threshold.assert_awaited_once_with(20, 8)
         self.assertTrue(response["ok"])
         self.assertEqual(response["on_threshold_percent"], 20)
+        self.assertEqual(response["off_threshold_percent"], 8)
         self.assertTrue(response["applies_on_next_evaluation"])
 
     async def test_wrong_code_does_not_change_threshold(self):
@@ -47,13 +54,16 @@ class AutomationSettingsTests(unittest.IsolatedAsyncioTestCase):
             self.settings(),
             patch.object(
                 charging_automation,
-                "set_on_threshold",
+                "set_thresholds",
                 AsyncMock(),
             ) as set_threshold,
         ):
             with self.assertRaises(HTTPException) as error:
                 await update_automation_settings(
-                    AutomationSettingsUpdate(on_threshold_percent=20),
+                    AutomationSettingsUpdate(
+                        on_threshold_percent=20,
+                        off_threshold_percent=8,
+                    ),
                     "wrong-secret",
                 )
 

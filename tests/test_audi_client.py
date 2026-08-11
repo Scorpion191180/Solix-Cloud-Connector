@@ -1,6 +1,7 @@
 import os
 import time
 import unittest
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -162,6 +163,41 @@ class AudiClientTests(unittest.IsolatedAsyncioTestCase):
             client = AudiClient()
 
         self.assertEqual(client._cache_seconds, MIN_CACHE_SECONDS)
+
+    def test_telemetry_builds_soc_history_and_charging_session(self):
+        with patch.dict(
+            os.environ,
+            {
+                "AUDI_REFRESH_TOKEN": "refresh-token",
+                "AUDI_BATTERY_CAPACITY_KWH": "13.0",
+            },
+            clear=True,
+        ):
+            client = AudiClient()
+
+        with patch("audi.client.datetime") as clock:
+            clock.now.side_effect = [
+                datetime(2026, 8, 10, 10, 0, tzinfo=timezone.utc),
+                datetime(2026, 8, 10, 10, 15, tzinfo=timezone.utc),
+                datetime(2026, 8, 10, 10, 30, tzinfo=timezone.utc),
+            ]
+            clock.fromisoformat = datetime.fromisoformat
+            client._record_vehicle_telemetry({
+                "battery_percent": 40, "charging": True, "charging_power_kw": 3.2
+            })
+            client._record_vehicle_telemetry({
+                "battery_percent": 46, "charging": True, "charging_power_kw": 3.2
+            })
+            client._record_vehicle_telemetry({
+                "battery_percent": 50, "charging": False, "charging_power_kw": 0
+            })
+
+        public = client._with_presence(client._empty_payload())
+        self.assertEqual(len(public["battery_history"]), 3)
+        self.assertEqual(public["battery_history"][-1]["battery_percent"], 50)
+        self.assertEqual(len(public["charging_sessions"]), 1)
+        self.assertEqual(public["charging_sessions"][0]["charged_percent"], 10)
+        self.assertEqual(public["charging_sessions"][0]["charged_kwh"], 0.8)
 
     async def test_parking_position_is_reduced_to_private_home_presence(self):
         with patch.dict(
