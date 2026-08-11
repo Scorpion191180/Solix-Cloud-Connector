@@ -85,6 +85,9 @@ AUDI_HOME_LONGITUDE=8.123456
 AUDI_HOME_RADIUS_METERS=120
 AUDI_POSITION_INTERVAL_SECONDS=120
 SOLIX_CACHE_SECONDS=30
+# Optional mit persistentem Render-Datenträger, damit Tageskurven auch
+# Deploys und Instanzwechsel überstehen:
+SOLIX_HISTORY_FILE=/var/data/solix-telemetry.json
 SOLIX_SOLARBANK_PN=AE103
 SOLIX_BATTERY_CAPACITY_WH=10400
 AUTOMATION_ENABLED=true
@@ -104,6 +107,13 @@ AUDI_SPIN=1234        # nicht erforderlich; die Audi-Anbindung bleibt lesend
 SOLIX_SMARTPLUG_SN=... # nur nötig, wenn mehrere Smart Plugs vorhanden sind
 SOLIX_SOLARBANK_SN=... # nur nötig, wenn mehrere Solarbanken dasselbe Modell haben
 ```
+
+Ohne `SOLIX_HISTORY_FILE` legt der Dienst die laufenden Tageswerte
+kontobezogen unter `/tmp` ab. Dadurch beginnen die Diagramme beim späteren
+Öffnen des Dashboards nicht erst im Browser, sondern enthalten die bereits von
+der Hintergrundautomatik erfassten Messpunkte. Für den Erhalt über Render-
+Deploys oder einen vollständigen Instanzwechsel hinweg wird ein persistenter
+Datenträger (zum Beispiel unter `/var/data`) benötigt.
 
 Sind mehrere Solix-Systeme im Konto, wählt `SOLIX_SOLARBANK_PN` das Modell für
 Dashboard und Ladeautomatik eindeutig aus. Für die vorhandene Solarbank 4 ist

@@ -23,6 +23,10 @@ original downloads.
   [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The web app
   adds the chestnut coat and white blaze inspired by the owner's reference
   photo.
+- **Bactrian camel** — based on
+  [“Bactrian Camel (Low Poly)”](https://sketchfab.com/3d-models/bactrian-camel-low-poly-1fb4d897df2e4d12ab185302a36b3d5f)
+  by [Nyilonelycompany](https://sketchfab.com/Nyilonelycompany), licensed under
+  [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/).
 
 The optimized files use meshoptimizer compression. meshoptimizer/gltfpack is
 licensed under the [MIT License](https://github.com/zeux/meshoptimizer).

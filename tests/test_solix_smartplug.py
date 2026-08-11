@@ -1,4 +1,5 @@
 import os
+import tempfile
 import time
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -613,6 +614,33 @@ class SolixSmartPlugTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second_curve[-1]["battery_percent"], 42)
         self.assertEqual(second_curve[-1]["charge_w"], 350)
         self.assertEqual(third_curve[-1]["discharge_w"], 210)
+
+    def test_telemetry_history_survives_client_restart(self):
+        with tempfile.TemporaryDirectory() as directory:
+            history_file = os.path.join(directory, "solix-history.json")
+            environment = {
+                "ANKER_EMAIL": "history@example.invalid",
+                "SOLIX_HISTORY_FILE": history_file,
+            }
+            now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+            with patch.dict(os.environ, environment):
+                first = SolixClient()
+                first._record_pv_telemetry(480, now, [120, 120, 120, 120])
+                first._record_secondary_telemetry(
+                    pv_power_w=220,
+                    battery_percent=61,
+                    battery_charge_power=90,
+                    battery_discharge_power=0,
+                    output_power=130,
+                    observed_at=now,
+                )
+                first._save_telemetry_history(force=True)
+
+                restored = SolixClient()
+
+            self.assertEqual(restored._pv_history[-1]["watts"], 480)
+            self.assertEqual(restored._pv_history[-1]["strings"], [120, 120, 120, 120])
+            self.assertEqual(restored._secondary_history[-1]["battery_percent"], 61)
 
 
 if __name__ == "__main__":

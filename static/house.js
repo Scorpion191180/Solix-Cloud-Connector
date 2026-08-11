@@ -3,6 +3,7 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+import { clone as cloneSkeleton } from "three/addons/utils/SkeletonUtils.js";
 
 const canvas = document.getElementById("houseCanvas");
 const stage = document.getElementById("houseStage");
@@ -153,6 +154,7 @@ let horse = null;
 const horseDroppings = [];
 const camelHerd = [];
 const animalDroppings = [];
+const urinePatches = [];
 const grassCells = [];
 const grassBladeFields = [];
 const animalResourceVisuals = [];
@@ -182,6 +184,7 @@ function loadAnimalResources() {
 const animalResources = loadAnimalResources();
 let lastEcologyUpdate = performance.now();
 let lastEcologySave = performance.now();
+let lastGrassVisualUpdate = performance.now();
 
 function numberValue(value) {
     if (value == null || typeof value === "boolean")
@@ -1431,7 +1434,9 @@ function createFrontWoodDoor(parent, position, photoSpec = null) {
 function createHorseStableDoor(parent, position) {
     const stable = new THREE.Group();
     stable.position.set(...position);
-    stable.rotation.y = -Math.PI / 2;
+    // Die Tiefe des Stalls zeigt in das Haus. Mit der entgegengesetzten
+    // Drehung lag die komplette 3D-Laibung außen und wirkte wie ein Tunnel.
+    stable.rotation.y = Math.PI / 2;
     parent.add(stable);
 
     const frameWood = new THREE.MeshStandardMaterial({ color: 0x4a2e20, roughness: 0.94 });
@@ -2094,6 +2099,10 @@ function createDetailedWheel(car, x, z, tireMaterial, rimMaterial, bodySide, whe
     addMesh(car, new THREE.TorusGeometry(0.345 * wheelScale, 0.025, 8, 28), tireMaterial,
         Math.sign(x) * (bodySide + 0.018), 0.43, z,
         { rotation: [0, Math.PI / 2, 0], castShadow: false });
+    car.userData.wheels ||= [];
+    wheel.userData.spinAxis = "y";
+    car.userData.wheels.push(wheel);
+    return wheel;
 }
 
 function createCar(color, model = "generic") {
@@ -2384,7 +2393,6 @@ function createVehicles() {
     audiSlot.add(audiFallback);
     const audiBattery = createAudiBatteryPack(audiSlot);
     const audiBrakeLights = createAudiBrakeLights(audiSlot);
-    const audiWheels = createAudiWheelSpinners(audiSlot);
     // Die Detailmodelle enden an der Heckklappe etwas früher als ihre
     // prozeduralen Platzhalter. Getrennte Vorder-/Heckpositionen verhindern,
     // dass das Kennzeichen sichtbar vor dem vorgesehenen Ausschnitt schwebt.
@@ -2438,7 +2446,7 @@ function createVehicles() {
             fallback: audiFallback,
             battery: audiBattery,
             brakeLights: audiBrakeLights,
-            wheels: audiWheels
+            wheels: audiFallback.userData.wheels || []
         },
         yeti: { slot: yetiSlot, fallback: yetiFallback },
         fox: { slot: foxSlot, fallback: foxFallback },
@@ -2531,11 +2539,92 @@ function normalizeVehicleModel(model, targetLength, paintColor, orientation = {}
     tuneVehicleMaterials(model, paintColor, options);
 }
 
+function copyTriangleAttribute(attribute, triangleIndex, values) {
+    const getters = ["getX", "getY", "getZ", "getW"];
+    for (let vertex = 0; vertex < 3; vertex += 1) {
+        const sourceIndex = triangleIndex * 3 + vertex;
+        for (let component = 0; component < attribute.itemSize; component += 1)
+            values.push(attribute[getters[component]](sourceIndex));
+    }
+}
+
+function splitAudiWheelGeometry(mesh) {
+    const geometry = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+    geometry.computeBoundingBox();
+    const overallCenter = geometry.boundingBox.getCenter(new THREE.Vector3());
+    const position = geometry.getAttribute("position");
+    const buckets = [[], [], [], []].map(() => ({}));
+    const triangleCount = Math.floor(position.count / 3);
+
+    for (let triangle = 0; triangle < triangleCount; triangle += 1) {
+        const first = triangle * 3;
+        const centerX = (position.getX(first) + position.getX(first + 1) + position.getX(first + 2)) / 3;
+        const centerZ = (position.getZ(first) + position.getZ(first + 1) + position.getZ(first + 2)) / 3;
+        const bucket = (centerX >= overallCenter.x ? 1 : 0) + (centerZ >= overallCenter.z ? 2 : 0);
+        Object.entries(geometry.attributes).forEach(([name, attribute]) => {
+            buckets[bucket][name] ||= [];
+            copyTriangleAttribute(attribute, triangle, buckets[bucket][name]);
+        });
+    }
+
+    const replacement = new THREE.Group();
+    replacement.name = `${mesh.name || "Audi"} Originalräder`;
+    replacement.position.copy(mesh.position);
+    replacement.quaternion.copy(mesh.quaternion);
+    replacement.scale.copy(mesh.scale);
+    const wheels = [];
+    buckets.forEach((bucket, index) => {
+        if (!bucket.position?.length)
+            return;
+        const wheelGeometry = new THREE.BufferGeometry();
+        Object.entries(bucket).forEach(([name, values]) => {
+            const source = geometry.getAttribute(name);
+            wheelGeometry.setAttribute(name, new THREE.BufferAttribute(
+                new source.array.constructor(values), source.itemSize, source.normalized
+            ));
+        });
+        wheelGeometry.computeBoundingBox();
+        wheelGeometry.computeBoundingSphere();
+        const center = wheelGeometry.boundingBox.getCenter(new THREE.Vector3());
+        wheelGeometry.translate(-center.x, -center.y, -center.z);
+        const wheel = new THREE.Mesh(wheelGeometry, mesh.material);
+        wheel.name = `Audi Originalrad ${index + 1}`;
+        wheel.position.copy(center);
+        wheel.castShadow = mesh.castShadow;
+        wheel.receiveShadow = mesh.receiveShadow;
+        wheel.userData.spinAxis = "x";
+        replacement.add(wheel);
+        wheels.push(wheel);
+    });
+    mesh.parent.add(replacement);
+    mesh.parent.remove(mesh);
+    geometry.dispose();
+    return wheels;
+}
+
+function collectAudiOriginalWheels(model) {
+    const wheelMeshes = [];
+    model.traverse((object) => {
+        if (!object.isMesh || !object.geometry)
+            return;
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
+        const names = materials.map((material) => material?.name || "").join(" ").toLowerCase();
+        if (/tyre|tire|rim|disk/.test(names))
+            wheelMeshes.push(object);
+    });
+    return wheelMeshes.flatMap((mesh) => splitAudiWheelGeometry(mesh));
+}
+
 function loadVehicleAsset(vehicle, config) {
     vehicleLoader.load(config.url, (gltf) => {
         const model = gltf.scene;
         model.name = config.name;
         normalizeVehicleModel(model, config.length, config.paint, config.orientation, config);
+        if (config.animateWheels) {
+            const originalWheels = collectAudiOriginalWheels(model);
+            if (originalWheels.length >= 4)
+                vehicle.wheels = originalWheels;
+        }
         vehicle.slot.add(model);
 
         const shadowMaterial = new THREE.MeshBasicMaterial({
@@ -2566,7 +2655,8 @@ function loadDetailedVehicles(vehicles) {
         length: 3.95,
         width: 1.84,
         paint: 0x008dc8,
-        blackOut: true
+        blackOut: true,
+        animateWheels: true
     });
     loadVehicleAsset(vehicles.yeti, {
         name: "Skoda Yeti",
@@ -2656,6 +2746,18 @@ const PROPERTY_BOUNDARY = [
     [-6.20, 15.50],
     [-1.10, 16.80],
     [4.70, 15.70]
+];
+
+// Die Kamelweide liegt hinter dem Poolzaun und reicht bewusst weit über die
+// zuvor verwendete kleine Rechteckfläche hinaus. Die unregelmäßige Kontur
+// hält die Tiere dennoch auf der Wiese und von Straße und Haus fern.
+const CAMEL_PASTURE_BOUNDARY = [
+    [-11.82, -10.85],
+    [-17.85, -12.10],
+    [-19.45, -7.10],
+    [-19.20, 10.50],
+    [-13.20, 12.20],
+    [-11.78, 4.15]
 ];
 
 function pointInPolygon(x, z, polygon) {
@@ -2810,7 +2912,7 @@ function createGrassEcology() {
         });
     };
     let attempts = 0;
-    while (grassCells.filter((cell) => !cell.pasture).length < 42 && attempts < 2200) {
+    while (grassCells.filter((cell) => !cell.pasture).length < 58 && attempts < 3000) {
         attempts += 1;
         const x = -10.8 + random() * 17.4;
         const z = -10.7 + random() * 25.6;
@@ -2819,10 +2921,12 @@ function createGrassEcology() {
         createCell(x, z, false);
     }
     attempts = 0;
-    while (grassCells.filter((cell) => cell.pasture).length < 24 && attempts < 1200) {
+    while (grassCells.filter((cell) => cell.pasture).length < 48 && attempts < 3200) {
         attempts += 1;
-        const x = -16.7 + random() * 4.6;
-        const z = -8.8 + random() * 11.4;
+        const x = -19.2 + random() * 7.35;
+        const z = -11.7 + random() * 23.5;
+        if (!pointInPolygon(x, z, CAMEL_PASTURE_BOUNDARY))
+            continue;
         if (grassCells.some((cell) => Math.hypot(cell.x - x, cell.z - z) < 1.25))
             continue;
         createCell(x, z, true);
@@ -2859,9 +2963,10 @@ function updateGrassEcologyVisuals() {
         const transform = new THREE.Object3D();
         field.records.forEach((record, index) => {
             const level = record.cell ? record.cell.level : 3;
-            transform.position.set(record.x, 0.035 + level * 0.012, record.z);
+            const heightScale = 0.18 + level * 0.34;
+            transform.position.set(record.x, 0.018 + 0.15 * heightScale, record.z);
             transform.rotation.copy(record.rotation);
-            transform.scale.set(record.scaleX, record.baseHeight * (0.25 + level * 0.25), record.scaleZ);
+            transform.scale.set(record.scaleX, record.baseHeight * heightScale, record.scaleZ);
             transform.updateMatrix();
             field.mesh.setMatrixAt(index, transform.matrix);
         });
@@ -2890,9 +2995,11 @@ function fertilizeGrassAt(x, z, pasture) {
 }
 
 function createGrassDetail() {
-    const bladeGeometry = new THREE.ConeGeometry(0.020, 0.16, 3);
+    // Die Halme sind absichtlich deutlich höher als die alte 16-cm-Geometrie.
+    // Damit sind die vier Stufen (abgefressen bis hoch) auch am Handy sichtbar.
+    const bladeGeometry = new THREE.ConeGeometry(0.022, 0.30, 3);
     const bladeMaterial = new THREE.MeshStandardMaterial({ color: 0x49763f, roughness: 1 });
-    const blades = new THREE.InstancedMesh(bladeGeometry, bladeMaterial, 520);
+    const blades = new THREE.InstancedMesh(bladeGeometry, bladeMaterial, 760);
     blades.castShadow = false;
     blades.receiveShadow = false;
     const transform = new THREE.Object3D();
@@ -2900,19 +3007,21 @@ function createGrassDetail() {
     const random = seededNoise(4309);
     let instance = 0;
     let attempts = 0;
-    while (instance < 520 && attempts < 4000) {
+    while (instance < 760 && attempts < 6200) {
         attempts += 1;
         const x = -11.2 + random() * 18.2;
         const z = -10.8 + random() * 22.4;
         if (!isGardenGrassSurface(x, z))
             continue;
-        transform.position.set(x, 0.07, z);
+        const cell = nearestGrassCell(x, z, false);
+        const level = cell?.level ?? 3;
+        const heightScale = 0.18 + level * 0.34;
+        transform.position.set(x, 0.018 + 0.15 * heightScale, z);
         transform.rotation.set((random() - 0.5) * 0.22, random() * Math.PI, (random() - 0.5) * 0.22);
         const height = 0.62 + random() * 0.85;
         const scaleX = 0.72 + random() * 0.55;
         const scaleZ = 0.72 + random() * 0.55;
-        const cell = nearestGrassCell(x, z, false);
-        transform.scale.set(scaleX, height * (0.25 + (cell?.level ?? 3) * 0.25), scaleZ);
+        transform.scale.set(scaleX, height * heightScale, scaleZ);
         transform.updateMatrix();
         blades.setMatrixAt(instance, transform.matrix);
         shade.setHSL(0.24 + random() * 0.08, 0.34 + random() * 0.18, 0.24 + random() * 0.16);
@@ -3228,6 +3337,20 @@ function setHorseRoute(horseState, destination) {
 }
 
 function chooseHorseTarget(random, origin = null) {
+    // Rund 94 % der freien Ziele liegen auf bewachsenem Grund. Das Pferd darf
+    // weiterhin Hof und Wege überqueren, verbringt seine Zeit aber überwiegend
+    // dort, wo es tatsächlich grasen kann – statt ständig beim Audi zu stehen.
+    if (random() < 0.94) {
+        const grassyCandidates = grassCells.filter((cell) =>
+            !cell.pasture && cell.level > 0.38 && horseCanStandAt(cell.x, cell.z));
+        for (let attempt = 0; attempt < 80 && grassyCandidates.length; attempt += 1) {
+            const cell = grassyCandidates[Math.floor(random() * grassyCandidates.length)];
+            const x = cell.x + (random() - 0.5) * 0.72;
+            const z = cell.z + (random() - 0.5) * 0.72;
+            if (horseCanStandAt(x, z))
+                return new THREE.Vector3(x, 0, z);
+        }
+    }
     for (let attempt = 0; attempt < 120; attempt += 1) {
         const x = -10.8 + random() * 17.4;
         const z = -15.8 + random() * 31.1;
@@ -3265,7 +3388,7 @@ function setHorseAnimation(horseState, name, fadeSeconds = 0.30) {
 }
 
 function loadAnimatedHorse(horseState) {
-    vehicleLoader.load("/static/models/horse-animated.glb?v=77", (gltf) => {
+    vehicleLoader.load("/static/models/horse-animated.glb?v=79", (gltf) => {
         const model = gltf.scene;
         model.name = "Kastanienbraunes Gartenpferd";
         // Das CC0-Modell blickt in seiner Quelldatei nach -Z. In der Szene
@@ -3290,7 +3413,10 @@ function loadAnimatedHorse(horseState) {
                 const material = source.clone();
                 // Kastanienbrauner Farbton aus IMG_3402. Die vorhandene
                 // Farbpalette behaelt dunkle Maehne, Schweif und Hufe.
-                material.color.setHex(0x9a5734);
+                // Wärmeres, rötliches Kastanienbraun wie auf IMG_3402. Die
+                // Textur bleibt erhalten, sodass Mähne, Schweif und dunkle
+                // Beine weiterhin ihren natürlichen Kontrast behalten.
+                material.color.setHex(0xb85a32);
                 material.metalness = 0;
                 material.roughness = 0.58;
                 material.clearcoat = 0.18;
@@ -3544,8 +3670,31 @@ function addUrinePatch(position, pasture) {
     const patch = addMesh(world, new THREE.CircleGeometry(0.34, 20), material,
         position.x, 0.032, position.z, { rotation: [-Math.PI / 2, 0, 0], castShadow: false });
     patch.scale.set(1.25, 0.72, 1);
-    animalDroppings.push(patch);
+    urinePatches.push({
+        mesh: patch,
+        createdAt: performance.now(),
+        lifetime: 150000 + Math.random() * 150000,
+        startOpacity: material.opacity
+    });
     fertilizeGrassAt(position.x, position.z, pasture);
+}
+
+function updateUrinePatches(time) {
+    for (let index = urinePatches.length - 1; index >= 0; index -= 1) {
+        const patch = urinePatches[index];
+        const progress = THREE.MathUtils.clamp(
+            (time - patch.createdAt) / patch.lifetime, 0, 1
+        );
+        patch.mesh.material.opacity = patch.startOpacity * (1 - progress);
+        patch.mesh.scale.multiplyScalar(1 + Math.max(0, progress - (patch.lastProgress || 0)) * 0.10);
+        patch.lastProgress = progress;
+        if (progress < 1)
+            continue;
+        world.remove(patch.mesh);
+        patch.mesh.geometry.dispose();
+        patch.mesh.material.dispose();
+        urinePatches.splice(index, 1);
+    }
 }
 
 function cleanHorseDroppings() {
@@ -3557,6 +3706,11 @@ function cleanHorseDroppings() {
             if (object.material)
                 object.material.dispose();
         });
+    });
+    urinePatches.splice(0).forEach((patch) => {
+        world.remove(patch.mesh);
+        patch.mesh.geometry.dispose();
+        patch.mesh.material.dispose();
     });
     menuCleanStatus.textContent = "Grundstück ist sauber.";
 }
@@ -3623,7 +3777,7 @@ function createAnimalCareStations() {
 }
 
 function camelCanStandAt(x, z) {
-    return x > -16.9 && x < -12.05 && z > -9.0 && z < 2.85;
+    return pointInPolygon(x, z, CAMEL_PASTURE_BOUNDARY);
 }
 
 function chooseCamelTarget(camel) {
@@ -3639,10 +3793,17 @@ function chooseCamelTarget(camel) {
             intent: "meeting"
         };
     }
-    return {
-        point: new THREE.Vector3(-16.2 + random() * 3.75, 0, -8.35 + random() * 10.45),
-        intent: random() < 0.70 ? "grazing" : "idle"
-    };
+    for (let attempt = 0; attempt < 90; attempt += 1) {
+        const x = -19.15 + random() * 7.25;
+        const z = -11.65 + random() * 23.35;
+        if (camelCanStandAt(x, z)) {
+            return {
+                point: new THREE.Vector3(x, 0, z),
+                intent: random() < 0.76 ? "grazing" : "idle"
+            };
+        }
+    }
+    return { point: new THREE.Vector3(-15.2, 0, 0), intent: "grazing" };
 }
 
 function createBactrianCamel(index) {
@@ -3652,23 +3813,26 @@ function createBactrianCamel(index) {
     const scale = [0.82, 0.96, 1.08, 0.90, 1.14][index];
     group.scale.setScalar(scale);
     world.add(group);
+    const fallback = new THREE.Group();
+    fallback.name = "Kamel Platzhalter";
+    group.add(fallback);
     const coats = [0x8e6844, 0xb08a5c, 0x6f5139, 0xc1a274, 0x7d5b3e];
     const coat = new THREE.MeshPhysicalMaterial({
         color: coats[index], roughness: 0.74, clearcoat: 0.08, clearcoatRoughness: 0.80
     });
     const dark = new THREE.MeshStandardMaterial({ color: 0x34291f, roughness: 0.96 });
     const eye = new THREE.MeshStandardMaterial({ color: 0x070504, roughness: 0.30 });
-    const body = addMesh(group, new THREE.SphereGeometry(0.72, 28, 18), coat,
+    const body = addMesh(fallback, new THREE.SphereGeometry(0.72, 28, 18), coat,
         0, 1.33, 0, { castShadow: true });
     body.scale.set(0.78, 0.70, 1.36);
     [-0.48, 0.45].forEach((z, humpIndex) => {
-        const hump = addMesh(group, new THREE.SphereGeometry(0.46, 24, 16), coat,
+        const hump = addMesh(fallback, new THREE.SphereGeometry(0.46, 24, 16), coat,
             0, 1.90 + (humpIndex === 0 ? 0.04 : 0), z, { castShadow: true });
         hump.scale.set(0.78, 1.08, 0.72);
     });
     const neckRig = new THREE.Group();
     neckRig.position.set(0, 1.52, 0.82);
-    group.add(neckRig);
+    fallback.add(neckRig);
     addMesh(neckRig, new THREE.CylinderGeometry(0.25, 0.37, 1.20, 16), coat,
         0, 0.36, 0.33, { rotation: [-0.48, 0, 0] });
     const head = addMesh(neckRig, new THREE.SphereGeometry(0.30, 22, 14), coat,
@@ -3687,7 +3851,7 @@ function createBactrianCamel(index) {
     [[-0.34, 0.62], [0.34, 0.62], [-0.34, -0.62], [0.34, -0.62]].forEach(([x, z], legIndex) => {
         const leg = new THREE.Group();
         leg.position.set(x, 1.08, z);
-        group.add(leg);
+        fallback.add(leg);
         addMesh(leg, new THREE.CylinderGeometry(0.095, 0.075, 0.82, 12), coat,
             0, -0.38, 0);
         addMesh(leg, new THREE.CylinderGeometry(0.070, 0.060, 0.56, 12), dark,
@@ -3698,13 +3862,14 @@ function createBactrianCamel(index) {
     });
     const tail = new THREE.Group();
     tail.position.set(0, 1.46, -0.92);
-    group.add(tail);
+    fallback.add(tail);
     addMesh(tail, new THREE.CylinderGeometry(0.045, 0.07, 0.58, 9), dark,
         0, -0.28, -0.08, { rotation: [0.24, 0, 0] });
     const firstTarget = chooseCamelTarget({ random, index });
     return {
         index,
         group,
+        fallback,
         body,
         neckRig,
         legs,
@@ -3717,13 +3882,74 @@ function createBactrianCamel(index) {
         travelled: 0,
         nextDroppingAt: 2700 + random() * 2100,
         nextUrinationAt: 900 + random() * 1500,
-        elapsedSeconds: 0
+        elapsedSeconds: 0,
+        modelRoot: null,
+        mixer: null,
+        idleAction: null
     };
+}
+
+function tuneCamelMaterials(model, camelIndex) {
+    const coatTints = [0xb08b65, 0xc4a176, 0x8c694d, 0xd0b486, 0x9f7654];
+    model.traverse((object) => {
+        if (!object.isMesh)
+            return;
+        object.castShadow = true;
+        object.receiveShadow = true;
+        const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
+        const tuned = sourceMaterials.map((source) => {
+            const material = source.clone();
+            // Die Originaltextur bleibt vollständig sichtbar; eine leichte
+            // Tönung unterscheidet die fünf Tiere wie in einer echten Herde.
+            material.color.multiply(new THREE.Color(coatTints[camelIndex]));
+            material.roughness = Math.max(0.68, material.roughness ?? 0.72);
+            material.metalness = 0;
+            material.needsUpdate = true;
+            return material;
+        });
+        object.material = Array.isArray(object.material) ? tuned : tuned[0];
+    });
+}
+
+function loadDetailedCamels() {
+    vehicleLoader.load("/static/models/bactrian-camel.glb?v=79", (gltf) => {
+        const source = gltf.scene;
+        source.rotation.y = Math.PI;
+        source.updateMatrixWorld(true);
+        let bounds = new THREE.Box3().setFromObject(source);
+        const size = bounds.getSize(new THREE.Vector3());
+        source.scale.setScalar(2.16 / Math.max(size.y, 0.001));
+        source.updateMatrixWorld(true);
+        bounds = new THREE.Box3().setFromObject(source);
+        const center = bounds.getCenter(new THREE.Vector3());
+        source.position.set(-center.x, -bounds.min.y, -center.z);
+
+        camelHerd.forEach((camel) => {
+            const model = cloneSkeleton(source);
+            model.name = `Bactrian Camel ${camel.index + 1}`;
+            tuneCamelMaterials(model, camel.index);
+            camel.group.add(model);
+            camel.modelRoot = model;
+            camel.fallback.visible = false;
+            camel.mixer = new THREE.AnimationMixer(model);
+            const idleClip = gltf.animations.find((clip) => clip.name === "Bactrian_Camel_Idle") ||
+                gltf.animations[0];
+            if (idleClip) {
+                camel.idleAction = camel.mixer.clipAction(idleClip);
+                camel.idleAction.setLoop(THREE.LoopRepeat, Infinity).play();
+            }
+        });
+    }, undefined, () => {
+        camelHerd.forEach((camel) => {
+            camel.fallback.visible = true;
+        });
+    });
 }
 
 function createCamelPasture() {
     for (let index = 0; index < 5; index += 1)
         camelHerd.push(createBactrianCamel(index));
+    loadDetailedCamels();
 }
 
 function startCamelJourney(camel) {
@@ -3738,12 +3964,20 @@ function animateCamels(seconds, delta) {
         return;
     camelHerd.forEach((camel) => {
         camel.elapsedSeconds = seconds;
+        if (camel.mixer) {
+            camel.idleAction?.setEffectiveTimeScale(
+                camel.mode === "running" ? 1.65 : camel.mode === "walking" ? 1.20 : 0.72
+            );
+            camel.mixer.update(delta);
+        }
         if (["grazing", "drinking", "feeding", "meeting", "idle"].includes(camel.mode)) {
             const eating = camel.mode === "grazing" || camel.mode === "drinking" || camel.mode === "feeding";
-            camel.neckRig.rotation.x = THREE.MathUtils.damp(camel.neckRig.rotation.x,
-                eating ? 0.78 : 0, 4, delta);
+            if (!camel.modelRoot) {
+                camel.neckRig.rotation.x = THREE.MathUtils.damp(camel.neckRig.rotation.x,
+                    eating ? 0.78 : 0, 4, delta);
+            }
             if (camel.mode === "grazing")
-                grazeAt(camel.group.position.x, camel.group.position.z, true, delta * 0.045);
+                grazeAt(camel.group.position.x, camel.group.position.z, true, delta * 0.12);
             else if (camel.mode === "drinking")
                 animalResources.waterCamels = Math.max(0, animalResources.waterCamels - delta * 0.10);
             else if (camel.mode === "feeding")
@@ -3752,7 +3986,8 @@ function animateCamels(seconds, delta) {
                 startCamelJourney(camel);
         }
         else {
-            camel.neckRig.rotation.x = THREE.MathUtils.damp(camel.neckRig.rotation.x, 0, 4, delta);
+            if (!camel.modelRoot)
+                camel.neckRig.rotation.x = THREE.MathUtils.damp(camel.neckRig.rotation.x, 0, 4, delta);
             const dx = camel.target.x - camel.group.position.x;
             const dz = camel.target.z - camel.group.position.z;
             const distance = Math.hypot(dx, dz);
@@ -3796,11 +4031,13 @@ function animateCamels(seconds, delta) {
                 else {
                     startCamelJourney(camel);
                 }
-                camel.legs.forEach((leg) => {
-                    leg.rotation.x = Math.sin(camel.travelled * 7.0 + leg.userData.offset) *
-                        (camel.mode === "running" ? 0.48 : 0.28);
-                });
-                camel.tail.rotation.z = Math.sin(seconds * 1.5 + camel.travelled) * 0.18;
+                if (!camel.modelRoot) {
+                    camel.legs.forEach((leg) => {
+                        leg.rotation.x = Math.sin(camel.travelled * 7.0 + leg.userData.offset) *
+                            (camel.mode === "running" ? 0.48 : 0.28);
+                    });
+                    camel.tail.rotation.z = Math.sin(seconds * 1.5 + camel.travelled) * 0.18;
+                }
             }
         }
         if (seconds >= camel.nextDroppingAt) {
@@ -3848,8 +4085,12 @@ function updateAnimalEcology(time, delta) {
             cell.herbAmount = Math.min(1, cell.herbAmount + 0.12 + cell.fertility * 0.12);
         cell.fertility = Math.max(0, cell.fertility - elapsed * 0.00005);
     });
-    if (time - lastEcologySave > 12000) {
+    updateUrinePatches(time);
+    if (time - lastGrassVisualUpdate > 1400) {
         updateGrassEcologyVisuals();
+        lastGrassVisualUpdate = time;
+    }
+    if (time - lastEcologySave > 12000) {
         updateAnimalResourceVisuals();
         saveAnimalResources();
         lastEcologySave = time;
@@ -3939,7 +4180,7 @@ function animateHorse(seconds, delta) {
         horse.headRig.rotation.x = THREE.MathUtils.damp(horse.headRig.rotation.x, 1.08, 5, delta);
         horse.headRig.position.y = THREE.MathUtils.damp(horse.headRig.position.y, 1.18, 5, delta);
         horse.tailRig.rotation.z = Math.sin(seconds * 1.7) * 0.18;
-        grazeAt(position.x, position.z, false, delta * 0.055);
+        grazeAt(position.x, position.z, false, delta * 0.18);
         if (seconds >= horse.modeUntil) {
             startHorseJourney(horse, position);
         }
@@ -4443,7 +4684,11 @@ function updateAudiWheelRotation() {
     if (distance > 0.0001 && distance < 1.2) {
         const direction = audiPresenceMotion.currentMotion === "reverse" ? -1 : 1;
         vehicleModels.audi.wheels.forEach((wheel) => {
-            wheel.rotation.x -= direction * distance / 0.335;
+            const turn = direction * distance / 0.335;
+            if (wheel.userData.spinAxis === "y")
+                wheel.rotation.y -= turn;
+            else
+                wheel.rotation.x -= turn;
         });
     }
     previous.set(audiModel.position.x, audiModel.position.z);

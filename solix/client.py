@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 import math
 import os
 import ssl
 import time
 from collections import deque
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -104,6 +107,95 @@ class SolixClient:
         # systems.  288 points cover a rolling 24-hour chart.
         self._primary_temperature_history: deque[dict[str, Any]] = deque(maxlen=288)
         self._secondary_temperature_history: deque[dict[str, Any]] = deque(maxlen=288)
+        account_key = os.getenv("ANKER_EMAIL", "").strip().lower()
+        configured_history_file = os.getenv("SOLIX_HISTORY_FILE", "").strip()
+        if configured_history_file:
+            self._history_file: Path | None = Path(configured_history_file)
+        elif account_key:
+            digest = hashlib.sha256(account_key.encode("utf-8")).hexdigest()[:12]
+            self._history_file = Path(f"/tmp/solix-telemetry-{digest}.json")
+        else:
+            # Unit tests and unconfigured local starts remain isolated.
+            self._history_file = None
+        self._history_last_saved_at = 0.0
+        self._load_telemetry_history()
+
+    def _load_telemetry_history(self) -> None:
+        """Restore today's telemetry collected by the always-on automation.
+
+        The file contains no credentials or serial numbers. A malformed or
+        stale file is ignored so telemetry can never prevent Solix login.
+        """
+        if self._history_file is None or not self._history_file.exists():
+            return
+        try:
+            saved = json.loads(self._history_file.read_text(encoding="utf-8"))
+            local_today = datetime.now(timezone.utc).astimezone(self._pv_timezone).date()
+            saved_day = date.fromisoformat(str(saved.get("day")))
+            if saved_day != local_today:
+                return
+            self._pv_day = saved_day
+            self._secondary_day = saved_day
+            self._pv_today_wh = float(saved.get("pv_today_wh", 0))
+            self._secondary_pv_today_wh = float(saved.get("secondary_pv_today_wh", 0))
+            strings = saved.get("pv_today_wh_by_string", [])
+            self._pv_today_wh_by_string = [
+                float(strings[index]) if index < len(strings) else 0.0
+                for index in range(4)
+            ]
+            self._pv_history.extend(saved.get("pv_history", []))
+            self._secondary_history.extend(saved.get("secondary_history", []))
+            self._primary_temperature_history.extend(
+                saved.get("primary_temperature_history", [])
+            )
+            self._secondary_temperature_history.extend(
+                saved.get("secondary_temperature_history", [])
+            )
+            if self._pv_history:
+                last = self._pv_history[-1]
+                self._pv_last_sample_at = datetime.fromisoformat(last["time"]).astimezone(
+                    timezone.utc
+                )
+                self._pv_last_power_w = int(last.get("watts", 0))
+                self._pv_last_string_powers = [
+                    int(value) for value in last.get("strings", [])[:4]
+                ]
+            if self._secondary_history:
+                last = self._secondary_history[-1]
+                self._secondary_last_sample_at = datetime.fromisoformat(
+                    last["time"]
+                ).astimezone(timezone.utc)
+                self._secondary_last_pv_power_w = int(last.get("input_w", 0))
+        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+            _LOGGER.warning("Ignoring invalid Solix telemetry history: %s", exc)
+
+    def _save_telemetry_history(self, force: bool = False) -> None:
+        if self._history_file is None:
+            return
+        now = time.monotonic()
+        if not force and now - self._history_last_saved_at < 55:
+            return
+        payload = {
+            "day": self._pv_day.isoformat() if self._pv_day else None,
+            "pv_today_wh": self._pv_today_wh,
+            "pv_today_wh_by_string": self._pv_today_wh_by_string,
+            "pv_history": list(self._pv_history),
+            "secondary_pv_today_wh": self._secondary_pv_today_wh,
+            "secondary_history": list(self._secondary_history),
+            "primary_temperature_history": list(self._primary_temperature_history),
+            "secondary_temperature_history": list(self._secondary_temperature_history),
+        }
+        try:
+            self._history_file.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self._history_file.with_suffix(self._history_file.suffix + ".tmp")
+            temporary.write_text(
+                json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                encoding="utf-8",
+            )
+            os.replace(temporary, self._history_file)
+            self._history_last_saved_at = now
+        except OSError as exc:
+            _LOGGER.warning("Could not persist Solix telemetry history: %s", exc)
 
     async def _ensure_api_locked(self) -> None:
         if self.api is not None:
@@ -787,6 +879,7 @@ class SolixClient:
             "stale": False,
             "error": None,
         }
+        self._save_telemetry_history()
         self._last_live_payload = dict(payload)
         return payload
 
