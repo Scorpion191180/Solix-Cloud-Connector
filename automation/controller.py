@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
+from collections import deque
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from .policy import AutomationDecision, decide_smartplug_state
@@ -15,6 +18,8 @@ DEFAULT_INTERVAL_SECONDS = 60
 MIN_INTERVAL_SECONDS = 60
 MIN_ON_THRESHOLD_PERCENT = 20
 MAX_ON_THRESHOLD_PERCENT = 90
+MIN_OFF_THRESHOLD_PERCENT = 0
+MAX_OFF_THRESHOLD_PERCENT = 89
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -58,6 +63,10 @@ class ChargingAutomation:
             )
             self._off_threshold = 10
             self._on_threshold = 30
+        self._settings_file = Path(os.getenv(
+            "AUTOMATION_SETTINGS_FILE", "/tmp/solix-automation-settings.json"
+        ))
+        self._load_runtime_thresholds()
         self._interval_seconds = _integer_setting(
             "AUTOMATION_INTERVAL_SECONDS",
             DEFAULT_INTERVAL_SECONDS,
@@ -94,6 +103,55 @@ class ChargingAutomation:
             "voltage_v": None,
             "measurement_source": None,
         }
+        self._events: deque[dict[str, Any]] = deque(maxlen=360)
+        self._last_event_signature: tuple[Any, ...] | None = None
+
+    def _load_runtime_thresholds(self) -> None:
+        try:
+            stored = json.loads(self._settings_file.read_text(encoding="utf-8"))
+            on = int(stored.get("on_threshold_percent"))
+            off = int(stored.get("off_threshold_percent"))
+            if (
+                MIN_ON_THRESHOLD_PERCENT <= on <= MAX_ON_THRESHOLD_PERCENT
+                and MIN_OFF_THRESHOLD_PERCENT <= off <= MAX_OFF_THRESHOLD_PERCENT
+                and off < on
+            ):
+                self._on_threshold = on
+                self._off_threshold = off
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            return
+
+    def _save_runtime_thresholds(self) -> None:
+        try:
+            self._settings_file.parent.mkdir(parents=True, exist_ok=True)
+            self._settings_file.write_text(json.dumps({
+                "on_threshold_percent": self._on_threshold,
+                "off_threshold_percent": self._off_threshold,
+            }), encoding="utf-8")
+        except OSError:
+            _LOGGER.warning("Runtime automation settings could not be persisted")
+
+    def _record_event(self, *, force: bool = False) -> None:
+        signature = (
+            self._last_action,
+            self._last_reason,
+            self._smartplug.get("state"),
+            self._last_error,
+        )
+        if not force and signature == self._last_event_signature:
+            return
+        self._last_event_signature = signature
+        self._events.append({
+            "time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "action": self._last_action,
+            "reason": self._last_reason,
+            "error": self._last_error,
+            "solix_battery_percent": self._last_battery_percent,
+            "audi_battery_percent": self._last_audi_battery_percent,
+            "audi_plug_connected": self._last_cable_connected,
+            "audi_at_home": self._last_audi_at_home,
+            "smartplug_state": self._smartplug.get("state"),
+        })
 
     @property
     def enabled(self) -> bool:
@@ -126,6 +184,7 @@ class ChargingAutomation:
                 # The loop must survive cloud and MQTT outages. Public status
                 # receives a generic error while full details stay in logs.
                 self._last_error = "Automatik konnte nicht ausgeführt werden"
+                self._record_event()
                 _LOGGER.exception("Charging automation evaluation failed")
             await asyncio.sleep(self._interval_seconds)
 
@@ -189,6 +248,7 @@ class ChargingAutomation:
                 home_presence_configured=self._home_presence_configured,
             )
             await self._apply(decision)
+            self._record_event()
             return self.status()
 
     async def _apply(self, decision: AutomationDecision) -> None:
@@ -262,23 +322,37 @@ class ChargingAutomation:
             "solix_battery_percent": self._last_battery_percent,
             "solix_data_stale": self._last_solix_stale,
             "smartplug": dict(self._smartplug),
+            "events": list(self._events)[-120:],
         }
+
+    async def set_thresholds(
+        self, on_percent: int, off_percent: int
+    ) -> dict[str, Any]:
+        """Update the protected hysteresis limits without switching now."""
+        if isinstance(on_percent, bool) or not (
+            MIN_ON_THRESHOLD_PERCENT <= on_percent <= MAX_ON_THRESHOLD_PERCENT
+        ):
+            raise ValueError("Der Startwert muss zwischen 20 % und 90 % liegen")
+        if isinstance(off_percent, bool) or not (
+            MIN_OFF_THRESHOLD_PERCENT <= off_percent <= MAX_OFF_THRESHOLD_PERCENT
+        ):
+            raise ValueError("Der Stoppwert muss zwischen 0 % und 89 % liegen")
+        if off_percent >= on_percent:
+            raise ValueError("Der Stoppwert muss unter dem Startwert liegen")
+
+        async with self._evaluation_lock:
+            self._on_threshold = on_percent
+            self._off_threshold = off_percent
+            self._save_runtime_thresholds()
+            self._last_reason = "thresholds_updated"
+            self._last_action = "none"
+            self._last_error = None
+            self._record_event(force=True)
+            return self.status()
 
     async def set_on_threshold(self, percent: int) -> dict[str, Any]:
         """Apply a validated runtime start threshold without sending a command."""
-        if isinstance(percent, bool) or not (
-            MIN_ON_THRESHOLD_PERCENT <= percent <= MAX_ON_THRESHOLD_PERCENT
-        ):
-            raise ValueError(
-                "Der Startwert muss zwischen 20 % und 90 % liegen"
-            )
-
-        async with self._evaluation_lock:
-            self._on_threshold = percent
-            self._last_reason = "start_threshold_updated"
-            self._last_action = "none"
-            self._last_error = None
-            return self.status()
+        return await self.set_thresholds(percent, self._off_threshold)
 
     def record_manual_result(
         self, result: dict[str, Any], enabled: bool
@@ -289,11 +363,13 @@ class ChargingAutomation:
         self._last_reason = "manual_control"
         self._last_error = None
         self._smartplug = dict(result)
+        self._record_event(force=True)
 
     def record_manual_error(self, exc: Exception) -> None:
         self._last_action = "error"
         self._last_reason = "manual_control"
         self._last_error = self._public_error(exc)
+        self._record_event(force=True)
         _LOGGER.error(
             "Manual smart plug command failed",
             exc_info=(type(exc), exc, exc.__traceback__),
