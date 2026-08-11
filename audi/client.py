@@ -8,6 +8,7 @@ import math
 import os
 import ssl
 import time
+from collections import deque
 from datetime import datetime, timezone
 from typing import Any
 
@@ -95,6 +96,14 @@ class AudiClient:
             "position_checked_at": None,
             "position_error": None,
         }
+        # Compact in-memory telemetry.  Audi Cloud is intentionally queried
+        # sparingly, so a point is recorded only for a genuinely fresh cloud
+        # response.  The history survives normal polling but is reset when the
+        # Render process itself restarts.
+        self._battery_history: deque[dict[str, Any]] = deque(maxlen=192)
+        self._charging_sessions: deque[dict[str, Any]] = deque(maxlen=32)
+        self._active_charging_session: dict[str, Any] | None = None
+        self._battery_capacity_kwh = _float_setting("AUDI_BATTERY_CAPACITY_KWH")
 
     @property
     def configured(self) -> bool:
@@ -112,7 +121,101 @@ class AudiClient:
     def _with_presence(self, payload: dict[str, Any]) -> dict[str, Any]:
         public = dict(payload)
         public.update(self._presence)
+        public["battery_history"] = [
+            {key: value for key, value in point.items() if key != "bucket"}
+            for point in self._battery_history
+        ]
+        sessions = list(self._charging_sessions)
+        if self._active_charging_session is not None:
+            sessions.append(self._public_charging_session(
+                self._active_charging_session, active=True
+            ))
+        public["charging_sessions"] = sessions[-12:]
         return public
+
+    def _public_charging_session(
+        self, session: dict[str, Any], *, active: bool
+    ) -> dict[str, Any]:
+        start_percent = self._as_number(session.get("start_percent"))
+        end_percent = self._as_number(session.get("end_percent"))
+        charged_percent = None
+        if start_percent is not None and end_percent is not None:
+            charged_percent = max(0, end_percent - start_percent)
+        measured_kwh = float(session.get("measured_kwh") or 0)
+        charged_kwh: float | None = round(measured_kwh, 2) if measured_kwh > 0 else None
+        if charged_kwh is None and charged_percent is not None and self._battery_capacity_kwh:
+            charged_kwh = round(self._battery_capacity_kwh * charged_percent / 100, 2)
+        return {
+            "start": session.get("start"),
+            "end": None if active else session.get("end"),
+            "start_percent": start_percent,
+            "end_percent": end_percent,
+            "charged_percent": charged_percent,
+            "charged_kwh": charged_kwh,
+            "active": active,
+        }
+
+    def _record_vehicle_telemetry(self, payload: dict[str, Any]) -> None:
+        """Record a 24-hour SOC curve and completed charging sessions."""
+        now = datetime.now(timezone.utc)
+        soc = self._as_number(payload.get("battery_percent"))
+        charging = payload.get("charging") is True
+        power_kw = self._as_number(payload.get("charging_power_kw"))
+
+        if soc is not None:
+            minute_bucket = int(now.timestamp() // (15 * 60))
+            point = {
+                "time": now.isoformat(timespec="minutes"),
+                "battery_percent": soc,
+                "charging": charging,
+                "charging_power_kw": power_kw,
+            }
+            if (
+                self._battery_history
+                and self._battery_history[-1].get("bucket") == minute_bucket
+            ):
+                self._battery_history[-1] = {**point, "bucket": minute_bucket}
+            else:
+                self._battery_history.append({**point, "bucket": minute_bucket})
+
+        cutoff = now.timestamp() - 24 * 60 * 60
+        while self._battery_history:
+            try:
+                timestamp = datetime.fromisoformat(
+                    str(self._battery_history[0]["time"])
+                ).timestamp()
+            except (KeyError, TypeError, ValueError):
+                timestamp = cutoff - 1
+            if timestamp >= cutoff:
+                break
+            self._battery_history.popleft()
+
+        if charging:
+            if self._active_charging_session is None:
+                self._active_charging_session = {
+                    "start": now.isoformat(timespec="seconds"),
+                    "start_percent": soc,
+                    "end_percent": soc,
+                    "measured_kwh": 0.0,
+                    "last_sample_at": now.timestamp(),
+                }
+            session = self._active_charging_session
+            previous_sample = float(session.get("last_sample_at") or now.timestamp())
+            elapsed_hours = max(0.0, min(0.5, (now.timestamp() - previous_sample) / 3600))
+            if power_kw is not None and power_kw > 0:
+                session["measured_kwh"] = float(session.get("measured_kwh") or 0) + power_kw * elapsed_hours
+            session["last_sample_at"] = now.timestamp()
+            if soc is not None:
+                session["end_percent"] = soc
+        elif self._active_charging_session is not None:
+            session = self._active_charging_session
+            session["end"] = now.isoformat(timespec="seconds")
+            if soc is not None:
+                session["end_percent"] = soc
+            self._charging_sessions.append(
+                self._public_charging_session(session, active=False)
+            )
+            self._active_charging_session = None
 
     def _empty_payload(self) -> dict[str, Any]:
         return {
@@ -595,6 +698,7 @@ class AudiClient:
                 self._cache = await self._refresh_from_cloud()
                 self._last_success = time.time()
                 self._last_error = None
+                self._record_vehicle_telemetry(self._cache)
                 return self._with_presence(self._cache)
             except Exception as exc:
                 self._last_error = self._public_error(exc)
