@@ -133,7 +133,9 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.06;
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.VSMShadowMap;
+// PCF keeps the soft solar shadows visibly darker than VSM, which tended to
+// wash them out on the bright house surfaces, especially on mobile displays.
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const environmentGenerator = new THREE.PMREMGenerator(renderer);
 scene.environment = environmentGenerator.fromScene(new RoomEnvironment(), 0.035).texture;
@@ -1558,10 +1560,14 @@ function createHorseStableDoor(parent, position) {
     addBox(stable, [0.82, 0.72, 0.18], frameWood, [0, -0.44, 2.86], { castShadow: false });
     for (let slat = -0.30; slat <= 0.30; slat += 0.15)
         addBox(stable, [0.06, 0.58, 0.08], metal, [slat, -0.42, 2.75], { castShadow: false });
-    const trough = addBox(stable, [0.50, 0.30, 0.44], metal,
-        [0.37, -0.78, 2.78], { radius: 0.07 });
-    addBox(trough, [0.39, 0.03, 0.32], materials.water,
-        [0, 0.16, 0], { radius: 0.04, castShadow: false });
+    // Die Pferdetränke steht vollständig im Stall. Ihr Wasserstand ist mit
+    // derselben persistenten Ressource wie die Menüanzeige verbunden; außen
+    // auf der Pferdeseite gibt es deshalb keine zweite Tränke mehr.
+    const trough = addBox(stable, [0.66, 0.34, 0.54], metal,
+        [0.36, -0.76, 1.74], { radius: 0.07 });
+    const troughFill = addBox(trough, [0.53, 0.035, 0.41], materials.water.clone(),
+        [0, 0.18, 0], { radius: 0.04, castShadow: false });
+    animalResourceVisuals.push({ kind: "water", resourceKey: "waterHorse", fill: troughFill });
     const stableLampMaterial = new THREE.MeshBasicMaterial({ color: 0xffc66d, toneMapped: false });
     addMesh(stable, new THREE.SphereGeometry(0.075, 12, 8), stableLampMaterial,
         0.44, 0.76, 2.70, { castShadow: false });
@@ -2771,12 +2777,12 @@ const PROPERTY_BOUNDARY = [
 // zuvor verwendete kleine Rechteckfläche hinaus. Die unregelmäßige Kontur
 // hält die Tiere dennoch auf der Wiese und von Straße und Haus fern.
 const CAMEL_PASTURE_BOUNDARY = [
-    [-11.82, -10.85],
-    [-17.85, -12.10],
-    [-19.45, -7.10],
-    [-19.20, 10.50],
-    [-13.20, 12.20],
-    [-11.78, 4.15]
+    [-11.48, -13.45],
+    [-18.70, -14.20],
+    [-20.30, -8.10],
+    [-20.05, 11.25],
+    [-13.10, 13.10],
+    [-11.42, 4.30]
 ];
 
 function pointInPolygon(x, z, polygon) {
@@ -3145,7 +3151,7 @@ function createGoldfishPond() {
 function horseCanStandAt(x, z) {
     if (!pointInPolygon(x, z, PROPERTY_BOUNDARY))
         return false;
-    const inStablePassage = x > -4.45 && x < -2.02 && Math.abs(z + 1.58) < 0.78;
+    const inStablePassage = x > -4.45 && x < -0.32 && Math.abs(z + 1.58) < 0.78;
     const onHouse = Math.abs(x) < 4.05 && Math.abs(z) < 7.00 && !inStablePassage;
     // Passgenaue, mit dem Pool gedrehte Sicherheitszone statt der früheren
     // übergroßen Ellipse. Der echte Durchgang zwischen Pool und Haus bleibt
@@ -3188,7 +3194,7 @@ function horseCanStandAt(x, z) {
 function horseIsOnGrass(x, z) {
     if (!horseCanStandAt(x, z))
         return false;
-    if (x > -4.45 && x < -2.02 && Math.abs(z + 1.58) < 0.64)
+    if (x > -4.45 && x < -0.32 && Math.abs(z + 1.58) < 0.64)
         return false;
     const onForecourt = z > 4.55 && z < 15.35 && x > -6.5 && x < 6.8;
     const onAudiDrive = x > 3.15 && z > -6.55 && z < 6.7;
@@ -3494,16 +3500,19 @@ function loadAnimatedHorse(horseState) {
 
 function startHorseJourney(horseState, origin, forceGarden = false) {
     const stableEntry = new THREE.Vector3(-4.24, 0, -1.58);
-    if (!forceGarden && horseState.elapsedSeconds >= horseState.nextStableAt &&
+    const careChoice = horseState.random();
+    // Zum Trinken geht das Pferd jetzt immer durch die offene Stalltür zur
+    // Tränke im Raum. Die etwas höhere Auswahlwahrscheinlichkeit macht diese
+    // Besuche in der Live-Szene regelmäßig sichtbar.
+    if (!forceGarden && (animalResources.waterHorse < 72 || careChoice < 0.32) &&
         setHorseRoute(horseState, stableEntry)) {
-        horseState.navigation = "stable-entry";
+        horseState.navigation = "stable-water-entry";
         horseState.mode = "walking";
         return;
     }
-    const careChoice = horseState.random();
-    if (!forceGarden && (animalResources.waterHorse < 55 || careChoice < 0.20) &&
-        setHorseRoute(horseState, new THREE.Vector3(-9.98, 0, -3.92))) {
-        horseState.navigation = "horse-water";
+    if (!forceGarden && horseState.elapsedSeconds >= horseState.nextStableAt &&
+        setHorseRoute(horseState, stableEntry)) {
+        horseState.navigation = "stable-entry";
         horseState.mode = "walking";
         return;
     }
@@ -3633,7 +3642,7 @@ function createHorse() {
         headBone: null,
         neckBones: [],
         nextRestAt: 120 + random() * 180,
-        nextStableAt: 45 + random() * 75,
+        nextStableAt: 28 + random() * 52,
         elapsedSeconds: 0,
         navigation: null
     };
@@ -3822,10 +3831,8 @@ function updateAnimalResourceVisuals() {
 }
 
 function createAnimalCareStations() {
-    // Je eine Seite des Poolzauns ist für das Pferd bzw. die Kamelherde
-    // erreichbar. Die Tiere treffen sich dadurch gelegentlich am selben Ort,
-    // können aber nicht unnatürlich durch den Zaun laufen.
-    createAnimalTrough([-10.72, 0, -3.92], "waterHorse");
+    // Die Pferdetränke ist Teil des 3D-Stalls. Hinter dem Poolzaun verbleiben
+    // nur die Kameltränke sowie die beiden getrennten Heuraufen.
     createAnimalTrough([-12.28, 0, -3.92], "waterCamels");
     createHayRack([-10.66, 0, -2.26], "hayHorse", Math.PI / 2);
     createHayRack([-12.32, 0, -2.26], "hayCamels", -Math.PI / 2);
@@ -3852,9 +3859,23 @@ function chooseCamelTarget(camel) {
             intent: "meeting"
         };
     }
+    // Ein großer Teil der freien Wege führt ausdrücklich in die Weide hinter
+    // Pool und Zaun. Dadurch nutzt die Herde nicht nur die kleine Fläche bei
+    // Tränke und Heuraufe, sondern die gesamte sichtbare Außenweide.
+    if (random() < 0.42) {
+        for (let attempt = 0; attempt < 60; attempt += 1) {
+            const x = -19.70 + random() * 7.90;
+            const z = -13.55 + random() * 9.30;
+            if (camelCanStandAt(x, z))
+                return {
+                    point: new THREE.Vector3(x, 0, z),
+                    intent: random() < 0.82 ? "grazing" : "idle"
+                };
+        }
+    }
     for (let attempt = 0; attempt < 90; attempt += 1) {
-        const x = -19.15 + random() * 7.25;
-        const z = -11.65 + random() * 23.35;
+        const x = -20.00 + random() * 8.35;
+        const z = -13.75 + random() * 26.45;
         if (camelCanStandAt(x, z)) {
             return {
                 point: new THREE.Vector3(x, 0, z),
@@ -4340,7 +4361,7 @@ function createStonePlanters() {
 function horseStableSurfaceHeight(x, z) {
     // Die Rampe verläuft in Weltkoordinaten von x=-4,74 (Hof) bis zur
     // Türschwelle bei x=-3,24. Dahinter bleibt der Stallboden leicht erhöht.
-    if (Math.abs(z + 1.58) > 0.78 || x < -4.74 || x > -2.02)
+    if (Math.abs(z + 1.58) > 0.78 || x < -4.74 || x > -0.32)
         return 0;
     if (x <= -3.24)
         return THREE.MathUtils.lerp(0.02, 0.22,
@@ -4416,14 +4437,28 @@ function animateHorse(seconds, delta) {
                 horse.target = horse.path.shift();
                 return;
             }
-            if (horse.navigation === "horse-water" || horse.navigation === "horse-hay") {
-                horse.mode = horse.navigation === "horse-water" ? "drinking" : "feeding";
+            if (horse.navigation === "horse-hay") {
+                horse.mode = "feeding";
                 horse.modeUntil = seconds + 7 + horse.random() * 9;
                 horse.navigation = null;
                 return;
             }
+            if (horse.navigation === "stable-water-entry") {
+                horse.target = new THREE.Vector3(-1.48, 0, -1.80);
+                horse.path = [];
+                horse.navigation = "stable-water-inside";
+                horse.mode = "walking";
+                return;
+            }
+            if (horse.navigation === "stable-water-inside") {
+                horse.mode = "drinking";
+                horse.modeUntil = seconds + 9 + horse.random() * 11;
+                horse.navigation = null;
+                horse.nextStableAt = seconds + 105 + horse.random() * 155;
+                return;
+            }
             if (horse.navigation === "stable-entry") {
-                horse.target = new THREE.Vector3(-2.20, 0, -1.58);
+                horse.target = new THREE.Vector3(-1.38, 0, -1.58);
                 horse.path = [];
                 horse.navigation = "stable-inside";
                 horse.mode = "walking";
@@ -4435,7 +4470,7 @@ function animateHorse(seconds, delta) {
                 return;
             }
             if (horse.navigation === "stable-exit") {
-                horse.nextStableAt = seconds + 240 + horse.random() * 360;
+                horse.nextStableAt = seconds + 120 + horse.random() * 210;
                 startHorseJourney(horse, position, true);
                 return;
             }
@@ -5126,8 +5161,7 @@ sun.shadow.camera.bottom = -16;
 sun.shadow.camera.near = 1;
 sun.shadow.camera.far = 45;
 sun.shadow.bias = -0.00025;
-sun.shadow.radius = 3.5;
-sun.shadow.blurSamples = 10;
+sun.shadow.radius = 2.6;
 sun.target.position.set(0, 2.1, 0);
 world.add(sun);
 world.add(sun.target);
@@ -5464,10 +5498,12 @@ function animateWeather(seconds, delta) {
         3,
         delta
     );
-    hemisphere.intensity = 0.18 + daylight * (1.48 - cloud * 0.46);
+    // Keep direct sunlight bright, but reduce the broad fill light during the
+    // day so objects in shadow remain clearly distinguishable.
+    hemisphere.intensity = 0.16 + daylight * (1.22 - cloud * 0.38);
     sun.intensity = directDaylight * (3.85 - cloud * 2.45);
-    fill.intensity = 0.10 + daylight * 0.58;
-    warmBounce.intensity = 0.08 + daylight * 0.24 + twilight * 0.46;
+    fill.intensity = 0.08 + daylight * 0.42;
+    warmBounce.intensity = 0.06 + daylight * 0.18 + twilight * 0.40;
     renderer.toneMappingExposure = 0.60 + daylight * 0.50;
 
     const sunVector = geographicSkyVector(sunPosition.azimuth, sunPosition.elevation, 28);
