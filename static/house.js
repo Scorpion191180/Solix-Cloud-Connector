@@ -3807,7 +3807,9 @@ function createBactrianCamel(index) {
         elapsedSeconds: 0,
         modelRoot: null,
         mixer: null,
-        idleAction: null
+        idleAction: null,
+        walkRig: [],
+        gaitBlend: 0
     };
 }
 
@@ -3833,8 +3835,97 @@ function tuneCamelMaterials(model, camelIndex) {
     });
 }
 
+function createCamelWalkRig(model) {
+    // Kamele laufen im Passgang: Vorder- und Hinterbein derselben Seite
+    // schwingen gemeinsam, die gegenüberliegende Seite folgt eine halbe
+    // Schrittphase später. Das Quellmodell enthält alle benötigten Knochen,
+    // aber nur eine Standanimation – deshalb wird der Gang hier ergänzt.
+    const limbDefinitions = [
+        {
+            phase: 0,
+            upper: "Shoulder_L_31",
+            lower: "Elbow_L_30",
+            foot: "Wrist_L_29",
+            upperScale: 1,
+        },
+        {
+            phase: 0,
+            upper: "Hip_L_49",
+            lower: "Knee_L_48",
+            foot: "Ankle_L_47",
+            upperScale: 0.88,
+        },
+        {
+            phase: Math.PI,
+            upper: "Shoulder_R_39",
+            lower: "Elbow_R_38",
+            foot: "Wrist_R_37",
+            upperScale: 1,
+        },
+        {
+            phase: Math.PI,
+            upper: "Hip_R_8",
+            lower: "Knee_R_7",
+            foot: "Ankle_R_6",
+            upperScale: 0.88,
+        },
+    ];
+    return limbDefinitions.map((definition) => {
+        const upper = model.getObjectByName(definition.upper);
+        const lower = model.getObjectByName(definition.lower);
+        const foot = model.getObjectByName(definition.foot);
+        if (!upper || !lower || !foot)
+            return null;
+        return {
+            ...definition,
+            upper,
+            lower,
+            foot,
+            upperRest: upper.quaternion.clone(),
+            lowerRest: lower.quaternion.clone(),
+            footRest: foot.quaternion.clone(),
+        };
+    }).filter(Boolean);
+}
+
+const camelGaitAxis = new THREE.Vector3(0, 0, 1);
+const camelGaitRotation = new THREE.Quaternion();
+
+function poseCamelJoint(joint, restQuaternion, angle) {
+    camelGaitRotation.setFromAxisAngle(camelGaitAxis, angle);
+    joint.quaternion.copy(restQuaternion).multiply(camelGaitRotation);
+}
+
+function animateDetailedCamelGait(camel, moving, running, delta) {
+    if (!camel.walkRig?.length)
+        return;
+    camel.gaitBlend = THREE.MathUtils.damp(
+        camel.gaitBlend || 0,
+        moving ? 1 : 0,
+        moving ? 7 : 4,
+        delta
+    );
+    const phase = camel.travelled * (running ? 8.6 : 7.2) + camel.index * 0.18;
+    const stride = (running ? 0.42 : 0.27) * camel.gaitBlend;
+    camel.walkRig.forEach((limb) => {
+        const cycle = phase + limb.phase;
+        const swing = Math.sin(cycle);
+        // Das untere Gelenk beugt hauptsächlich beim nach vorn geführten Bein;
+        // der Fuß gleicht die Beugung aus und bleibt optisch am Boden.
+        const lift = Math.max(0, Math.cos(cycle));
+        poseCamelJoint(limb.upper, limb.upperRest, swing * stride * limb.upperScale);
+        poseCamelJoint(limb.lower, limb.lowerRest,
+            -lift * stride * (running ? 0.92 : 0.72));
+        poseCamelJoint(limb.foot, limb.footRest,
+            lift * stride * (running ? 0.62 : 0.48));
+    });
+    const bob = Math.abs(Math.sin(phase * 2)) * (running ? 0.035 : 0.014) *
+        camel.gaitBlend;
+    camel.group.position.y = THREE.MathUtils.damp(camel.group.position.y, bob, 10, delta);
+}
+
 function loadDetailedCamels() {
-    vehicleLoader.load("/static/models/bactrian-camel.glb?v=80", (gltf) => {
+    vehicleLoader.load("/static/models/bactrian-camel.glb?v=81", (gltf) => {
         const source = gltf.scene;
         // Das Sketchfab-Modell blickt bereits entlang der positiven lokalen
         // Z-Achse. Die frühere 180-Grad-Drehung ließ es rückwärts laufen.
@@ -3855,6 +3946,7 @@ function loadDetailedCamels() {
             camel.group.add(model);
             camel.modelRoot = model;
             camel.fallback.visible = false;
+            camel.walkRig = createCamelWalkRig(model);
             camel.mixer = new THREE.AnimationMixer(model);
             const idleClip = gltf.animations.find((clip) => clip.name === "Bactrian_Camel_Idle") ||
                 gltf.animations[0];
@@ -3899,6 +3991,9 @@ function animateCamels(seconds, delta) {
             if (!camel.modelRoot) {
                 camel.neckRig.rotation.x = THREE.MathUtils.damp(camel.neckRig.rotation.x,
                     eating ? 0.78 : 0, 4, delta);
+            }
+            else {
+                animateDetailedCamelGait(camel, false, false, delta);
             }
             if (camel.mode === "grazing")
                 grazeAt(camel.group.position.x, camel.group.position.z, true, delta * 0.12);
@@ -3961,6 +4056,9 @@ function animateCamels(seconds, delta) {
                             (camel.mode === "running" ? 0.48 : 0.28);
                     });
                     camel.tail.rotation.z = Math.sin(seconds * 1.5 + camel.travelled) * 0.18;
+                }
+                else {
+                    animateDetailedCamelGait(camel, true, camel.mode === "running", delta);
                 }
             }
         }
