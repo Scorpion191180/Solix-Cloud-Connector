@@ -16,6 +16,7 @@ import httpx
 
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+BRIGHT_SKY_URL = "https://api.brightsky.dev/current_weather"
 DEFAULT_TIMEZONE = "Europe/Berlin"
 DEFAULT_PANEL_AZIMUTH_DEGREES = 157.5
 
@@ -287,17 +288,65 @@ class WeatherClient:
         }
 
     async def _fetch_data(self) -> dict[str, Any]:
-        """Use aiohttp first and transparently fall back to httpx."""
+        """Use two transports and a DWD-backed provider as final fallback."""
         try:
             session = await self._ensure_session()
             async with session.get(OPEN_METEO_URL, params=self._request_params) as response:
                 response.raise_for_status()
                 return await response.json()
         except Exception:
-            client = await self._ensure_httpx_client()
+            pass
+
+        client = await self._ensure_httpx_client()
+        try:
             response = await client.get(OPEN_METEO_URL, params=self._request_params)
             response.raise_for_status()
             return response.json()
+        except Exception:
+            # Manche Render-Ausgänge erreichen Open-Meteo zeitweise nicht.
+            # Bright Sky stellt die Messwerte des Deutschen Wetterdienstes
+            # ohne Schlüssel bereit und verhindert eine leere Wetteranzeige.
+            response = await client.get(
+                BRIGHT_SKY_URL,
+                params={"lat": self.latitude, "lon": self.longitude},
+            )
+            response.raise_for_status()
+            bright_sky = response.json()
+            weather = bright_sky.get("weather") or {}
+            icon = str(weather.get("icon") or "").lower()
+            condition = str(weather.get("condition") or "").lower()
+            code = 0
+            if "thunder" in icon or "thunder" in condition:
+                code = 95
+            elif "snow" in icon or "snow" in condition:
+                code = 71
+            elif "sleet" in icon or "sleet" in condition:
+                code = 66
+            elif "rain" in icon or "rain" in condition:
+                code = 61
+            elif "fog" in icon or "fog" in condition:
+                code = 45
+            elif "cloud" in icon:
+                code = 2 if "partly" in icon else 3
+            is_day = 0 if "night" in icon else 1
+            return {
+                "_source": "Bright Sky (DWD)",
+                "timezone": self.timezone,
+                "current": {
+                    "time": weather.get("timestamp"),
+                    "temperature_2m": weather.get("temperature"),
+                    "apparent_temperature": weather.get("temperature"),
+                    "is_day": is_day,
+                    "precipitation": weather.get("precipitation_10"),
+                    "rain": weather.get("precipitation_10"),
+                    "snowfall": 0,
+                    "weather_code": code,
+                    "cloud_cover": weather.get("cloud_cover"),
+                    "wind_speed_10m": weather.get("wind_speed_10"),
+                    "wind_direction_10m": weather.get("wind_direction_10"),
+                },
+                "daily": {},
+            }
 
     async def get_live(self) -> dict[str, Any]:
         async with self._lock:
@@ -307,7 +356,7 @@ class WeatherClient:
                     "stale": True,
                     "timezone": self.timezone,
                     "error": "Hauskoordinaten für Wetter sind nicht eingerichtet",
-                    "source": "Open-Meteo",
+                    "source": data.get("_source") or "Open-Meteo",
                 }
             now = time.monotonic()
             if (
@@ -358,7 +407,7 @@ class WeatherClient:
                     "stale": True,
                     "timezone": self.timezone,
                     "error": "Wetterdaten vorübergehend nicht erreichbar",
-                    "source": "Open-Meteo",
+                    "source": "Open-Meteo / Bright Sky (DWD)",
                 })
 
     async def close(self) -> None:

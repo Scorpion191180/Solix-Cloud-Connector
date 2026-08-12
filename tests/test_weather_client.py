@@ -84,6 +84,52 @@ class WeatherFallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["current"]["temperature_2m"], 21.4)
         httpx_client.get.assert_awaited_once()
 
+    async def test_dwd_fallback_is_normalized_if_open_meteo_is_unreachable(self):
+        client = WeatherClient()
+        client.latitude = 48.46991
+        client.longitude = 8.44543
+
+        class BrightSkyResponse:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"weather": {
+                    "timestamp": "2026-08-12T21:00:00+00:00",
+                    "temperature": 20.9,
+                    "cloud_cover": 15,
+                    "condition": "dry",
+                    "icon": "clear-night",
+                    "precipitation_10": 0,
+                    "wind_speed_10": 8.6,
+                    "wind_direction_10": 50,
+                }}
+
+        httpx_client = AsyncMock()
+        httpx_client.get.side_effect = [
+            RuntimeError("Open-Meteo blocked"),
+            BrightSkyResponse(),
+        ]
+        with (
+            patch.object(
+                client,
+                "_ensure_session",
+                AsyncMock(side_effect=RuntimeError("aiohttp unavailable")),
+            ),
+            patch.object(
+                client,
+                "_ensure_httpx_client",
+                AsyncMock(return_value=httpx_client),
+            ),
+        ):
+            data = await client._fetch_data()
+
+        self.assertEqual(data["_source"], "Bright Sky (DWD)")
+        self.assertEqual(data["current"]["temperature_2m"], 20.9)
+        self.assertEqual(data["current"]["weather_code"], 0)
+        self.assertEqual(data["current"]["is_day"], 0)
+        self.assertEqual(httpx_client.get.await_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
