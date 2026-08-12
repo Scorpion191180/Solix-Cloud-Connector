@@ -1484,6 +1484,24 @@ function createHorseStableDoor(parent, position) {
     const straw = new THREE.MeshStandardMaterial({ color: 0xc79a43, roughness: 1 });
     const metal = new THREE.MeshStandardMaterial({ color: 0x363636, metalness: 0.70, roughness: 0.45 });
 
+    // Kurze, flache Holzrampe vom Hofniveau auf den leicht erhöhten
+    // Stallboden. Sie liegt vollständig vor/in der Öffnung und bleibt breit
+    // genug, damit das Pferd ohne sichtbaren Sprung hineinlaufen kann.
+    const ramp = new THREE.Group();
+    ramp.position.set(0, -1.24, -0.65);
+    ramp.rotation.x = -0.14;
+    stable.add(ramp);
+    addBox(ramp, [1.50, 0.11, 1.50], doorWood, [0, 0, 0], {
+        radius: 0.025,
+        castShadow: false
+    });
+    for (let treadZ = -0.60; treadZ <= 0.60; treadZ += 0.24)
+        addBox(ramp, [1.40, 0.028, 0.045], frameWood,
+            [0, 0.067, treadZ], { radius: 0.01, castShadow: false });
+    [-0.73, 0.73].forEach((edgeX) =>
+        addBox(ramp, [0.045, 0.035, 1.42], frameWood,
+            [edgeX, 0.065, 0], { radius: 0.01, castShadow: false }));
+
     // Alle Raumflächen beginnen hinter der Fassadenebene (lokales z=0).
     // So ist außen nur die bündige Öffnung sichtbar, niemals ein Tunnel.
     // Die warme Rückwand gibt dem Blick von außen eine klar erkennbare Tiefe.
@@ -4316,6 +4334,17 @@ function createStonePlanters() {
     });
 }
 
+function horseStableSurfaceHeight(x, z) {
+    // Die Rampe verläuft in Weltkoordinaten von x=-4,74 (Hof) bis zur
+    // Türschwelle bei x=-3,24. Dahinter bleibt der Stallboden leicht erhöht.
+    if (Math.abs(z + 1.58) > 0.78 || x < -4.74 || x > -2.02)
+        return 0;
+    if (x <= -3.24)
+        return THREE.MathUtils.lerp(0.02, 0.22,
+            THREE.MathUtils.clamp((x + 4.74) / 1.50, 0, 1));
+    return 0.22;
+}
+
 function animateHorse(seconds, delta) {
     if (!horse)
         return;
@@ -4353,7 +4382,6 @@ function animateHorse(seconds, delta) {
     }
     else if (horse.mode === "resting") {
         setHorseAnimation(horse, "Sleep");
-        horse.group.position.y = 0;
         if (seconds >= horse.modeUntil) {
             horse.mode = "rising";
             horse.modeUntil = seconds + 2.8;
@@ -4461,13 +4489,13 @@ function animateHorse(seconds, delta) {
                     leg.rotation.x = Math.sin(horse.travelled * 8.2 + leg.userData.walkOffset) * 0.42;
                 });
                 horse.tailRig.rotation.z = Math.sin(seconds * 2.2) * 0.24;
-                horse.group.position.y = Math.abs(Math.sin(horse.travelled * 8.2)) * 0.025;
-            }
-            else {
-                horse.group.position.y = 0;
             }
         }
     }
+    const stableFloorY = horseStableSurfaceHeight(position.x, position.z);
+    const fallbackStepLift = !horse.modelRoot && ["walking", "running"].includes(horse.mode) ?
+        Math.abs(Math.sin(horse.travelled * 8.2)) * 0.025 : 0;
+    position.y = THREE.MathUtils.damp(position.y, stableFloorY + fallbackStepLift, 14, delta);
     if (seconds >= horse.nextDroppingAt) {
         addHorseDropping();
         horse.nextDroppingAt = seconds + 3000 + horse.random() * 1800;
