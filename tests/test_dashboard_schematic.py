@@ -21,9 +21,9 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260812-84", dashboard)
-        self.assertIn("house.js?v=20260812-84", dashboard)
-        self.assertIn("app.js?v=20260812-84", dashboard)
+        self.assertIn("style.css?v=20260812-85", dashboard)
+        self.assertIn("house.js?v=20260812-85", dashboard)
+        self.assertIn("app.js?v=20260812-85", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
 
@@ -305,7 +305,8 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("function createHorseStableDoor", script)
         self.assertIn('createHorseStableDoor(house, [-3.34, 1.36, -1.58])', script)
         self.assertIn("houseShellGeometry.groups.filter", script)
-        self.assertIn("stableOpeningWidth = 1.36", script)
+        self.assertIn("houseShellMaterials", script)
+        self.assertIn("stableOpeningWidth = 1.62", script)
         self.assertIn("/static/models/horse-animated.glb?v=80", script)
         self.assertIn('horse.mode === "running" ? "Run" : "Walk"', script)
         self.assertIn('setHorseAnimation(horse, "Eating")', script)

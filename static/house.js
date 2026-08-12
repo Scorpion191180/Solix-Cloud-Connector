@@ -1479,22 +1479,27 @@ function createHorseStableDoor(parent, position) {
     const frameWood = new THREE.MeshStandardMaterial({ color: 0x4a2e20, roughness: 0.94 });
     const doorWood = new THREE.MeshStandardMaterial({ color: 0x6a4028, roughness: 0.92 });
     const darkInterior = new THREE.MeshStandardMaterial({
-        color: 0x17100b, emissive: 0x4a2b12, emissiveIntensity: 0.22, roughness: 1
+        color: 0x5a3b24, emissive: 0x3f2412, emissiveIntensity: 0.18, roughness: 1
     });
     const straw = new THREE.MeshStandardMaterial({ color: 0xc79a43, roughness: 1 });
     const metal = new THREE.MeshStandardMaterial({ color: 0x363636, metalness: 0.70, roughness: 0.45 });
 
     // Alle Raumflächen beginnen hinter der Fassadenebene (lokales z=0).
     // So ist außen nur die bündige Öffnung sichtbar, niemals ein Tunnel.
-    // Die helle Rückwand gibt dem Blick von außen eine klar erkennbare Tiefe.
-    addBox(stable, [1.36, 2.34, 0.10], darkInterior, [0, 0, 3.28], { castShadow: false });
-    [-0.75, 0.75].forEach((x) =>
+    // Die warme Rückwand gibt dem Blick von außen eine klar erkennbare Tiefe.
+    addBox(stable, [1.62, 2.34, 0.10], darkInterior, [0, 0, 3.28], { castShadow: false });
+    // Sichtbare Holzbretter an der Rückwand machen schon von außen klar,
+    // dass hinter der Öffnung ein echter Raum liegt und keine dunkle Maske.
+    for (let plank = -0.56; plank <= 0.56; plank += 0.28)
+        addBox(stable, [0.025, 2.16, 0.018], frameWood,
+            [plank, -0.04, 3.215], { castShadow: false });
+    [-0.86, 0.86].forEach((x) =>
         addBox(stable, [0.13, 2.52, 0.18], frameWood, [x, 0.02, 0.11]));
-    addBox(stable, [1.62, 0.16, 0.22], frameWood, [0, 1.26, 0.11]);
-    addBox(stable, [0.10, 2.30, 3.16], frameWood, [-0.70, -0.02, 1.68]);
-    addBox(stable, [0.10, 2.30, 3.16], frameWood, [0.70, -0.02, 1.68]);
-    addBox(stable, [1.40, 0.10, 3.16], frameWood, [0, 1.13, 1.68]);
-    addBox(stable, [1.38, 0.08, 3.12], straw, [0, -1.15, 1.68], { castShadow: false });
+    addBox(stable, [1.84, 0.16, 0.22], frameWood, [0, 1.26, 0.11]);
+    addBox(stable, [0.10, 2.30, 3.16], frameWood, [-0.81, -0.02, 1.68]);
+    addBox(stable, [0.10, 2.30, 3.16], frameWood, [0.81, -0.02, 1.68]);
+    addBox(stable, [1.62, 0.10, 3.16], frameWood, [0, 1.13, 1.68]);
+    addBox(stable, [1.60, 0.08, 3.12], straw, [0, -1.15, 1.68], { castShadow: false });
     for (let index = 0; index < 32; index += 1) {
         const tuft = addMesh(stable, new THREE.ConeGeometry(0.022, 0.26, 5), straw,
             -0.58 + (index % 8) * 0.17, -1.00,
@@ -1502,16 +1507,30 @@ function createHorseStableDoor(parent, position) {
             { castShadow: false });
         tuft.rotation.z = (index % 3 - 1) * 0.20;
     }
+    // Zwei helle Strohballen stehen bewusst im mittleren Raumbereich. Sie
+    // bleiben auch aus schrägem Blickwinkel hinter der offenen Tür sichtbar.
+    const baleWood = new THREE.MeshStandardMaterial({ color: 0xd6a84d, roughness: 1 });
+    const rearBale = addBox(stable, [0.62, 0.42, 0.46], baleWood,
+        [-0.38, -0.88, 2.30], { radius: 0.055, castShadow: false });
+    const upperBale = addBox(stable, [0.48, 0.34, 0.40], baleWood,
+        [-0.38, -0.50, 2.32], { radius: 0.05, castShadow: false });
+    [rearBale, upperBale].forEach((bale) => {
+        [-0.17, 0.17].forEach((x) =>
+            addBox(bale, [0.025, 1.02, 0.025], frameWood,
+                [x, 0, 0.25], { rotation: [0, 0, Math.PI / 2], castShadow: false }));
+    });
     // Die breite Holztuer ist dauerhaft nach außen aufgeklappt und lässt den
     // Blick auf Stroh, Holzboden und Futterraufe frei.
     const leafHinge = new THREE.Group();
-    leafHinge.position.set(-0.70, 0, 0.22);
-    leafHinge.rotation.y = -1.18;
+    leafHinge.position.set(-0.81, 0, 0.22);
+    // Ganz an die linke Innenwand geklappt: Die Tür bleibt sichtbar, nimmt
+    // dem Blick von außen aber keinen Zentimeter der Stallöffnung mehr.
+    leafHinge.rotation.y = -Math.PI / 2;
     stable.add(leafHinge);
-    const leaf = addBox(leafHinge, [1.28, 2.26, 0.11], doorWood, [0.64, 0, 0], { radius: 0.025 });
+    const leaf = addBox(leafHinge, [1.52, 2.26, 0.11], doorWood, [0.76, 0, 0], { radius: 0.025 });
     [-0.76, -0.25, 0.25, 0.76].forEach((y) =>
-        addBox(leaf, [1.12, 0.07, 0.025], frameWood, [0, y, 0.07], { castShadow: false }));
-    [0.44, -0.44].forEach((x) =>
+        addBox(leaf, [1.36, 0.07, 0.025], frameWood, [0, y, 0.07], { castShadow: false }));
+    [0.55, -0.55].forEach((x) =>
         addBox(leaf, [0.08, 2.05, 0.025], frameWood, [x, 0, 0.07], { castShadow: false }));
     addMesh(leaf, new THREE.TorusGeometry(0.07, 0.018, 8, 16), metal,
         0.45, 0, 0.09, { rotation: [Math.PI / 2, 0, 0], castShadow: false });
@@ -1525,7 +1544,7 @@ function createHorseStableDoor(parent, position) {
     const stableLampMaterial = new THREE.MeshBasicMaterial({ color: 0xffc66d, toneMapped: false });
     addMesh(stable, new THREE.SphereGeometry(0.075, 12, 8), stableLampMaterial,
         0.44, 0.76, 2.70, { castShadow: false });
-    const stableLight = new THREE.PointLight(0xffc26b, 0.72, 4.2, 1.7);
+    const stableLight = new THREE.PointLight(0xffc26b, 1.35, 5.2, 1.55);
     stableLight.position.set(0.44, 0.72, 2.62);
     stable.add(stableLight);
 }
@@ -1538,9 +1557,13 @@ function createHouse() {
     // mit einer echten Aussparung für die Stalltür wieder aufgebaut.
     const houseShellGeometry = new THREE.BoxGeometry(HOUSE_WIDTH, 4.9, HOUSE_LENGTH);
     houseShellGeometry.groups = houseShellGeometry.groups.filter((group) => group.materialIndex !== 1);
-    addMesh(house, houseShellGeometry, materials.wall, 0, 2.50, 0);
+    // Eine Materialliste ist hier zwingend: Mit nur einem Material ignoriert
+    // Three.js die Geometriegruppen und zeichnet trotz gelöschter Gruppe die
+    // komplette linke Wand. Erst das Array macht die Stalltür physisch offen.
+    const houseShellMaterials = Array.from({ length: 6 }, () => materials.wall);
+    addMesh(house, houseShellGeometry, houseShellMaterials, 0, 2.50, 0);
     const stableOpeningCenterZ = -1.58;
-    const stableOpeningWidth = 1.36;
+    const stableOpeningWidth = 1.62;
     const openingMinZ = stableOpeningCenterZ - stableOpeningWidth / 2;
     const openingMaxZ = stableOpeningCenterZ + stableOpeningWidth / 2;
     addBox(house, [0.10, 4.9, openingMinZ + HOUSE_LENGTH / 2], materials.wall,
@@ -3101,7 +3124,7 @@ function createGoldfishPond() {
 function horseCanStandAt(x, z) {
     if (!pointInPolygon(x, z, PROPERTY_BOUNDARY))
         return false;
-    const inStablePassage = x > -4.45 && x < -2.02 && Math.abs(z + 1.58) < 0.64;
+    const inStablePassage = x > -4.45 && x < -2.02 && Math.abs(z + 1.58) < 0.78;
     const onHouse = Math.abs(x) < 4.05 && Math.abs(z) < 7.00 && !inStablePassage;
     // Passgenaue, mit dem Pool gedrehte Sicherheitszone statt der früheren
     // übergroßen Ellipse. Der echte Durchgang zwischen Pool und Haus bleibt
