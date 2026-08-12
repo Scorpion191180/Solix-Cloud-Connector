@@ -53,6 +53,9 @@ const MIN_ZOOM = 0.55;
 const MAX_ZOOM = 3.10;
 const MIN_PITCH = -0.28;
 const MAX_PITCH = 0.32;
+// Die geneigte Flächennormale der Pergola-Paneele zeigt im Modell nach +X.
+// Laut Vorgabe entspricht diese Richtung Süd-Südost (157,5°).
+const PANEL_AZIMUTH_FALLBACK_DEGREES = 157.5;
 
 const state = {
     selected: "battery",
@@ -5125,7 +5128,23 @@ sun.shadow.camera.far = 45;
 sun.shadow.bias = -0.00025;
 sun.shadow.radius = 3.5;
 sun.shadow.blurSamples = 10;
-scene.add(sun);
+sun.target.position.set(0, 2.1, 0);
+world.add(sun);
+world.add(sun.target);
+const moonLight = new THREE.DirectionalLight(0x9fc6ff, 0);
+moonLight.castShadow = true;
+moonLight.shadow.mapSize.set(1024, 1024);
+moonLight.shadow.camera.left = -16;
+moonLight.shadow.camera.right = 16;
+moonLight.shadow.camera.top = 16;
+moonLight.shadow.camera.bottom = -16;
+moonLight.shadow.camera.near = 1;
+moonLight.shadow.camera.far = 45;
+moonLight.shadow.bias = -0.00035;
+moonLight.shadow.radius = 4.5;
+moonLight.target.position.set(0, 2.1, 0);
+world.add(moonLight);
+world.add(moonLight.target);
 const fill = new THREE.DirectionalLight(0x8ebef3, 0.62);
 fill.position.set(10, 8, -12);
 scene.add(fill);
@@ -5138,10 +5157,149 @@ const weatherVisual = {
     rain: null,
     snow: null,
     stars: null,
+    clouds: [],
+    sunDisk: null,
+    sunHalo: null,
+    moonDisk: null,
+    moonCanvas: null,
+    moonTexture: null,
+    moonPhase: null,
     skyColor: new THREE.Color(0x9bc9e5),
-    wind: 0
+    wind: 0,
+    windDirection: 270
 };
 scene.background = weatherVisual.skyColor;
+
+function makeSunTexture() {
+    const textureCanvas = document.createElement("canvas");
+    textureCanvas.width = 256;
+    textureCanvas.height = 256;
+    const context = textureCanvas.getContext("2d");
+    const glow = context.createRadialGradient(128, 128, 14, 128, 128, 126);
+    glow.addColorStop(0, "rgba(255,255,238,1)");
+    glow.addColorStop(0.24, "rgba(255,230,128,1)");
+    glow.addColorStop(0.52, "rgba(255,194,72,.48)");
+    glow.addColorStop(1, "rgba(255,170,42,0)");
+    context.fillStyle = glow;
+    context.fillRect(0, 0, 256, 256);
+    const texture = new THREE.CanvasTexture(textureCanvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+}
+
+function makeCloudTexture() {
+    const textureCanvas = document.createElement("canvas");
+    textureCanvas.width = 512;
+    textureCanvas.height = 256;
+    const context = textureCanvas.getContext("2d");
+    const puffs = [
+        [116, 152, 84], [190, 114, 105], [270, 126, 128],
+        [360, 154, 92], [235, 168, 155]
+    ];
+    puffs.forEach(([x, y, radius]) => {
+        const gradient = context.createRadialGradient(x, y, radius * 0.12, x, y, radius);
+        gradient.addColorStop(0, "rgba(255,255,255,.98)");
+        gradient.addColorStop(0.56, "rgba(239,246,252,.83)");
+        gradient.addColorStop(1, "rgba(218,229,239,0)");
+        context.fillStyle = gradient;
+        context.beginPath();
+        context.arc(x, y, radius, 0, Math.PI * 2);
+        context.fill();
+    });
+    const texture = new THREE.CanvasTexture(textureCanvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+}
+
+function updateMoonPhaseTexture(phaseFraction) {
+    if (!weatherVisual.moonCanvas || !weatherVisual.moonTexture)
+        return;
+    const phase = ((phaseFraction % 1) + 1) % 1;
+    if (weatherVisual.moonPhase != null && Math.abs(weatherVisual.moonPhase - phase) < 0.0002)
+        return;
+    weatherVisual.moonPhase = phase;
+    const canvas = weatherVisual.moonCanvas;
+    const context = canvas.getContext("2d");
+    const image = context.createImageData(canvas.width, canvas.height);
+    const angle = phase * Math.PI * 2;
+    const lightX = Math.sin(angle);
+    const lightZ = -Math.cos(angle);
+    const radius = canvas.width * 0.43;
+    for (let py = 0; py < canvas.height; py += 1) {
+        for (let px = 0; px < canvas.width; px += 1) {
+            const x = (px - canvas.width / 2) / radius;
+            const y = (canvas.height / 2 - py) / radius;
+            const distanceSquared = x * x + y * y;
+            if (distanceSquared > 1)
+                continue;
+            const z = Math.sqrt(Math.max(0, 1 - distanceSquared));
+            const light = x * lightX + z * lightZ;
+            const lit = THREE.MathUtils.smoothstep(light, -0.025, 0.075);
+            const limb = 0.72 + z * 0.28;
+            const crater = 0.95 + 0.035 * Math.sin(px * 0.19 + py * 0.11) *
+                Math.sin(px * 0.047 - py * 0.083);
+            const brightness = (0.055 + lit * 0.945) * limb * crater;
+            const edge = THREE.MathUtils.smoothstep(1 - distanceSquared, 0, 0.045);
+            const offset = (py * canvas.width + px) * 4;
+            image.data[offset] = 224 * brightness;
+            image.data[offset + 1] = 232 * brightness;
+            image.data[offset + 2] = 242 * brightness;
+            image.data[offset + 3] = 255 * edge;
+        }
+    }
+    context.putImageData(image, 0, 0);
+    weatherVisual.moonTexture.needsUpdate = true;
+}
+
+function createCelestialVisuals() {
+    const sunTexture = makeSunTexture();
+    weatherVisual.sunHalo = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: sunTexture, transparent: true, opacity: 0.95,
+        depthWrite: false, fog: false
+    }));
+    weatherVisual.sunHalo.scale.set(4.2, 4.2, 1);
+    world.add(weatherVisual.sunHalo);
+    weatherVisual.sunDisk = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: sunTexture, transparent: true, opacity: 1,
+        depthWrite: false, fog: false
+    }));
+    weatherVisual.sunDisk.scale.set(2.15, 2.15, 1);
+    world.add(weatherVisual.sunDisk);
+
+    weatherVisual.moonCanvas = document.createElement("canvas");
+    weatherVisual.moonCanvas.width = 192;
+    weatherVisual.moonCanvas.height = 192;
+    weatherVisual.moonTexture = new THREE.CanvasTexture(weatherVisual.moonCanvas);
+    weatherVisual.moonTexture.colorSpace = THREE.SRGBColorSpace;
+    weatherVisual.moonDisk = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: weatherVisual.moonTexture, transparent: true, opacity: 0,
+        depthWrite: false, fog: false
+    }));
+    weatherVisual.moonDisk.scale.set(1.55, 1.55, 1);
+    world.add(weatherVisual.moonDisk);
+    updateMoonPhaseTexture(0.5);
+
+    const cloudTexture = makeCloudTexture();
+    const random = seededNoise(157508);
+    for (let index = 0; index < 9; index += 1) {
+        const cloud = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: cloudTexture,
+            color: index % 3 === 0 ? 0xd9e3eb : 0xf2f6fa,
+            transparent: true,
+            opacity: 0,
+            depthWrite: false,
+            fog: false
+        }));
+        const size = 5.8 + random() * 5.4;
+        cloud.scale.set(size * 1.8, size, 1);
+        cloud.userData.lane = -20 + random() * 40;
+        cloud.userData.phase = random();
+        cloud.userData.height = 11 + random() * 6;
+        world.add(cloud);
+        weatherVisual.clouds.push(cloud);
+    }
+}
+createCelestialVisuals();
 
 function createWeatherParticles() {
     const random = seededNoise(844543);
@@ -5212,12 +5370,16 @@ function updateWeatherScene(weather) {
     const description = weatherDescription(weather?.weather_code);
     const temperature = numberValue(weather?.temperature_c);
     const wind = numberValue(weather?.wind_speed_kmh);
+    const windDirection = numberValue(weather?.wind_direction_deg);
     weatherVisual.wind = wind ?? 0;
+    weatherVisual.windDirection = windDirection ?? 270;
+    const moonPhase = weather?.celestial?.moon?.phase_name;
     weatherIcon.textContent = description.icon;
     weatherTemp.textContent = temperature == null ? "-- °C" :
         temperature.toLocaleString("de-DE", { maximumFractionDigits: 1 }) + " °C";
     weatherText.textContent = description.text +
         (wind == null ? "" : " · " + Math.round(wind) + " km/h") +
+        (weather?.is_day === 0 && moonPhase ? " · " + moonPhase : "") +
         (weather?.stale === true ? " · letzter Stand" : "");
     weatherPanel.classList.toggle("stale", weather?.stale === true);
 }
@@ -5235,37 +5397,115 @@ function smoothDaylight(minute, sunrise, sunset) {
     return THREE.MathUtils.clamp(dawn * dusk, 0, 1);
 }
 
+function celestialAt(body, fallbackAzimuth, fallbackElevation) {
+    const calculatedAt = Date.parse(weatherVisual.data?.celestial?.calculated_at || "");
+    const elapsedMinutes = Number.isFinite(calculatedAt) ?
+        THREE.MathUtils.clamp((Date.now() - calculatedAt) / 60000, -1, 15) : 0;
+    const azimuth = numberValue(body?.azimuth_deg);
+    const elevation = numberValue(body?.elevation_deg);
+    const azimuthRate = numberValue(body?.azimuth_rate_deg_per_minute) ?? 0;
+    const elevationRate = numberValue(body?.elevation_rate_deg_per_minute) ?? 0;
+    return {
+        azimuth: ((azimuth ?? fallbackAzimuth) + azimuthRate * elapsedMinutes + 360) % 360,
+        elevation: (elevation ?? fallbackElevation) + elevationRate * elapsedMinutes
+    };
+}
+
+function geographicSkyVector(azimuthDegrees, elevationDegrees, radius = 1) {
+    const configuredPanelAzimuth = numberValue(
+        weatherVisual.data?.celestial?.orientation?.panel_azimuth_deg
+    ) ?? PANEL_AZIMUTH_FALLBACK_DEGREES;
+    // Durch rotation.z = -12° kippt die lokale +Y-Flächennormale der
+    // Paneele nach +X. Azimut = Paneel-Azimut landet deshalb exakt auf +X,
+    // sodass direktes Licht aus Süd-Südost frontal auf die Module trifft.
+    const worldAngle = THREE.MathUtils.degToRad(
+        azimuthDegrees - configuredPanelAzimuth
+    );
+    const elevation = THREE.MathUtils.degToRad(elevationDegrees);
+    const horizontal = Math.cos(elevation) * radius;
+    return new THREE.Vector3(
+        Math.cos(worldAngle) * horizontal,
+        Math.sin(elevation) * radius,
+        Math.sin(worldAngle) * horizontal
+    );
+}
+
 function animateWeather(seconds, delta) {
     const weather = weatherVisual.data || {};
     const now = new Date();
     const minute = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
     const sunrise = minuteFromWeatherTime(weather.sunrise, 390);
     const sunset = minuteFromWeatherTime(weather.sunset, 1230);
-    const daylight = smoothDaylight(minute, sunrise, sunset);
+    const fallbackDaylight = smoothDaylight(minute, sunrise, sunset);
+    const daySpan = Math.max(1, sunset - sunrise);
+    const dayProgress = THREE.MathUtils.clamp((minute - sunrise) / daySpan, 0, 1);
+    const fallbackSunElevation = fallbackDaylight * 58 - 8;
+    const fallbackSunAzimuth = 90 + dayProgress * 180;
+    const sunPosition = celestialAt(
+        weather.celestial?.sun, fallbackSunAzimuth, fallbackSunElevation
+    );
+    const moonPosition = celestialAt(
+        weather.celestial?.moon, (fallbackSunAzimuth + 180) % 360,
+        -fallbackSunElevation
+    );
+    const daylight = THREE.MathUtils.smoothstep(sunPosition.elevation, -6, 5);
+    const directDaylight = THREE.MathUtils.smoothstep(sunPosition.elevation, -1, 11);
     const cloud = THREE.MathUtils.clamp((numberValue(weather.cloud_cover_percent) ?? 30) / 100, 0, 1);
     const daylightColor = new THREE.Color(0x9bcdeb).lerp(new THREE.Color(0x9daab4), cloud * 0.48);
     const nightColor = new THREE.Color(0x061326);
     weatherVisual.skyColor.copy(nightColor).lerp(daylightColor, daylight);
-    const twilight = Math.max(0, 1 - Math.abs(daylight - 0.5) * 2);
-    weatherVisual.skyColor.lerp(new THREE.Color(0xe69b74), twilight * 0.20);
+    const twilight = Math.max(0, 1 - Math.abs(sunPosition.elevation + 2) / 10);
+    weatherVisual.skyColor.lerp(new THREE.Color(0xe69b74), twilight * 0.28);
     scene.fog.color.copy(weatherVisual.skyColor).multiplyScalar(0.80 + daylight * 0.16);
+    const weatherCode = numberValue(weather.weather_code);
     scene.fog.density = THREE.MathUtils.damp(
         scene.fog.density,
-        0.010 + cloud * 0.006 + ((weather.weather_code === 45 || weather.weather_code === 48) ? 0.025 : 0),
+        0.010 + cloud * 0.006 + ([45, 48].includes(weatherCode) ? 0.025 : 0),
         3,
         delta
     );
     hemisphere.intensity = 0.18 + daylight * (1.48 - cloud * 0.46);
-    sun.intensity = 0.05 + daylight * (3.8 - cloud * 2.2);
+    sun.intensity = directDaylight * (3.85 - cloud * 2.45);
     fill.intensity = 0.10 + daylight * 0.58;
     warmBounce.intensity = 0.08 + daylight * 0.24 + twilight * 0.46;
     renderer.toneMappingExposure = 0.60 + daylight * 0.50;
 
-    const daySpan = Math.max(1, sunset - sunrise);
-    const dayProgress = THREE.MathUtils.clamp((minute - sunrise) / daySpan, 0, 1);
-    const sunAngle = Math.PI * (0.08 + dayProgress * 0.84);
-    sun.position.set(Math.cos(sunAngle) * 18, 3 + Math.sin(sunAngle) * 18, 10);
-    weatherVisual.stars.material.opacity = Math.pow(1 - daylight, 1.8) * 0.88;
+    const sunVector = geographicSkyVector(sunPosition.azimuth, sunPosition.elevation, 28);
+    const moonVector = geographicSkyVector(moonPosition.azimuth, moonPosition.elevation, 28);
+    sun.position.copy(sunVector);
+    moonLight.position.copy(moonVector);
+    weatherVisual.sunDisk.position.copy(sunVector).multiplyScalar(1.20);
+    weatherVisual.sunHalo.position.copy(weatherVisual.sunDisk.position);
+    weatherVisual.moonDisk.position.copy(moonVector).multiplyScalar(1.20);
+    const sunVisible = THREE.MathUtils.smoothstep(sunPosition.elevation, -4, 1);
+    weatherVisual.sunDisk.material.opacity = sunVisible * (1 - cloud * 0.72);
+    weatherVisual.sunHalo.material.opacity = sunVisible * (0.92 - cloud * 0.76);
+    const moonAbove = THREE.MathUtils.smoothstep(moonPosition.elevation, -3, 4);
+    const moonIllumination = THREE.MathUtils.clamp(
+        (numberValue(weather.celestial?.moon?.illumination_percent) ?? 50) / 100, 0, 1
+    );
+    const moonVisibility = moonAbove * Math.pow(1 - daylight, 0.72) * (1 - cloud * 0.82);
+    moonLight.castShadow = moonVisibility > 0.025;
+    moonLight.intensity = moonVisibility * moonIllumination * 0.82;
+    weatherVisual.moonDisk.material.opacity = moonVisibility * (0.46 + moonIllumination * 0.54);
+    updateMoonPhaseTexture(numberValue(weather.celestial?.moon?.phase_fraction) ?? 0.5);
+    weatherVisual.stars.material.opacity = Math.pow(1 - daylight, 1.8) *
+        (1 - cloud * 0.92) * 0.88;
+
+    const cloudOpacity = THREE.MathUtils.clamp((cloud - 0.08) / 0.92, 0, 1);
+    const windToward = geographicSkyVector(
+        (weatherVisual.windDirection + 180) % 360, 0, 1
+    );
+    const windSide = new THREE.Vector3(-windToward.z, 0, windToward.x);
+    weatherVisual.clouds.forEach((cloudSprite, index) => {
+        const speed = 0.045 + weatherVisual.wind * 0.004;
+        const travel = ((seconds * speed + cloudSprite.userData.phase * 52) % 52) - 26;
+        cloudSprite.position.copy(windToward).multiplyScalar(travel);
+        cloudSprite.position.addScaledVector(windSide, cloudSprite.userData.lane);
+        cloudSprite.position.y = cloudSprite.userData.height;
+        cloudSprite.material.opacity = cloudOpacity *
+            (0.48 + (index % 4) * 0.08) * (0.50 + daylight * 0.50);
+    });
     if (streetLampLight) {
         const nightStrength = THREE.MathUtils.smoothstep(1 - daylight, 0.30, 0.82);
         streetLampLight.intensity = THREE.MathUtils.damp(
@@ -5277,18 +5517,24 @@ function animateWeather(seconds, delta) {
 
     const rainAmount = (numberValue(weather.rain_mm) ?? numberValue(weather.precipitation_mm) ?? 0);
     const snowAmount = numberValue(weather.snowfall_cm) ?? 0;
-    weatherVisual.rain.visible = rainAmount > 0.01;
-    weatherVisual.snow.visible = snowAmount > 0.001;
+    const rainCode = [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99]
+        .includes(weatherCode);
+    const snowCode = [71, 73, 75, 77, 85, 86].includes(weatherCode);
+    weatherVisual.rain.visible = rainAmount > 0.01 || rainCode;
+    weatherVisual.snow.visible = snowAmount > 0.001 || snowCode;
     [[weatherVisual.rain, 8.8, 0.16], [weatherVisual.snow, 1.25, 0.38]].forEach(([system, speed, drift]) => {
         if (!system.visible || reduceMotion)
             return;
         const positions = system.geometry.attributes.position.array;
         for (let index = 0; index < positions.length; index += 3) {
-            positions[index] += weatherVisual.wind * 0.0025 * delta + Math.sin(seconds + index) * drift * delta;
+            positions[index] += windToward.x * weatherVisual.wind * 0.012 * delta +
+                Math.sin(seconds + index) * drift * delta;
+            positions[index + 2] += windToward.z * weatherVisual.wind * 0.012 * delta;
             positions[index + 1] -= speed * delta;
             if (positions[index + 1] < 0.12) {
                 positions[index + 1] = 9 + (index % 31) * 0.09;
                 positions[index] = -12 + ((index * 17) % 240) / 10;
+                positions[index + 2] = -17 + ((index * 23) % 340) / 10;
             }
         }
         system.geometry.attributes.position.needsUpdate = true;

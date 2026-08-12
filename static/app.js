@@ -914,6 +914,6 @@ setInterval(updateAutomation, 30000);
 
 setInterval(updateAudi, 30000);
 
-setInterval(updateWeather, 10 * 60 * 1000);
+setInterval(updateWeather, 5 * 60 * 1000);
 
 setInterval(updateLastRefresh, 1000);
