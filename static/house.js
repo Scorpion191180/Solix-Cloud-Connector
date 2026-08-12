@@ -2539,92 +2539,15 @@ function normalizeVehicleModel(model, targetLength, paintColor, orientation = {}
     tuneVehicleMaterials(model, paintColor, options);
 }
 
-function copyTriangleAttribute(attribute, triangleIndex, values) {
-    const getters = ["getX", "getY", "getZ", "getW"];
-    for (let vertex = 0; vertex < 3; vertex += 1) {
-        const sourceIndex = triangleIndex * 3 + vertex;
-        for (let component = 0; component < attribute.itemSize; component += 1)
-            values.push(attribute[getters[component]](sourceIndex));
-    }
-}
-
-function splitAudiWheelGeometry(mesh) {
-    const geometry = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
-    geometry.computeBoundingBox();
-    const overallCenter = geometry.boundingBox.getCenter(new THREE.Vector3());
-    const position = geometry.getAttribute("position");
-    const buckets = [[], [], [], []].map(() => ({}));
-    const triangleCount = Math.floor(position.count / 3);
-
-    for (let triangle = 0; triangle < triangleCount; triangle += 1) {
-        const first = triangle * 3;
-        const centerX = (position.getX(first) + position.getX(first + 1) + position.getX(first + 2)) / 3;
-        const centerZ = (position.getZ(first) + position.getZ(first + 1) + position.getZ(first + 2)) / 3;
-        const bucket = (centerX >= overallCenter.x ? 1 : 0) + (centerZ >= overallCenter.z ? 2 : 0);
-        Object.entries(geometry.attributes).forEach(([name, attribute]) => {
-            buckets[bucket][name] ||= [];
-            copyTriangleAttribute(attribute, triangle, buckets[bucket][name]);
-        });
-    }
-
-    const replacement = new THREE.Group();
-    replacement.name = `${mesh.name || "Audi"} Originalräder`;
-    replacement.position.copy(mesh.position);
-    replacement.quaternion.copy(mesh.quaternion);
-    replacement.scale.copy(mesh.scale);
-    const wheels = [];
-    buckets.forEach((bucket, index) => {
-        if (!bucket.position?.length)
-            return;
-        const wheelGeometry = new THREE.BufferGeometry();
-        Object.entries(bucket).forEach(([name, values]) => {
-            const source = geometry.getAttribute(name);
-            wheelGeometry.setAttribute(name, new THREE.BufferAttribute(
-                new source.array.constructor(values), source.itemSize, source.normalized
-            ));
-        });
-        wheelGeometry.computeBoundingBox();
-        wheelGeometry.computeBoundingSphere();
-        const center = wheelGeometry.boundingBox.getCenter(new THREE.Vector3());
-        wheelGeometry.translate(-center.x, -center.y, -center.z);
-        const wheel = new THREE.Mesh(wheelGeometry, mesh.material);
-        wheel.name = `Audi Originalrad ${index + 1}`;
-        wheel.position.copy(center);
-        wheel.castShadow = mesh.castShadow;
-        wheel.receiveShadow = mesh.receiveShadow;
-        wheel.userData.spinAxis = "x";
-        replacement.add(wheel);
-        wheels.push(wheel);
-    });
-    mesh.parent.add(replacement);
-    mesh.parent.remove(mesh);
-    geometry.dispose();
-    return wheels;
-}
-
-function collectAudiOriginalWheels(model) {
-    const wheelMeshes = [];
-    model.traverse((object) => {
-        if (!object.isMesh || !object.geometry)
-            return;
-        const materials = Array.isArray(object.material) ? object.material : [object.material];
-        const names = materials.map((material) => material?.name || "").join(" ").toLowerCase();
-        if (/tyre|tire|rim|disk/.test(names))
-            wheelMeshes.push(object);
-    });
-    return wheelMeshes.flatMap((mesh) => splitAudiWheelGeometry(mesh));
-}
-
 function loadVehicleAsset(vehicle, config) {
     vehicleLoader.load(config.url, (gltf) => {
         const model = gltf.scene;
         model.name = config.name;
         normalizeVehicleModel(model, config.length, config.paint, config.orientation, config);
-        if (config.animateWheels) {
-            const originalWheels = collectAudiOriginalWheels(model);
-            if (originalWheels.length >= 4)
-                vehicle.wheels = originalWheels;
-        }
+        // Das Audi-GLB fasst alle vier Reifen und teilweise weitere schwarze
+        // Fahrzeugteile in gemeinsamen Meshes zusammen. Eine nachträgliche
+        // geometrische Trennung erzeugt deshalb riesige schwarze Dreiecke und
+        // unsichtbare Räder. Das Originalmodell bleibt vollständig intakt.
         vehicle.slot.add(model);
 
         const shadowMaterial = new THREE.MeshBasicMaterial({
@@ -2655,8 +2578,7 @@ function loadDetailedVehicles(vehicles) {
         length: 3.95,
         width: 1.84,
         paint: 0x008dc8,
-        blackOut: true,
-        animateWheels: true
+        blackOut: true
     });
     loadVehicleAsset(vehicles.yeti, {
         name: "Skoda Yeti",
@@ -3388,7 +3310,7 @@ function setHorseAnimation(horseState, name, fadeSeconds = 0.30) {
 }
 
 function loadAnimatedHorse(horseState) {
-    vehicleLoader.load("/static/models/horse-animated.glb?v=79", (gltf) => {
+    vehicleLoader.load("/static/models/horse-animated.glb?v=80", (gltf) => {
         const model = gltf.scene;
         model.name = "Kastanienbraunes Gartenpferd";
         // Das CC0-Modell blickt in seiner Quelldatei nach -Z. In der Szene
@@ -3912,9 +3834,11 @@ function tuneCamelMaterials(model, camelIndex) {
 }
 
 function loadDetailedCamels() {
-    vehicleLoader.load("/static/models/bactrian-camel.glb?v=79", (gltf) => {
+    vehicleLoader.load("/static/models/bactrian-camel.glb?v=80", (gltf) => {
         const source = gltf.scene;
-        source.rotation.y = Math.PI;
+        // Das Sketchfab-Modell blickt bereits entlang der positiven lokalen
+        // Z-Achse. Die frühere 180-Grad-Drehung ließ es rückwärts laufen.
+        source.rotation.y = 0;
         source.updateMatrixWorld(true);
         let bounds = new THREE.Box3().setFromObject(source);
         const size = bounds.getSize(new THREE.Vector3());
