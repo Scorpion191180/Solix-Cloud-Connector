@@ -1,7 +1,8 @@
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, patch
 
-from weather.client import celestial_snapshot
+from weather.client import WeatherClient, celestial_snapshot
 
 
 class CelestialSnapshotTests(unittest.TestCase):
@@ -46,6 +47,42 @@ class CelestialSnapshotTests(unittest.TestCase):
         self.assertIn("phase_name", moon)
         self.assertLess(abs(moon["azimuth_rate_deg_per_minute"]), 2)
         self.assertLess(abs(moon["elevation_rate_deg_per_minute"]), 2)
+
+
+class WeatherFallbackTests(unittest.IsolatedAsyncioTestCase):
+    async def test_httpx_fallback_returns_weather_if_aiohttp_fails(self):
+        client = WeatherClient()
+        client.latitude = 48.46991
+        client.longitude = 8.44543
+
+        class Response:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {
+                    "timezone": "Europe/Berlin",
+                    "current": {"temperature_2m": 21.4},
+                }
+
+        httpx_client = AsyncMock()
+        httpx_client.get.return_value = Response()
+        with (
+            patch.object(
+                client,
+                "_ensure_session",
+                AsyncMock(side_effect=RuntimeError("aiohttp unavailable")),
+            ),
+            patch.object(
+                client,
+                "_ensure_httpx_client",
+                AsyncMock(return_value=httpx_client),
+            ),
+        ):
+            data = await client._fetch_data()
+
+        self.assertEqual(data["current"]["temperature_2m"], 21.4)
+        httpx_client.get.assert_awaited_once()
 
 
 if __name__ == "__main__":

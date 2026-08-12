@@ -24,6 +24,8 @@ services:
         value: "120"
       - key: SOLIX_CACHE_SECONDS
         value: "30"
+      - key: SOLIX_TELEMETRY_INTERVAL_SECONDS
+        value: "60"
       - key: SOLIX_SOLARBANK_PN
         value: "AE103"
       - key: SOLIX_BATTERY_CAPACITY_WH

@@ -323,7 +323,7 @@ header p{
     background:linear-gradient(135deg,rgba(7,15,27,.70),rgba(15,23,42,.52));
     box-shadow:0 5px 15px rgba(2,6,23,.38);
     color:#f8fafc;
-    pointer-events:none;
+    pointer-events:auto;
     transform:translate(-50%,-100%) scale(var(--resource-label-scale,1));
     transform-origin:50% 100%;
     transition:opacity .2s ease,filter .2s ease;
@@ -361,6 +361,45 @@ header p{
 .animal-resource-label.empty i b{background:#ef4444;}
 .animal-resource-label.behind{opacity:.55;}
 .animal-resource-label.outside{opacity:0;}
+
+.animal-resource-label button,
+.animal-clean-label button{
+    min-height:21px;
+    margin-top:2px;
+    padding:3px 7px;
+    border:1px solid rgba(94,234,212,.68);
+    border-radius:999px;
+    background:rgba(13,148,136,.30);
+    color:#f0fdfa;
+    font:900 7px/1 system-ui,sans-serif;
+    letter-spacing:.07em;
+    text-transform:uppercase;
+    cursor:pointer;
+    box-shadow:0 0 9px rgba(45,212,191,.26);
+}
+
+.animal-clean-label{
+    position:absolute;
+    z-index:6;
+    display:grid;
+    min-width:118px;
+    gap:3px;
+    padding:7px 9px;
+    border:1px solid rgba(251,191,36,.46);
+    border-radius:11px;
+    background:linear-gradient(135deg,rgba(7,15,27,.74),rgba(51,33,11,.56));
+    color:#f8fafc;
+    text-align:center;
+    transform:translate(-50%,-100%) scale(var(--resource-label-scale,1));
+    transform-origin:50% 100%;
+    box-shadow:0 5px 15px rgba(2,6,23,.38);
+    transition:opacity .2s ease;
+}
+
+.animal-clean-label span{font-size:7px;font-weight:950;letter-spacing:.07em;}
+.animal-clean-label strong{font-size:10px;}
+.animal-clean-label.behind{opacity:.58;}
+.animal-clean-label.outside{opacity:0;pointer-events:none;}
 
 .house-scene-label::after{
     content:"";
@@ -615,6 +654,22 @@ header p{
 .battery-use-segment.discharging{stroke:#fb7185;}
 .temperature-chart .line{stroke:#fb923c;}
 .temperature-chart .point{stroke:#fb923c;fill:#ffedd5;}
+.chart-extreme{
+    stroke-width:1.2;
+    vector-effect:non-scaling-stroke;
+}
+.chart-extreme.low{fill:#60a5fa;stroke:#dbeafe;}
+.chart-extreme.high{fill:#fbbf24;stroke:#fef3c7;}
+.chart-extreme-value{
+    font:700 4.4px/1 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    paint-order:stroke fill;
+    stroke:rgba(7,15,27,.94);
+    stroke-width:1.45px;
+    stroke-linejoin:round;
+    vector-effect:non-scaling-stroke;
+}
+.chart-extreme-value.low{fill:#bfdbfe;}
+.chart-extreme-value.high{fill:#fde68a;}
 .charging-session-list{display:grid;gap:3px;margin-top:4px;padding-top:4px;border-top:1px solid rgba(226,232,240,.14);}
 .battery-use-point{
     fill:#fff;

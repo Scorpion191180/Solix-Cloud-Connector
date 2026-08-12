@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
+from animal.state import AnimalStateStore
 from audi.client import AudiClient
 from automation.controller import ChargingAutomation
 from solix.client import SolixClient
@@ -17,6 +18,7 @@ client = SolixClient()
 audi_client = AudiClient()
 charging_automation = ChargingAutomation(client, audi_client)
 weather_client = WeatherClient()
+animal_state = AnimalStateStore()
 
 
 class ManualSmartPlugCommand(BaseModel):
@@ -26,6 +28,16 @@ class ManualSmartPlugCommand(BaseModel):
 class AutomationSettingsUpdate(BaseModel):
     on_threshold_percent: int = Field(ge=20, le=90)
     off_threshold_percent: int = Field(ge=0, le=89)
+
+
+class AnimalActionCommand(BaseModel):
+    action: str
+
+
+class AnimalDroppingCommand(BaseModel):
+    kind: str
+    x: float = Field(ge=-50, le=50)
+    z: float = Field(ge=-50, le=50)
 
 
 def _manual_control_configured() -> bool:
@@ -50,6 +62,7 @@ def _authorize_manual_control(provided_token: str | None) -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     await audi_client.start()
+    await client.start_telemetry()
     await charging_automation.start()
     yield
     await charging_automation.stop()
@@ -109,6 +122,27 @@ async def audi():
 async def weather():
     """Return cached live weather for the configured house coordinates."""
     return await weather_client.get_live()
+
+
+@app.get("/api/animals")
+async def animals():
+    """Return the shared care state used by every browser and device."""
+    return animal_state.get()
+
+
+@app.post("/api/animals/action")
+async def animal_action(command: AnimalActionCommand):
+    """Refill food/water or clean the shared virtual property."""
+    try:
+        return animal_state.action(command.action)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/animals/droppings")
+async def animal_dropping(command: AnimalDroppingCommand):
+    """Add one simulated dropping to the shared property state."""
+    return animal_state.add_dropping(command.kind, command.x, command.z)
 
 
 @app.get("/api/automation")

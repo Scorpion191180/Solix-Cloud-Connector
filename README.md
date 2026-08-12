@@ -85,9 +85,12 @@ AUDI_HOME_LONGITUDE=8.123456
 AUDI_HOME_RADIUS_METERS=120
 AUDI_POSITION_INTERVAL_SECONDS=120
 SOLIX_CACHE_SECONDS=30
+SOLIX_TELEMETRY_INTERVAL_SECONDS=60
 # Optional mit persistentem Render-Datenträger, damit Tageskurven auch
 # Deploys und Instanzwechsel überstehen:
 SOLIX_HISTORY_FILE=/var/data/solix-telemetry.json
+# Optional auf demselben Datenträger für Heu, Wasser und Hinterlassenschaften:
+ANIMAL_STATE_FILE=/var/data/solix-animal-state.json
 SOLIX_SOLARBANK_PN=AE103
 SOLIX_BATTERY_CAPACITY_WH=10400
 AUTOMATION_ENABLED=true
@@ -110,10 +113,17 @@ SOLIX_SOLARBANK_SN=... # nur nötig, wenn mehrere Solarbanken dasselbe Modell ha
 
 Ohne `SOLIX_HISTORY_FILE` legt der Dienst die laufenden Tageswerte
 kontobezogen unter `/tmp` ab. Dadurch beginnen die Diagramme beim späteren
-Öffnen des Dashboards nicht erst im Browser, sondern enthalten die bereits von
-der Hintergrundautomatik erfassten Messpunkte. Für den Erhalt über Render-
+Öffnen des Dashboards nicht erst im Browser, sondern enthalten die bereits vom
+eigenständigen Hintergrundrekorder erfassten Messpunkte. Der Rekorder läuft
+auch dann, wenn kein Browser geöffnet und die Ladeautomatik abgeschaltet ist;
+das Intervall wird mit `SOLIX_TELEMETRY_INTERVAL_SECONDS` festgelegt. Für den
+Erhalt über Render-
 Deploys oder einen vollständigen Instanzwechsel hinweg wird ein persistenter
 Datenträger (zum Beispiel unter `/var/data`) benötigt.
+
+Heu, Wasser und Hinterlassenschaften werden serverseitig geteilt, sodass alle
+Browser denselben Stand sehen. `ANIMAL_STATE_FILE` speichert diesen Zustand
+optional ebenfalls auf dem persistenten Render-Datenträger.
 
 Sind mehrere Solix-Systeme im Konto, wählt `SOLIX_SOLARBANK_PN` das Modell für
 Dashboard und Ladeautomatik eindeutig aus. Für die vorhandene Solarbank 4 ist

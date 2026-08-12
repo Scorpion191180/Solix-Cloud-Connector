@@ -12,6 +12,7 @@ from typing import Any
 
 import aiohttp
 import certifi
+import httpx
 
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
@@ -240,6 +241,7 @@ class WeatherClient:
         self._last_payload: dict[str, Any] | None = None
         self._lock = asyncio.Lock()
         self._session: aiohttp.ClientSession | None = None
+        self._httpx_client: httpx.AsyncClient | None = None
 
     def _with_celestial(self, payload: dict[str, Any]) -> dict[str, Any]:
         decorated = dict(payload)
@@ -260,6 +262,43 @@ class WeatherClient:
             )
         return self._session
 
+    async def _ensure_httpx_client(self) -> httpx.AsyncClient:
+        if self._httpx_client is None or self._httpx_client.is_closed:
+            self._httpx_client = httpx.AsyncClient(
+                verify=certifi.where(),
+                timeout=12,
+                follow_redirects=True,
+            )
+        return self._httpx_client
+
+    @property
+    def _request_params(self) -> dict[str, Any]:
+        return {
+            "latitude": self.latitude,
+            "longitude": self.longitude,
+            "current": (
+                "temperature_2m,apparent_temperature,is_day,"
+                "precipitation,rain,snowfall,weather_code,"
+                "cloud_cover,wind_speed_10m,wind_direction_10m"
+            ),
+            "daily": "sunrise,sunset",
+            "forecast_days": 1,
+            "timezone": self.timezone,
+        }
+
+    async def _fetch_data(self) -> dict[str, Any]:
+        """Use aiohttp first and transparently fall back to httpx."""
+        try:
+            session = await self._ensure_session()
+            async with session.get(OPEN_METEO_URL, params=self._request_params) as response:
+                response.raise_for_status()
+                return await response.json()
+        except Exception:
+            client = await self._ensure_httpx_client()
+            response = await client.get(OPEN_METEO_URL, params=self._request_params)
+            response.raise_for_status()
+            return response.json()
+
     async def get_live(self) -> dict[str, Any]:
         async with self._lock:
             if self.latitude is None or self.longitude is None:
@@ -278,25 +317,7 @@ class WeatherClient:
                 return self._with_celestial(self._last_payload)
 
             try:
-                session = await self._ensure_session()
-                async with session.get(
-                    OPEN_METEO_URL,
-                    params={
-                        "latitude": self.latitude,
-                        "longitude": self.longitude,
-                        "current": (
-                            "temperature_2m,apparent_temperature,is_day,"
-                            "precipitation,rain,snowfall,weather_code,"
-                            "cloud_cover,wind_speed_10m"
-                            ",wind_direction_10m"
-                        ),
-                        "daily": "sunrise,sunset",
-                        "forecast_days": 1,
-                        "timezone": self.timezone,
-                    },
-                ) as response:
-                    response.raise_for_status()
-                    data = await response.json()
+                data = await self._fetch_data()
                 current = data.get("current") or {}
                 daily = data.get("daily") or {}
                 payload = {
@@ -344,3 +365,6 @@ class WeatherClient:
         if self._session is not None and not self._session.closed:
             await self._session.close()
         self._session = None
+        if self._httpx_client is not None and not self._httpx_client.is_closed:
+            await self._httpx_client.aclose()
+        self._httpx_client = None

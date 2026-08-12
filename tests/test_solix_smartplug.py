@@ -1,3 +1,4 @@
+import asyncio
 import os
 import tempfile
 import time
@@ -641,6 +642,51 @@ class SolixSmartPlugTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(restored._pv_history[-1]["watts"], 480)
             self.assertEqual(restored._pv_history[-1]["strings"], [120, 120, 120, 120])
             self.assertEqual(restored._secondary_history[-1]["battery_percent"], 61)
+
+    def test_secondary_history_keeps_previous_day_inside_rolling_24_hours(self):
+        with tempfile.TemporaryDirectory() as directory:
+            history_file = os.path.join(directory, "solix-history.json")
+            environment = {
+                "ANKER_EMAIL": "rolling@example.invalid",
+                "SOLIX_HISTORY_FILE": history_file,
+            }
+            now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+            with patch.dict(os.environ, environment):
+                first = SolixClient()
+                first._record_pv_telemetry(0, now, [0, 0, 0, 0])
+                first._record_secondary_telemetry(
+                    pv_power_w=0,
+                    battery_percent=34,
+                    battery_charge_power=0,
+                    battery_discharge_power=160,
+                    output_power=160,
+                    observed_at=now - timedelta(hours=23),
+                )
+                first._record_secondary_telemetry(
+                    pv_power_w=210,
+                    battery_percent=57,
+                    battery_charge_power=110,
+                    battery_discharge_power=0,
+                    output_power=100,
+                    observed_at=now,
+                )
+                first._save_telemetry_history(force=True)
+                restored = SolixClient()
+
+            self.assertEqual(len(restored._secondary_history), 2)
+            self.assertEqual(restored._secondary_history[0]["battery_percent"], 34)
+            self.assertEqual(restored._secondary_history[-1]["battery_percent"], 57)
+
+    async def test_background_telemetry_starts_without_browser_request(self):
+        client = SolixClient()
+        with patch.object(client, "get_live", AsyncMock(return_value={})) as get_live:
+            await client.start_telemetry()
+            await asyncio.sleep(0)
+            self.assertIsNotNone(client._telemetry_task)
+            get_live.assert_awaited()
+            await client.close()
+
+        self.assertIsNone(client._telemetry_task)
 
 
 if __name__ == "__main__":

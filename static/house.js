@@ -21,9 +21,6 @@ const menuToggle = document.getElementById("houseMenuToggle");
 const menuPanel = document.getElementById("houseMenuPanel");
 const menuClose = document.getElementById("houseMenuClose");
 const menuCollapse = document.getElementById("houseMenuCollapse");
-const menuCleanHorse = document.getElementById("houseCleanHorse");
-const menuFeedAnimals = document.getElementById("houseFeedAnimals");
-const menuWaterAnimals = document.getElementById("houseWaterAnimals");
 const menuCleanStatus = document.getElementById("houseCleanStatus");
 const menuCareStatus = document.getElementById("houseCareStatus");
 const menuPvToday = document.getElementById("menuPvToday");
@@ -165,8 +162,8 @@ const grassCells = [];
 const grassBladeFields = [];
 const animalResourceVisuals = [];
 const animalResourceLabelAnchors = {
-    hay: new THREE.Vector3(-10.20, 1.54, -2.26),
-    water: new THREE.Vector3(-12.80, 1.22, -3.92)
+    hay: new THREE.Vector3(-11.30, 1.54, -2.26),
+    water: new THREE.Vector3(-12.28, 1.22, -3.92)
 };
 const animalResourceLabelElements = {};
 [
@@ -176,17 +173,25 @@ const animalResourceLabelElements = {};
     const element = document.createElement("div");
     element.className = "animal-resource-label";
     element.dataset.resource = id;
+    const action = id === "hay" ? "refill_hay" : "refill_water";
     element.innerHTML = `<span>${icon} ${label}</span><strong>100 %</strong>` +
-        '<i><b style="width:100%"></b></i>';
+        '<i><b style="width:100%"></b></i>' +
+        `<button type="button" data-animal-action="${action}">Auffüllen</button>`;
     stage.appendChild(element);
     animalResourceLabelElements[id] = element;
 });
+const animalCleanLabel = document.createElement("div");
+animalCleanLabel.className = "animal-clean-label outside";
+animalCleanLabel.innerHTML = '<span>🧹 HINTERLASSENSCHAFTEN</span>' +
+    '<strong>Grundstück sauber</strong>' +
+    '<button type="button" data-animal-action="clean">Reinigen</button>';
+stage.appendChild(animalCleanLabel);
 const houseWindowLights = [];
 let streetLampLight = null;
 let streetLampBulb = null;
 
-function loadAnimalResources() {
-    const defaults = {
+function defaultAnimalResources() {
+    return {
         hayHorse: 100,
         hayCamels: 100,
         waterHorse: 100,
@@ -196,37 +201,77 @@ function loadAnimalResources() {
         grassFertility: [],
         updatedAt: Date.now()
     };
-    try {
-        const saved = JSON.parse(localStorage.getItem("solix-animal-resources-v1") || "null");
-        if (!saved || typeof saved !== "object")
-            return defaults;
-        const resources = { ...defaults, ...saved };
-        // Auch bei geschlossener Seite wird weiter verbraucht. Bei normalem
-        // Wetter reichen volle Vorräte dadurch ungefähr einen Tag.
-        const elapsedDays = THREE.MathUtils.clamp(
-            (Date.now() - (Number(saved.updatedAt) || Date.now())) / 86400000,
-            0,
-            7
-        );
-        const offlineUse = elapsedDays * 88;
-        ["hayHorse", "hayCamels", "waterHorse", "waterCamels"].forEach((key) => {
-            resources[key] = Math.max(0, (Number(resources[key]) || 0) - offlineUse);
-        });
-        resources.droppings = Array.isArray(resources.droppings) ?
-            resources.droppings.slice(-360) : [];
-        resources.updatedAt = Date.now();
-        return resources;
-    }
-    catch (_error) {
-        return defaults;
-    }
 }
 
-const animalResources = loadAnimalResources();
+const animalResources = defaultAnimalResources();
+let animalStateReady = false;
+let animalSyncBusy = false;
+let lastAnimalRevision = 0;
 let lastEcologyUpdate = performance.now();
 let lastEcologySave = performance.now();
 let lastGrassVisualUpdate = performance.now();
 let lastAnimalResourceVisualUpdate = performance.now();
+
+function applySharedAnimalState(shared, restoreDroppings = false) {
+    if (!shared || shared.available !== true)
+        return;
+    animalResources.hayHorse = numberValue(shared.hay_horse) ?? animalResources.hayHorse;
+    animalResources.hayCamels = numberValue(shared.hay_camels) ?? animalResources.hayCamels;
+    animalResources.waterHorse = numberValue(shared.water_horse) ?? animalResources.waterHorse;
+    animalResources.waterCamels = numberValue(shared.water_camels) ?? animalResources.waterCamels;
+    animalResources.droppings = Array.isArray(shared.droppings) ? shared.droppings : [];
+    const revision = numberValue(shared.revision) ?? lastAnimalRevision;
+    if (restoreDroppings || revision !== lastAnimalRevision)
+        restoreAnimalDroppings(true);
+    lastAnimalRevision = revision;
+    animalStateReady = true;
+    updateAnimalResourceVisuals();
+}
+
+async function syncAnimalState() {
+    if (animalSyncBusy)
+        return;
+    animalSyncBusy = true;
+    try {
+        const response = await fetch("/api/animals", { cache: "no-store" });
+        if (!response.ok)
+            throw new Error("Tierzustand konnte nicht geladen werden");
+        applySharedAnimalState(await response.json(), !animalStateReady);
+    }
+    catch (_error) {
+        menuCleanStatus.textContent = "Gemeinsamer Tierzustand wird erneut verbunden …";
+    }
+    finally {
+        animalSyncBusy = false;
+    }
+}
+
+async function runAnimalAction(action) {
+    try {
+        const response = await fetch("/api/animals/action", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action })
+        });
+        if (!response.ok)
+            throw new Error("Aktion konnte nicht gespeichert werden");
+        applySharedAnimalState(await response.json(), true);
+        menuCleanStatus.textContent = action === "clean" ? "Grundstück ist sauber." :
+            action === "refill_hay" ? "Beide Heuraufen sind wieder voll." :
+                "Beide Wassertränken sind wieder voll.";
+    }
+    catch (error) {
+        menuCleanStatus.textContent = error.message;
+    }
+}
+
+stage.addEventListener("click", (event) => {
+    const actionButton = event.target.closest("[data-animal-action]");
+    if (!actionButton)
+        return;
+    event.stopPropagation();
+    runAnimalAction(actionButton.dataset.animalAction);
+});
 
 function numberValue(value) {
     if (value == null || typeof value === "boolean")
@@ -2384,56 +2429,6 @@ function createCar(color, model = "generic") {
     return car;
 }
 
-function createLicensePlateTexture(text) {
-    const plateCanvas = document.createElement("canvas");
-    plateCanvas.width = 640;
-    plateCanvas.height = 144;
-    const context = plateCanvas.getContext("2d");
-    context.fillStyle = "#f8fafc";
-    context.fillRect(0, 0, plateCanvas.width, plateCanvas.height);
-    context.fillStyle = "#1559a6";
-    context.fillRect(0, 0, 58, plateCanvas.height);
-    context.fillStyle = "#facc15";
-    for (let index = 0; index < 6; index += 1) {
-        const angle = index / 6 * Math.PI * 2;
-        context.beginPath();
-        context.arc(29 + Math.cos(angle) * 13, 55 + Math.sin(angle) * 13, 2.7, 0, Math.PI * 2);
-        context.fill();
-    }
-    context.fillStyle = "#101820";
-    context.font = "900 70px Arial, sans-serif";
-    context.textAlign = "center";
-    context.textBaseline = "middle";
-    context.fillText(text, 350, 74);
-    context.strokeStyle = "#111827";
-    context.lineWidth = 8;
-    context.strokeRect(4, 4, 632, 136);
-    const texture = new THREE.CanvasTexture(plateCanvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-    return texture;
-}
-
-function addVehiclePlates(slot, text, placement) {
-    const {
-        frontDepth,
-        rearDepth = frontDepth,
-        frontY = 0.52,
-        rearY = frontY
-    } = placement;
-    const material = new THREE.MeshStandardMaterial({
-        map: createLicensePlateTexture(text),
-        roughness: 0.48,
-        side: THREE.DoubleSide
-    });
-    const front = addMesh(slot, new THREE.PlaneGeometry(0.70, 0.16), material,
-        0, frontY, frontDepth, { castShadow: false });
-    front.renderOrder = 6;
-    const rear = addMesh(slot, new THREE.PlaneGeometry(0.70, 0.16), material,
-        0, rearY, -rearDepth, { rotation: [0, Math.PI, 0], castShadow: false });
-    rear.renderOrder = 6;
-}
-
 function createAudiWheelSpinners(slot) {
     const tire = new THREE.MeshStandardMaterial({ color: 0x050608, roughness: 0.72 });
     const rim = new THREE.MeshStandardMaterial({ color: 0x0a0c0f, metalness: 0.88, roughness: 0.22 });
@@ -2496,12 +2491,6 @@ function createVehicles() {
     audiSlot.add(audiFallback);
     const audiBattery = createAudiBatteryPack(audiSlot);
     const audiBrakeLights = createAudiBrakeLights(audiSlot);
-    // Die Detailmodelle enden an der Heckklappe etwas früher als ihre
-    // prozeduralen Platzhalter. Getrennte Vorder-/Heckpositionen verhindern,
-    // dass das Kennzeichen sichtbar vor dem vorgesehenen Ausschnitt schwebt.
-    addVehiclePlates(audiSlot, "FDS-LD-900", {
-        frontDepth: 1.968, rearDepth: 1.952, frontY: 0.56, rearY: 0.96
-    });
 
     // IMG_7378: schwarzer Skoda Yeti mittig, kleiner schwarzer VW Fox ganz rechts.
     const yetiSlot = new THREE.Group();
@@ -2510,9 +2499,6 @@ function createVehicles() {
     const yetiFallback = createCar(0x1b2329, "skoda-yeti");
     yetiFallback.scale.set(1.04, 1.16, 1.08);
     yetiSlot.add(yetiFallback);
-    addVehiclePlates(yetiSlot, "FDS-SL-600", {
-        frontDepth: 1.855, rearDepth: 1.855, frontY: 0.55, rearY: 0.78
-    });
 
     const foxSlot = new THREE.Group();
     foxSlot.position.set(2.10, 0.02, 8.45);
@@ -2523,9 +2509,6 @@ function createVehicles() {
     const foxFallback = createCar(0x202327, "vw-fox");
     foxFallback.scale.set(0.82, 0.88, 0.80);
     foxSlot.add(foxFallback);
-    addVehiclePlates(foxSlot, "FDS-SR-700", {
-        frontDepth: 1.685, rearDepth: 1.685, frontY: 0.52, rearY: 0.76
-    });
 
     // Vor dem linken Tor steht der schwarze Karoq ebenfalls mit seiner Front
     // zum Gebäude. Bis das Detailmodell geladen ist, bleibt ein gleich großer
@@ -2539,9 +2522,6 @@ function createVehicles() {
     const karoqFallback = createCar(0x14191d, "skoda-yeti");
     karoqFallback.scale.set(1.12, 1.14, 1.14);
     karoqSlot.add(karoqFallback);
-    addVehiclePlates(karoqSlot, "FDS-KS-800", {
-        frontDepth: 1.925, rearDepth: 1.915, frontY: 0.56, rearY: 1.04
-    });
 
     return {
         audi: {
@@ -2777,12 +2757,14 @@ const PROPERTY_BOUNDARY = [
 // zuvor verwendete kleine Rechteckfläche hinaus. Die unregelmäßige Kontur
 // hält die Tiere dennoch auf der Wiese und von Straße und Haus fern.
 const CAMEL_PASTURE_BOUNDARY = [
-    [-11.48, -13.45],
-    [-18.70, -14.20],
-    [-20.30, -8.10],
-    [-20.05, 11.25],
+    [7.02, -19.20],
+    [7.02, -15.55],
+    [-11.48, -10.85],
+    [-11.42, 4.30],
     [-13.10, 13.10],
-    [-11.42, 4.30]
+    [-20.05, 11.25],
+    [-20.30, -8.10],
+    [-18.70, -16.20]
 ];
 
 function pointInPolygon(x, z, polygon) {
@@ -3650,7 +3632,7 @@ function createHorse() {
     return horseState;
 }
 
-function rememberDropping(kind, position) {
+async function rememberDropping(kind, position) {
     animalResources.droppings.push({
         kind,
         x: Number(position.x.toFixed(3)),
@@ -3658,7 +3640,19 @@ function rememberDropping(kind, position) {
         createdAt: Date.now()
     });
     animalResources.droppings = animalResources.droppings.slice(-360);
-    saveAnimalResources();
+    try {
+        const response = await fetch("/api/animals/droppings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ kind, x: position.x, z: position.z })
+        });
+        if (response.ok)
+            applySharedAnimalState(await response.json());
+    }
+    catch (_error) {
+        // Beim nächsten regelmäßigen Abgleich wird der Serverzustand erneut
+        // geladen; die laufende Animation bleibt währenddessen sichtbar.
+    }
 }
 
 function addHorseDropping(position = horse?.group?.position, persist = true) {
@@ -3702,7 +3696,18 @@ function addAnimalDropping(position, kind = "Kamel", persist = true) {
         " Hinterlassenschaften auf dem Grundstück.";
 }
 
-function restoreAnimalDroppings() {
+function restoreAnimalDroppings(replaceExisting = false) {
+    if (replaceExisting) {
+        [...horseDroppings.splice(0), ...animalDroppings.splice(0)].forEach((dropping) => {
+            world.remove(dropping);
+            dropping.traverse((object) => {
+                if (object.geometry)
+                    object.geometry.dispose();
+                if (object.material)
+                    object.material.dispose();
+            });
+        });
+    }
     animalResources.droppings.forEach((item) => {
         const position = new THREE.Vector3(numberValue(item.x) ?? 0, 0, numberValue(item.z) ?? 0);
         if (item.kind === "Pferd")
@@ -3713,6 +3718,9 @@ function restoreAnimalDroppings() {
     const count = horseDroppings.length + animalDroppings.length;
     menuCleanStatus.textContent = count ?
         `${count} Hinterlassenschaften auf dem Grundstück.` : "Grundstück ist sauber.";
+    animalCleanLabel.querySelector("strong").textContent = count ?
+        `${count} zu reinigen` : "Grundstück sauber";
+    animalCleanLabel.classList.toggle("outside", count === 0);
 }
 
 function addUrinePatch(position, pasture) {
@@ -3769,7 +3777,7 @@ function cleanHorseDroppings() {
         patch.mesh.material.dispose();
     });
     animalResources.droppings = [];
-    saveAnimalResources();
+    animalCleanLabel.classList.add("outside");
     menuCleanStatus.textContent = "Grundstück ist sauber.";
 }
 
@@ -3845,7 +3853,7 @@ function camelCanStandAt(x, z) {
 
 function chooseCamelTarget(camel) {
     const random = camel.random;
-    const stationOffset = ((camel.index ?? 2) - 2) * 0.42;
+    const stationOffset = ((camel.index ?? 2) - 2) * 0.68;
     const careChoice = random();
     const waterUrgency = animalResources.waterCamels < 28 ? 0.58 : 0.27;
     const hayUrgency = animalResources.hayCamels < 28 ? 0.86 : 0.55;
@@ -3859,13 +3867,13 @@ function chooseCamelTarget(camel) {
             intent: "meeting"
         };
     }
-    // Ein großer Teil der freien Wege führt ausdrücklich in die Weide hinter
-    // Pool und Zaun. Dadurch nutzt die Herde nicht nur die kleine Fläche bei
-    // Tränke und Heuraufe, sondern die gesamte sichtbare Außenweide.
-    if (random() < 0.42) {
+    // Ein großer Teil der freien Wege führt bis hinter die Pergola an die
+    // Straßenseite. Dadurch verteilt sich die Herde über die komplette Weide
+    // und steht nicht gesammelt an Tränke und Heuraufe.
+    if (random() < 0.56) {
         for (let attempt = 0; attempt < 60; attempt += 1) {
-            const x = -19.70 + random() * 7.90;
-            const z = -13.55 + random() * 9.30;
+            const x = -19.70 + random() * 26.35;
+            const z = -18.75 + random() * 7.70;
             if (camelCanStandAt(x, z))
                 return {
                     point: new THREE.Vector3(x, 0, z),
@@ -3874,8 +3882,8 @@ function chooseCamelTarget(camel) {
         }
     }
     for (let attempt = 0; attempt < 90; attempt += 1) {
-        const x = -20.00 + random() * 8.35;
-        const z = -13.75 + random() * 26.45;
+        const x = -20.00 + random() * 26.75;
+        const z = -18.85 + random() * 31.55;
         if (camelCanStandAt(x, z)) {
             return {
                 point: new THREE.Vector3(x, 0, z),
@@ -3967,7 +3975,8 @@ function createBactrianCamel(index) {
         mixer: null,
         idleAction: null,
         walkRig: [],
-        gaitBlend: 0
+        gaitBlend: 0,
+        detailedTailRig: []
     };
 }
 
@@ -4050,6 +4059,17 @@ function createCamelWalkRig(model) {
     }).filter(Boolean);
 }
 
+function createCamelTailRig(model) {
+    // Das geladene Modell besitzt eine siebenknochige Schwanzkette. Wir
+    // speichern die Grundpose, damit jedes Tier unabhängig und ohne Drift
+    // wedeln kann. Der prozedurale Platzhalter nutzt seinen eigenen Tail-Rig.
+    return ["Tail0_M_56", "Tail1_M_55", "Tail2_M_54", "Tail3_M_53",
+        "Tail4_M_52", "Tail5_M_51", "Tail6_M_50"].map((name, index) => {
+        const joint = model.getObjectByName(name);
+        return joint ? { joint, rest: joint.quaternion.clone(), index } : null;
+    }).filter(Boolean);
+}
+
 const camelGaitAxis = new THREE.Vector3(0, 0, 1);
 const camelGaitRotation = new THREE.Quaternion();
 
@@ -4091,6 +4111,30 @@ function animateDetailedCamelGait(camel, moving, running, delta) {
     camel.group.position.y = THREE.MathUtils.damp(camel.group.position.y, bob, 10, delta);
 }
 
+const camelTailAxis = new THREE.Vector3(0, 0, 1);
+const camelTailRotation = new THREE.Quaternion();
+
+function animateCamelTail(camel, seconds) {
+    // Unterschiedliche Phasen verhindern synchrones, mechanisches Wedeln.
+    // Beim Laufen ist der Ausschlag etwas kräftiger; im Stand sorgen zwei
+    // überlagerte Frequenzen für die typischen unregelmäßigen Fliegen-Schläge.
+    const moving = camel.mode === "walking" || camel.mode === "running";
+    const phase = seconds * (moving ? 2.65 : 1.55) + camel.index * 1.37;
+    const flyFlick = Math.pow(Math.max(0, Math.sin(seconds * 0.47 + camel.index * 2.11)), 12);
+    const swing = Math.sin(phase) * (moving ? 0.20 : 0.13) +
+        Math.sin(phase * 2.31 + camel.index) * 0.045 + flyFlick * 0.22;
+    if (!camel.modelRoot) {
+        camel.tail.rotation.z = swing;
+        return;
+    }
+    camel.detailedTailRig.forEach((segment) => {
+        const segmentSwing = swing * (0.42 + segment.index * 0.10) +
+            Math.sin(phase - segment.index * 0.34) * 0.025 * segment.index;
+        camelTailRotation.setFromAxisAngle(camelTailAxis, segmentSwing);
+        segment.joint.quaternion.copy(segment.rest).multiply(camelTailRotation);
+    });
+}
+
 function loadDetailedCamels() {
     vehicleLoader.load("/static/models/bactrian-camel.glb?v=82", (gltf) => {
         const source = gltf.scene;
@@ -4114,6 +4158,7 @@ function loadDetailedCamels() {
             camel.modelRoot = model;
             camel.fallback.visible = false;
             camel.walkRig = createCamelWalkRig(model);
+            camel.detailedTailRig = createCamelTailRig(model);
             camel.mixer = new THREE.AnimationMixer(model);
             const idleClip = gltf.animations.find((clip) => clip.name === "Bactrian_Camel_Idle") ||
                 gltf.animations[0];
@@ -4153,6 +4198,7 @@ function animateCamels(seconds, delta) {
             );
             camel.mixer.update(delta);
         }
+        animateCamelTail(camel, seconds);
         if (["grazing", "drinking", "feeding", "meeting", "idle"].includes(camel.mode)) {
             const eating = camel.mode === "grazing" || camel.mode === "drinking" || camel.mode === "feeding";
             if (!camel.modelRoot) {
@@ -4164,10 +4210,6 @@ function animateCamels(seconds, delta) {
             }
             if (camel.mode === "grazing")
                 grazeAt(camel.group.position.x, camel.group.position.z, true, delta * 0.12);
-            else if (camel.mode === "drinking")
-                animalResources.waterCamels = Math.max(0, animalResources.waterCamels - delta * 0.00005);
-            else if (camel.mode === "feeding")
-                animalResources.hayCamels = Math.max(0, animalResources.hayCamels - delta * 0.00005);
             if (seconds >= camel.modeUntil)
                 startCamelJourney(camel);
         }
@@ -4192,9 +4234,9 @@ function animateCamels(seconds, delta) {
                     const separationX = camel.group.position.x - other.group.position.x;
                     const separationZ = camel.group.position.z - other.group.position.z;
                     const separation = Math.hypot(separationX, separationZ);
-                    const personalSpace = 0.78 * (camel.group.scale.x + other.group.scale.x);
+                    const personalSpace = 1.12 * (camel.group.scale.x + other.group.scale.x);
                     if (separation > 0.01 && separation < personalSpace) {
-                        const strength = (personalSpace - separation) / personalSpace * 1.35;
+                        const strength = (personalSpace - separation) / personalSpace * 1.85;
                         directionX += separationX / separation * strength;
                         directionZ += separationZ / separation * strength;
                     }
@@ -4222,7 +4264,6 @@ function animateCamels(seconds, delta) {
                         leg.rotation.x = Math.sin(camel.travelled * 7.0 + leg.userData.offset) *
                             (camel.mode === "running" ? 0.48 : 0.28);
                     });
-                    camel.tail.rotation.z = Math.sin(seconds * 1.5 + camel.travelled) * 0.18;
                 }
                 else {
                     animateDetailedCamelGait(camel, true, camel.mode === "running", delta);
@@ -4241,11 +4282,16 @@ function animateCamels(seconds, delta) {
 }
 
 function saveAnimalResources() {
+    // Gras und Kräuter bleiben rein visuelle, gerätespezifische Details. Heu,
+    // Wasser und Hinterlassenschaften kommen dagegen ausschließlich vom
+    // gemeinsamen Serverzustand und werden nie mehr lokal gespeichert.
     animalResources.grassLevels = grassCells.map((cell) => Number(cell.level.toFixed(3)));
     animalResources.grassFertility = grassCells.map((cell) => Number(cell.fertility.toFixed(3)));
-    animalResources.updatedAt = Date.now();
     try {
-        localStorage.setItem("solix-animal-resources-v1", JSON.stringify(animalResources));
+        localStorage.setItem("solix-animal-ecology-v2", JSON.stringify({
+            grassLevels: animalResources.grassLevels,
+            grassFertility: animalResources.grassFertility
+        }));
     }
     catch (_error) {
         // Safari im privaten Modus kann lokalen Speicher sperren; die laufende
@@ -4262,15 +4308,9 @@ function updateAnimalEcology(time, delta) {
         .reduce((sum, cell) => sum + cell.level, 0) / Math.max(1, grassCells.filter((cell) => !cell.pasture).length);
     const pastureAverage = grassCells.filter((cell) => cell.pasture)
         .reduce((sum, cell) => sum + cell.level, 0) / Math.max(1, grassCells.filter((cell) => cell.pasture).length);
-    // Grundverbrauch plus sichtbare Trink-/Fressphasen ergeben zusammen etwa
-    // 90–100 % je Tag. Heiße Tage erhöhen nur den Wasseranteil.
-    const dailyBasePerSecond = 88 / 86400;
-    animalResources.waterHorse = Math.max(0, animalResources.waterHorse - elapsed * dailyBasePerSecond * heatFactor);
-    animalResources.waterCamels = Math.max(0, animalResources.waterCamels - elapsed * dailyBasePerSecond * heatFactor);
-    animalResources.hayHorse = Math.max(0, animalResources.hayHorse - elapsed * dailyBasePerSecond *
-        (1 + Math.max(0, 1.5 - gardenAverage) * 0.12));
-    animalResources.hayCamels = Math.max(0, animalResources.hayCamels - elapsed * dailyBasePerSecond *
-        (1 + Math.max(0, 1.5 - pastureAverage) * 0.12));
+    // Der gemeinsame Server berechnet den Tagesverbrauch genau einmal. Das
+    // verhindert, dass mehrere gleichzeitig geöffnete Browser die Vorräte
+    // mehrfach oder unterschiedlich schnell leeren.
     grassCells.forEach((cell) => {
         const rain = numberValue(state.data.weather?.rain_mm) ?? numberValue(state.data.weather?.precipitation_mm) ?? 0;
         const moisture = 1 + Math.min(1.2, rain * 0.18);
@@ -4288,9 +4328,10 @@ function updateAnimalEcology(time, delta) {
         updateAnimalResourceVisuals();
         lastAnimalResourceVisualUpdate = time;
     }
-    if (time - lastEcologySave > 12000) {
+    if (time - lastEcologySave > 15000) {
         updateAnimalResourceVisuals();
         saveAnimalResources();
+        syncAnimalState();
         lastEcologySave = time;
     }
 }
@@ -4364,9 +4405,9 @@ function horseStableSurfaceHeight(x, z) {
     if (Math.abs(z + 1.58) > 0.78 || x < -4.74 || x > -0.32)
         return 0;
     if (x <= -3.24)
-        return THREE.MathUtils.lerp(0.02, 0.22,
+        return THREE.MathUtils.lerp(0.02, 0.28,
             THREE.MathUtils.clamp((x + 4.74) / 1.50, 0, 1));
-    return 0.22;
+    return 0.28;
 }
 
 function animateHorse(seconds, delta) {
@@ -4397,10 +4438,6 @@ function animateHorse(seconds, delta) {
     else if (horse.mode === "drinking" || horse.mode === "feeding") {
         setHorseAnimation(horse, "Eating");
         horse.headRig.rotation.x = THREE.MathUtils.damp(horse.headRig.rotation.x, 0.94, 5, delta);
-        if (horse.mode === "drinking")
-            animalResources.waterHorse = Math.max(0, animalResources.waterHorse - delta * 0.0003);
-        else
-            animalResources.hayHorse = Math.max(0, animalResources.hayHorse - delta * 0.0003);
         if (seconds >= horse.modeUntil)
             startHorseJourney(horse, position, true);
     }
@@ -4533,7 +4570,11 @@ function animateHorse(seconds, delta) {
     const stableFloorY = horseStableSurfaceHeight(position.x, position.z);
     const fallbackStepLift = !horse.modelRoot && ["walking", "running"].includes(horse.mode) ?
         Math.abs(Math.sin(horse.travelled * 8.2)) * 0.025 : 0;
-    position.y = THREE.MathUtils.damp(position.y, stableFloorY + fallbackStepLift, 14, delta);
+    // Auf der Rampe und im Stall folgt der Hufpunkt der Bodenhöhe ohne träges
+    // Nachsinken. Außerhalb bleibt die kleine weiche Schrittbewegung erhalten.
+    const inStableRoute = stableFloorY > 0.001;
+    position.y = inStableRoute ? stableFloorY + fallbackStepLift :
+        THREE.MathUtils.damp(position.y, fallbackStepLift, 14, delta);
     if (seconds >= horse.nextDroppingAt) {
         addHorseDropping();
         horse.nextDroppingAt = seconds + 3000 + horse.random() * 1800;
@@ -6259,20 +6300,22 @@ function pvSparklineHtml(history, stringIndex = null) {
 }
 
 function secondaryBatteryUsageChartHtml(history) {
+    const now = Date.now();
     const points = Array.isArray(history) ? history.map((point) => ({
-        time: point?.time,
-        minute: pvMinutesIntoDay(point?.time),
+        time: new Date(point?.time).getTime(),
         percent: numberValue(point?.battery_percent),
         charge: numberValue(point?.charge_w) ?? 0,
         discharge: numberValue(point?.discharge_w) ?? 0
-    })).filter((point) => point.minute != null && point.percent != null)
-        .sort((left, right) => left.minute - right.minute) : [];
+    })).filter((point) => Number.isFinite(point.time) && point.percent != null &&
+        point.time >= now - 24 * 60 * 60 * 1000)
+        .sort((left, right) => left.time - right.time) : [];
     if (!points.length)
-        return '<span class="house-detail-row"><b>Akkunutzung heute</b><span>baut sich live auf</span></span>';
+        return '<span class="house-detail-row"><b>Akkukapazität 24 h</b><span>baut sich im Hintergrund auf</span></span>';
 
     const coordinates = points.map((point) => ({
         ...point,
-        x: THREE.MathUtils.clamp(point.minute / 1440 * 100, 0, 100),
+        x: THREE.MathUtils.clamp((point.time - (now - 24 * 60 * 60 * 1000)) /
+            (24 * 60 * 60 * 1000) * 100, 0, 100),
         y: 31 - THREE.MathUtils.clamp(point.percent, 0, 100) / 100 * 27
     }));
     const segments = coordinates.slice(1).map((point, index) => {
@@ -6285,18 +6328,42 @@ function secondaryBatteryUsageChartHtml(history) {
             '"></line>';
     }).join("");
     const last = coordinates.at(-1);
-    return '<span class="battery-use-title"><b>Akkunutzung heute</b>' +
+    const low = coordinates.reduce((result, point) => point.percent < result.percent ? point : result);
+    const high = coordinates.reduce((result, point) => point.percent > result.percent ? point : result);
+    const extrema = chartExtremeMarkers(low, high,
+        (point) => Math.round(point.percent) + ' %');
+    return '<span class="battery-use-title"><b>Akkukapazität · 24 h</b>' +
         '<span><i class="charging"></i>Laden <i class="discharging"></i>Entladen</span></span>' +
         '<svg class="house-sparkline battery-use-chart" viewBox="0 0 100 34" preserveAspectRatio="none" ' +
-        'aria-label="Ladezustand und Lade- sowie Entladephasen der Solarbank 3 von 00 bis 24 Uhr">' +
+        'aria-label="Ladezustand und Lade- sowie Entladephasen der Solarbank 3 in den letzten 24 Stunden">' +
         '<line class="grid" x1="25" y1="1" x2="25" y2="34"></line>' +
         '<line class="grid" x1="50" y1="1" x2="50" y2="34"></line>' +
         '<line class="grid" x1="75" y1="1" x2="75" y2="34"></line>' +
-        segments + '<circle class="battery-use-point" cx="' + last.x.toFixed(1) +
+        segments + extrema + '<circle class="battery-use-point" cx="' + last.x.toFixed(1) +
         '" cy="' + last.y.toFixed(1) + '" r="1.8"></circle></svg>' +
-        '<span class="house-sparkline-caption"><span>00:00</span><span>' +
-        Math.round(coordinates[0].percent) + ' % → ' + Math.round(last.percent) +
-        ' %</span><span>24:00</span></span>';
+        '<span class="house-sparkline-caption"><span>-24 h</span><span>Tief ' +
+        Math.round(low.percent) + ' % · Hoch ' + Math.round(high.percent) +
+        ' %</span><span>jetzt</span></span>';
+}
+
+function chartExtremeMarkers(low, high, formatter) {
+    const marker = (point, kind, label, placeBelow) => {
+        const x = THREE.MathUtils.clamp(point.x, 8, 92);
+        const nearTop = point.y < 7;
+        const nearBottom = point.y > 27;
+        let textY = placeBelow ? point.y + 5.2 : point.y - 3.1;
+        if (nearTop) textY = point.y + 5.2;
+        if (nearBottom) textY = point.y - 3.1;
+        return '<g class="chart-extreme-marker ' + kind + '">' +
+            '<circle class="chart-extreme ' + kind + '" cx="' + point.x.toFixed(1) +
+            '" cy="' + point.y.toFixed(1) + '" r="2.2"></circle>' +
+            '<text class="chart-extreme-value ' + kind + '" x="' + x.toFixed(1) +
+            '" y="' + THREE.MathUtils.clamp(textY, 4, 32).toFixed(1) +
+            '" text-anchor="middle">' + escapeHtml(label) + '</text></g>';
+    };
+    const lowMarker = marker(low, 'low', formatter(low), false);
+    if (high === low) return lowMarker;
+    return lowMarker + marker(high, 'high', formatter(high), true);
 }
 
 function temperatureChartHtml(history, label) {
@@ -6317,15 +6384,19 @@ function temperatureChartHtml(history, label) {
         value: point.value
     }));
     const last = coordinates.at(-1);
+    const low = coordinates.reduce((result, point) => point.value < result.value ? point : result);
+    const high = coordinates.reduce((result, point) => point.value > result.value ? point : result);
+    const extrema = chartExtremeMarkers(low, high,
+        (point) => point.value.toLocaleString('de-DE', {maximumFractionDigits: 1}) + ' °C');
     return '<span class="battery-use-title"><b>' + escapeHtml(label) + ' · 24 h</b><span>' +
         last.value.toLocaleString("de-DE", {maximumFractionDigits: 1}) + ' °C</span></span>' +
         '<svg class="house-sparkline temperature-chart" viewBox="0 0 100 34" preserveAspectRatio="none" ' +
         'aria-label="Batterietemperatur der letzten 24 Stunden"><polyline class="line" points="' +
         coordinates.map((point) => point.x.toFixed(1) + ',' + point.y.toFixed(1)).join(' ') +
-        '"></polyline><circle class="point" cx="' + last.x.toFixed(1) + '" cy="' +
+        '"></polyline>' + extrema + '<circle class="point" cx="' + last.x.toFixed(1) + '" cy="' +
         last.y.toFixed(1) + '" r="1.6"></circle></svg>' +
-        '<span class="house-sparkline-caption"><span>-24 h</span><span>' +
-        minimum.toLocaleString("de-DE", {maximumFractionDigits: 1}) + '–' +
+        '<span class="house-sparkline-caption"><span>-24 h</span><span>Tief ' +
+        minimum.toLocaleString("de-DE", {maximumFractionDigits: 1}) + ' °C · Hoch ' +
         maximum.toLocaleString("de-DE", {maximumFractionDigits: 1}) + ' °C</span><span>jetzt</span></span>';
 }
 
@@ -6351,12 +6422,17 @@ function audiBatteryChartHtml(history, sessions) {
                 '" x2="' + point.x.toFixed(1) + '" y2="' + point.y.toFixed(1) + '"></line>';
         }).join('');
         const last = coordinates.at(-1);
+        const low = coordinates.reduce((result, point) => point.percent < result.percent ? point : result);
+        const high = coordinates.reduce((result, point) => point.percent > result.percent ? point : result);
+        const extrema = chartExtremeMarkers(low, high,
+            (point) => Math.round(point.percent) + ' %');
         chart = '<span class="battery-use-title"><b>Audi-Akku · 24 h</b><span><i class="charging"></i>Laden</span></span>' +
             '<svg class="house-sparkline battery-use-chart" viewBox="0 0 100 34" preserveAspectRatio="none" ' +
-            'aria-label="Audi-Ladestand der letzten 24 Stunden">' + segments +
+            'aria-label="Audi-Ladestand der letzten 24 Stunden">' + segments + extrema +
             '<circle class="battery-use-point" cx="' + last.x.toFixed(1) + '" cy="' + last.y.toFixed(1) +
             '" r="1.8"></circle></svg><span class="house-sparkline-caption"><span>-24 h</span><span>' +
-            Math.round(coordinates[0].percent) + ' % → ' + Math.round(last.percent) + ' %</span><span>jetzt</span></span>';
+            'Tief ' + Math.round(low.percent) + ' % · Hoch ' + Math.round(high.percent) +
+            ' %</span><span>jetzt</span></span>';
     }
     const recent = Array.isArray(sessions) ? sessions.slice(-3).reverse() : [];
     const sessionRows = recent.length ? recent.map((session) => {
@@ -6428,9 +6504,6 @@ function componentData() {
     const primaryTemperature = numberValue(solix.battery_temperature_c);
     const primaryTemperatureHistory = Array.isArray(solix.battery_temperature_history) ?
         solix.battery_temperature_history : [];
-    const secondaryTemperature = numberValue(secondary.battery_temperature_c);
-    const secondaryTemperatureHistory = Array.isArray(secondary.battery_temperature_history) ?
-        secondary.battery_temperature_history : [];
     const audiBatteryHistory = Array.isArray(audi.battery_history) ? audi.battery_history : [];
     const audiChargingSessions = Array.isArray(audi.charging_sessions) ? audi.charging_sessions : [];
     const smartPlugVoltage = numberValue(smartPlug.voltage_v);
@@ -6518,10 +6591,8 @@ function componentData() {
                 ["Aktueller Eingang", formatPower(secondaryPv)],
                 ["Aktueller Verbrauch", formatPower(secondaryOutput)]
             ],
-            advancedRows: [["Temperatur", secondaryTemperature == null ? "nicht gemeldet" :
-                secondaryTemperature.toLocaleString("de-DE", {maximumFractionDigits: 1}) + " °C"]],
-            chart: secondaryBatteryUsageChartHtml(secondaryBatteryHistory) +
-                temperatureChartHtml(secondaryTemperatureHistory, "Akkutemperatur"),
+            advancedRows: [],
+            chart: secondaryBatteryUsageChartHtml(secondaryBatteryHistory),
             active: secondaryCharge >= 5 || secondaryDischarge >= 5
         },
         grid: {
@@ -6781,6 +6852,25 @@ function updateLabelPositions() {
         element.classList.toggle("outside", rawX < -60 || rawX > rect.width + 60 ||
             rawY < -50 || rawY > rect.height + 50);
     });
+    const droppingMeshes = [...horseDroppings, ...animalDroppings];
+    if (droppingMeshes.length) {
+        const droppingAnchor = droppingMeshes.reduce((sum, dropping) =>
+            sum.add(dropping.position), new THREE.Vector3()).divideScalar(droppingMeshes.length);
+        droppingAnchor.y = 0.82;
+        const anchor = world.localToWorld(droppingAnchor);
+        const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
+        const projected = anchor.project(camera);
+        const rawX = (projected.x * 0.5 + 0.5) * rect.width;
+        const rawY = (-projected.y * 0.5 + 0.5) * rect.height;
+        animalCleanLabel.style.left = THREE.MathUtils.clamp(rawX, 66, rect.width - 66) + "px";
+        animalCleanLabel.style.top = THREE.MathUtils.clamp(rawY, 46, rect.height - 38) + "px";
+        animalCleanLabel.style.setProperty("--resource-label-scale", THREE.MathUtils.clamp(
+            0.72 + state.zoom * 0.25, 0.90, 1.34
+        ));
+        animalCleanLabel.classList.toggle("behind", cameraSpace.z > rootPosition.z);
+        animalCleanLabel.classList.toggle("outside", rawX < -70 || rawX > rect.width + 70 ||
+            rawY < -55 || rawY > rect.height + 55);
+    }
     Object.entries(labelAnchors).forEach(([id, localAnchor]) => {
         const anchor = world.localToWorld(localAnchor.clone());
         const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
@@ -7140,21 +7230,8 @@ menuCollapse.addEventListener("click", () => {
     updateLiveUi();
     setMenuOpen(false);
 });
-menuCleanHorse.addEventListener("click", cleanHorseDroppings);
-menuFeedAnimals.addEventListener("click", () => {
-    animalResources.hayHorse = 100;
-    animalResources.hayCamels = 100;
-    updateAnimalResourceVisuals();
-    saveAnimalResources();
-    menuCleanStatus.textContent = "Beide Heuraufen sind wieder voll.";
-});
-menuWaterAnimals.addEventListener("click", () => {
-    animalResources.waterHorse = 100;
-    animalResources.waterCamels = 100;
-    updateAnimalResourceVisuals();
-    saveAnimalResources();
-    menuCleanStatus.textContent = "Beide Wassertränken sind wieder voll.";
-});
+
+syncAnimalState();
 
 window.addEventListener("solix-dashboard-data", (event) => {
     state.data = event.detail || state.data;

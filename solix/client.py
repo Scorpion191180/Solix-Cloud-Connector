@@ -11,7 +11,7 @@ import os
 import ssl
 import time
 from collections import deque
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -118,7 +118,29 @@ class SolixClient:
             # Unit tests and unconfigured local starts remain isolated.
             self._history_file = None
         self._history_last_saved_at = 0.0
+        self._telemetry_task: asyncio.Task[None] | None = None
+        self._telemetry_interval_seconds = _integer_setting(
+            "SOLIX_TELEMETRY_INTERVAL_SECONDS", 60, 60, 15 * 60
+        )
         self._load_telemetry_history()
+
+    async def start_telemetry(self) -> None:
+        """Collect telemetry independently from connected dashboard browsers."""
+        if self._telemetry_task is None:
+            self._telemetry_task = asyncio.create_task(
+                self._telemetry_loop(), name="solix-telemetry-recorder"
+            )
+
+    async def _telemetry_loop(self) -> None:
+        while True:
+            try:
+                await self.get_live()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # Cloud failures must not stop tomorrow's chart collection.
+                _LOGGER.warning("Background Solix telemetry failed", exc_info=True)
+            await asyncio.sleep(self._telemetry_interval_seconds)
 
     def _load_telemetry_history(self) -> None:
         """Restore today's telemetry collected by the always-on automation.
@@ -130,26 +152,51 @@ class SolixClient:
             return
         try:
             saved = json.loads(self._history_file.read_text(encoding="utf-8"))
-            local_today = datetime.now(timezone.utc).astimezone(self._pv_timezone).date()
+            now_utc = datetime.now(timezone.utc)
+            local_today = now_utc.astimezone(self._pv_timezone).date()
             saved_day = date.fromisoformat(str(saved.get("day")))
-            if saved_day != local_today:
+            day_gap = (local_today - saved_day).days
+            if day_gap < 0 or day_gap > 1:
                 return
-            self._pv_day = saved_day
-            self._secondary_day = saved_day
-            self._pv_today_wh = float(saved.get("pv_today_wh", 0))
-            self._secondary_pv_today_wh = float(saved.get("secondary_pv_today_wh", 0))
-            strings = saved.get("pv_today_wh_by_string", [])
-            self._pv_today_wh_by_string = [
-                float(strings[index]) if index < len(strings) else 0.0
-                for index in range(4)
-            ]
-            self._pv_history.extend(saved.get("pv_history", []))
-            self._secondary_history.extend(saved.get("secondary_history", []))
+            if saved_day == local_today:
+                self._pv_day = saved_day
+                self._secondary_day = saved_day
+                self._pv_today_wh = float(saved.get("pv_today_wh", 0))
+                self._secondary_pv_today_wh = float(
+                    saved.get("secondary_pv_today_wh", 0)
+                )
+                strings = saved.get("pv_today_wh_by_string", [])
+                self._pv_today_wh_by_string = [
+                    float(strings[index]) if index < len(strings) else 0.0
+                    for index in range(4)
+                ]
+                self._pv_history.extend(saved.get("pv_history", []))
+
+            cutoff = now_utc - timedelta(hours=24)
+
+            def recent(points: Any) -> list[dict[str, Any]]:
+                if not isinstance(points, list):
+                    return []
+                kept: list[dict[str, Any]] = []
+                for point in points:
+                    try:
+                        observed = datetime.fromisoformat(str(point["time"]))
+                        if observed.tzinfo is None:
+                            observed = observed.replace(tzinfo=self._pv_timezone)
+                        if observed.astimezone(timezone.utc) >= cutoff:
+                            kept.append(point)
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                return kept
+
+            # Akku- und Temperaturkurven sind rollierende 24-h-Verläufe und
+            # dürfen deshalb die Messpunkte des Vortages behalten.
+            self._secondary_history.extend(recent(saved.get("secondary_history", [])))
             self._primary_temperature_history.extend(
-                saved.get("primary_temperature_history", [])
+                recent(saved.get("primary_temperature_history", []))
             )
             self._secondary_temperature_history.extend(
-                saved.get("secondary_temperature_history", [])
+                recent(saved.get("secondary_temperature_history", []))
             )
             if self._pv_history:
                 last = self._pv_history[-1]
@@ -656,7 +703,6 @@ class SolixClient:
             self._secondary_pv_today_wh = 0.0
             self._secondary_last_sample_at = None
             self._secondary_last_pv_power_w = None
-            self._secondary_history.clear()
 
         if (
             self._secondary_last_sample_at is not None
@@ -681,7 +727,10 @@ class SolixClient:
             "input_w": pv_power_w,
             "output_w": output_power,
         }
-        bucket = (local_time.hour * 60 + local_time.minute) // 10
+        # Ein fortlaufender Epoch-Bucket verhindert, dass der Messpunkt von
+        # gestern zur gleichen Uhrzeit in der rollierenden 24-h-Kurve ersetzt
+        # wird. Die PV-Tageskurve darunter verwendet weiterhin Tages-Buckets.
+        bucket = int(observed_at.timestamp() // (10 * 60))
         if (
             self._secondary_history
             and self._secondary_history[-1].get("bucket") == bucket
@@ -689,6 +738,19 @@ class SolixClient:
             self._secondary_history[-1] = {**sample, "bucket": bucket}
         else:
             self._secondary_history.append({**sample, "bucket": bucket})
+
+        cutoff = observed_at - timedelta(hours=24)
+        while self._secondary_history:
+            try:
+                oldest = datetime.fromisoformat(
+                    str(self._secondary_history[0]["time"])
+                ).astimezone(timezone.utc)
+            except (KeyError, TypeError, ValueError):
+                self._secondary_history.popleft()
+                continue
+            if oldest >= cutoff:
+                break
+            self._secondary_history.popleft()
 
         public_history = [
             {key: value for key, value in point.items() if key != "bucket"}
@@ -1140,5 +1202,13 @@ class SolixClient:
             return self._smartplug_status_locked(device, state=enabled)
 
     async def close(self) -> None:
+        if self._telemetry_task is not None:
+            self._telemetry_task.cancel()
+            try:
+                await self._telemetry_task
+            except asyncio.CancelledError:
+                pass
+            self._telemetry_task = None
+        self._save_telemetry_history(force=True)
         async with self._lock:
             await self._discard_api_locked()
