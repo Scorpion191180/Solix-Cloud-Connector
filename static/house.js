@@ -117,6 +117,7 @@ try {
         canvas,
         alpha: true,
         antialias: true,
+        stencil: true,
         powerPreference: "high-performance"
     });
 }
@@ -158,6 +159,23 @@ const urinePatches = [];
 const grassCells = [];
 const grassBladeFields = [];
 const animalResourceVisuals = [];
+const animalResourceLabelAnchors = {
+    hay: new THREE.Vector3(-10.20, 1.54, -2.26),
+    water: new THREE.Vector3(-12.80, 1.22, -3.92)
+};
+const animalResourceLabelElements = {};
+[
+    ["hay", "🌾", "HEU"],
+    ["water", "💧", "WASSER"]
+].forEach(([id, icon, label]) => {
+    const element = document.createElement("div");
+    element.className = "animal-resource-label";
+    element.dataset.resource = id;
+    element.innerHTML = `<span>${icon} ${label}</span><strong>100 %</strong>` +
+        '<i><b style="width:100%"></b></i>';
+    stage.appendChild(element);
+    animalResourceLabelElements[id] = element;
+});
 const houseWindowLights = [];
 let streetLampLight = null;
 let streetLampBulb = null;
@@ -168,13 +186,31 @@ function loadAnimalResources() {
         hayCamels: 100,
         waterHorse: 100,
         waterCamels: 100,
+        droppings: [],
         grassLevels: [],
         grassFertility: [],
         updatedAt: Date.now()
     };
     try {
         const saved = JSON.parse(localStorage.getItem("solix-animal-resources-v1") || "null");
-        return saved && typeof saved === "object" ? { ...defaults, ...saved } : defaults;
+        if (!saved || typeof saved !== "object")
+            return defaults;
+        const resources = { ...defaults, ...saved };
+        // Auch bei geschlossener Seite wird weiter verbraucht. Bei normalem
+        // Wetter reichen volle Vorräte dadurch ungefähr einen Tag.
+        const elapsedDays = THREE.MathUtils.clamp(
+            (Date.now() - (Number(saved.updatedAt) || Date.now())) / 86400000,
+            0,
+            7
+        );
+        const offlineUse = elapsedDays * 88;
+        ["hayHorse", "hayCamels", "waterHorse", "waterCamels"].forEach((key) => {
+            resources[key] = Math.max(0, (Number(resources[key]) || 0) - offlineUse);
+        });
+        resources.droppings = Array.isArray(resources.droppings) ?
+            resources.droppings.slice(-360) : [];
+        resources.updatedAt = Date.now();
+        return resources;
     }
     catch (_error) {
         return defaults;
@@ -185,6 +221,7 @@ const animalResources = loadAnimalResources();
 let lastEcologyUpdate = performance.now();
 let lastEcologySave = performance.now();
 let lastGrassVisualUpdate = performance.now();
+let lastAnimalResourceVisualUpdate = performance.now();
 
 function numberValue(value) {
     if (value == null || typeof value === "boolean")
@@ -1447,21 +1484,21 @@ function createHorseStableDoor(parent, position) {
     const straw = new THREE.MeshStandardMaterial({ color: 0xc79a43, roughness: 1 });
     const metal = new THREE.MeshStandardMaterial({ color: 0x363636, metalness: 0.70, roughness: 0.45 });
 
-    // Die dunkle Rückwand liegt deutlich hinter der Öffnung. Seitenwände,
-    // Decke und Strohboden erzeugen eine echte 3D-Laibung; Futterraufe und
-    // Tränke stehen am hinteren Stallende und versperren nicht mehr den Eingang.
-    addBox(stable, [1.36, 2.34, 0.10], darkInterior, [0, 0, 1.72], { castShadow: false });
+    // Alle Raumflächen beginnen hinter der Fassadenebene (lokales z=0).
+    // So ist außen nur die bündige Öffnung sichtbar, niemals ein Tunnel.
+    // Die helle Rückwand gibt dem Blick von außen eine klar erkennbare Tiefe.
+    addBox(stable, [1.36, 2.34, 0.10], darkInterior, [0, 0, 3.28], { castShadow: false });
     [-0.75, 0.75].forEach((x) =>
         addBox(stable, [0.13, 2.52, 0.18], frameWood, [x, 0.02, 0.11]));
     addBox(stable, [1.62, 0.16, 0.22], frameWood, [0, 1.26, 0.11]);
-    addBox(stable, [0.10, 2.30, 3.22], frameWood, [-0.70, -0.02, 0.86]);
-    addBox(stable, [0.10, 2.30, 3.22], frameWood, [0.70, -0.02, 0.86]);
-    addBox(stable, [1.40, 0.10, 3.22], frameWood, [0, 1.13, 0.86]);
-    addBox(stable, [1.38, 0.08, 3.18], straw, [0, -1.15, 0.86], { castShadow: false });
+    addBox(stable, [0.10, 2.30, 3.16], frameWood, [-0.70, -0.02, 1.68]);
+    addBox(stable, [0.10, 2.30, 3.16], frameWood, [0.70, -0.02, 1.68]);
+    addBox(stable, [1.40, 0.10, 3.16], frameWood, [0, 1.13, 1.68]);
+    addBox(stable, [1.38, 0.08, 3.12], straw, [0, -1.15, 1.68], { castShadow: false });
     for (let index = 0; index < 32; index += 1) {
         const tuft = addMesh(stable, new THREE.ConeGeometry(0.022, 0.26, 5), straw,
             -0.58 + (index % 8) * 0.17, -1.00,
-            -0.30 + Math.floor(index / 8) * 0.48,
+            0.20 + Math.floor(index / 8) * 0.72,
             { castShadow: false });
         tuft.rotation.z = (index % 3 - 1) * 0.20;
     }
@@ -1478,18 +1515,18 @@ function createHorseStableDoor(parent, position) {
         addBox(leaf, [0.08, 2.05, 0.025], frameWood, [x, 0, 0.07], { castShadow: false }));
     addMesh(leaf, new THREE.TorusGeometry(0.07, 0.018, 8, 16), metal,
         0.45, 0, 0.09, { rotation: [Math.PI / 2, 0, 0], castShadow: false });
-    addBox(stable, [0.82, 0.72, 0.18], frameWood, [0, -0.44, 1.45], { castShadow: false });
+    addBox(stable, [0.82, 0.72, 0.18], frameWood, [0, -0.44, 2.86], { castShadow: false });
     for (let slat = -0.30; slat <= 0.30; slat += 0.15)
-        addBox(stable, [0.06, 0.58, 0.08], metal, [slat, -0.42, 1.34], { castShadow: false });
+        addBox(stable, [0.06, 0.58, 0.08], metal, [slat, -0.42, 2.75], { castShadow: false });
     const trough = addBox(stable, [0.50, 0.30, 0.44], metal,
-        [0.37, -0.78, 1.42], { radius: 0.07 });
+        [0.37, -0.78, 2.78], { radius: 0.07 });
     addBox(trough, [0.39, 0.03, 0.32], materials.water,
         [0, 0.16, 0], { radius: 0.04, castShadow: false });
     const stableLampMaterial = new THREE.MeshBasicMaterial({ color: 0xffc66d, toneMapped: false });
     addMesh(stable, new THREE.SphereGeometry(0.075, 12, 8), stableLampMaterial,
-        0.44, 0.76, 1.38, { castShadow: false });
+        0.44, 0.76, 2.70, { castShadow: false });
     const stableLight = new THREE.PointLight(0xffc26b, 0.72, 4.2, 1.7);
-    stableLight.position.set(0.44, 0.72, 1.30);
+    stableLight.position.set(0.44, 0.72, 2.62);
     stable.add(stableLight);
 }
 
@@ -1497,7 +1534,23 @@ function createHouse() {
     const house = new THREE.Group();
     world.add(house);
 
-    addBox(house, [HOUSE_WIDTH, 4.9, HOUSE_LENGTH], materials.wall, [0, 2.50, 0]);
+    // Die linke Längswand wird aus dem großen Hauskörper entfernt und danach
+    // mit einer echten Aussparung für die Stalltür wieder aufgebaut.
+    const houseShellGeometry = new THREE.BoxGeometry(HOUSE_WIDTH, 4.9, HOUSE_LENGTH);
+    houseShellGeometry.groups = houseShellGeometry.groups.filter((group) => group.materialIndex !== 1);
+    addMesh(house, houseShellGeometry, materials.wall, 0, 2.50, 0);
+    const stableOpeningCenterZ = -1.58;
+    const stableOpeningWidth = 1.36;
+    const openingMinZ = stableOpeningCenterZ - stableOpeningWidth / 2;
+    const openingMaxZ = stableOpeningCenterZ + stableOpeningWidth / 2;
+    addBox(house, [0.10, 4.9, openingMinZ + HOUSE_LENGTH / 2], materials.wall,
+        [-HOUSE_WIDTH / 2, 2.50, (-HOUSE_LENGTH / 2 + openingMinZ) / 2]);
+    addBox(house, [0.10, 4.9, HOUSE_LENGTH / 2 - openingMaxZ], materials.wall,
+        [-HOUSE_WIDTH / 2, 2.50, (openingMaxZ + HOUSE_LENGTH / 2) / 2]);
+    addBox(house, [0.10, 2.42, stableOpeningWidth], materials.wall,
+        [-HOUSE_WIDTH / 2, 3.74, stableOpeningCenterZ]);
+    addBox(house, [0.10, 0.14, stableOpeningWidth], materials.wall,
+        [-HOUSE_WIDTH / 2, 0.12, stableOpeningCenterZ]);
     addBox(house, [HOUSE_WIDTH + 0.15, 0.62, HOUSE_LENGTH + 0.12], new THREE.MeshStandardMaterial({ color: 0x89755d, roughness: 0.94 }), [0, 0.31, 0]);
     createRoof(house);
     createGarageDoors(house);
@@ -3404,13 +3457,13 @@ function startHorseJourney(horseState, origin, forceGarden = false) {
         return;
     }
     const careChoice = horseState.random();
-    if (!forceGarden && (animalResources.waterHorse < 42 || careChoice < 0.045) &&
+    if (!forceGarden && (animalResources.waterHorse < 55 || careChoice < 0.20) &&
         setHorseRoute(horseState, new THREE.Vector3(-9.98, 0, -3.92))) {
         horseState.navigation = "horse-water";
         horseState.mode = "walking";
         return;
     }
-    if (!forceGarden && (animalResources.hayHorse < 38 || careChoice < 0.090) &&
+    if (!forceGarden && (animalResources.hayHorse < 55 || careChoice < 0.40) &&
         setHorseRoute(horseState, new THREE.Vector3(-9.98, 0, -2.26))) {
         horseState.navigation = "horse-hay";
         horseState.mode = "walking";
@@ -3544,11 +3597,22 @@ function createHorse() {
     return horseState;
 }
 
-function addHorseDropping() {
-    if (!horse || horseDroppings.length >= 14)
+function rememberDropping(kind, position) {
+    animalResources.droppings.push({
+        kind,
+        x: Number(position.x.toFixed(3)),
+        z: Number(position.z.toFixed(3)),
+        createdAt: Date.now()
+    });
+    animalResources.droppings = animalResources.droppings.slice(-360);
+    saveAnimalResources();
+}
+
+function addHorseDropping(position = horse?.group?.position, persist = true) {
+    if (!position || horseDroppings.length + animalDroppings.length >= 360)
         return;
     const dropping = new THREE.Group();
-    dropping.position.set(horse.group.position.x, 0.055, horse.group.position.z - 0.42);
+    dropping.position.set(position.x, 0.055, position.z - 0.42);
     world.add(dropping);
     const material = new THREE.MeshStandardMaterial({ color: 0x34251b, roughness: 1 });
     [[-0.10, 0.04, 0.02, 0.10], [0.04, 0.06, -0.03, 0.12], [0.13, 0.035, 0.06, 0.08],
@@ -3556,12 +3620,14 @@ function addHorseDropping() {
         addMesh(dropping, new THREE.DodecahedronGeometry(radius, 0), material,
             x, y, z, { castShadow: true }));
     horseDroppings.push(dropping);
+    if (persist)
+        rememberDropping("Pferd", position);
     menuCleanStatus.textContent = (horseDroppings.length + animalDroppings.length) +
         " Hinterlassenschaften auf dem Grundstück.";
 }
 
-function addAnimalDropping(position, kind = "Kamel") {
-    if (animalDroppings.length >= 30)
+function addAnimalDropping(position, kind = "Kamel", persist = true) {
+    if (animalDroppings.length + horseDroppings.length >= 360)
         return;
     const dropping = new THREE.Group();
     dropping.position.set(position.x, 0.045, position.z - 0.34);
@@ -3577,8 +3643,23 @@ function addAnimalDropping(position, kind = "Kamel") {
             Math.sin(angle) * 0.11, { castShadow: true });
     }
     animalDroppings.push(dropping);
+    if (persist)
+        rememberDropping(kind, position);
     menuCleanStatus.textContent = (horseDroppings.length + animalDroppings.length) +
         " Hinterlassenschaften auf dem Grundstück.";
+}
+
+function restoreAnimalDroppings() {
+    animalResources.droppings.forEach((item) => {
+        const position = new THREE.Vector3(numberValue(item.x) ?? 0, 0, numberValue(item.z) ?? 0);
+        if (item.kind === "Pferd")
+            addHorseDropping(position, false);
+        else
+            addAnimalDropping(position, item.kind || "Kamel", false);
+    });
+    const count = horseDroppings.length + animalDroppings.length;
+    menuCleanStatus.textContent = count ?
+        `${count} Hinterlassenschaften auf dem Grundstück.` : "Grundstück ist sauber.";
 }
 
 function addUrinePatch(position, pasture) {
@@ -3634,6 +3715,8 @@ function cleanHorseDroppings() {
         patch.mesh.geometry.dispose();
         patch.mesh.material.dispose();
     });
+    animalResources.droppings = [];
+    saveAnimalResources();
     menuCleanStatus.textContent = "Grundstück ist sauber.";
 }
 
@@ -3684,6 +3767,13 @@ function updateAnimalResourceVisuals() {
         const hay = Math.round((animalResources.hayHorse + animalResources.hayCamels) / 2);
         const water = Math.round((animalResources.waterHorse + animalResources.waterCamels) / 2);
         menuCareStatus.textContent = `Heu ${hay} % · Wasser ${water} %`;
+        [["hay", hay], ["water", water]].forEach(([id, value]) => {
+            const element = animalResourceLabelElements[id];
+            element.querySelector("strong").textContent = `${value} %`;
+            element.querySelector("b").style.width = `${value}%`;
+            element.classList.toggle("low", value <= 25);
+            element.classList.toggle("empty", value <= 3);
+        });
     }
 }
 
@@ -3705,9 +3795,12 @@ function camelCanStandAt(x, z) {
 function chooseCamelTarget(camel) {
     const random = camel.random;
     const stationOffset = ((camel.index ?? 2) - 2) * 0.42;
-    if (random() < 0.13)
+    const careChoice = random();
+    const waterUrgency = animalResources.waterCamels < 28 ? 0.58 : 0.27;
+    const hayUrgency = animalResources.hayCamels < 28 ? 0.86 : 0.55;
+    if (careChoice < waterUrgency)
         return { point: new THREE.Vector3(-12.52, 0, -3.92 + stationOffset), intent: "drinking" };
-    if (random() < 0.15)
+    if (careChoice < hayUrgency)
         return { point: new THREE.Vector3(-12.58, 0, -2.26 + stationOffset), intent: "feeding" };
     if (horse && random() < 0.12) {
         return {
@@ -4007,9 +4100,9 @@ function animateCamels(seconds, delta) {
             if (camel.mode === "grazing")
                 grazeAt(camel.group.position.x, camel.group.position.z, true, delta * 0.12);
             else if (camel.mode === "drinking")
-                animalResources.waterCamels = Math.max(0, animalResources.waterCamels - delta * 0.10);
+                animalResources.waterCamels = Math.max(0, animalResources.waterCamels - delta * 0.00005);
             else if (camel.mode === "feeding")
-                animalResources.hayCamels = Math.max(0, animalResources.hayCamels - delta * 0.07);
+                animalResources.hayCamels = Math.max(0, animalResources.hayCamels - delta * 0.00005);
             if (seconds >= camel.modeUntil)
                 startCamelJourney(camel);
         }
@@ -4104,10 +4197,15 @@ function updateAnimalEcology(time, delta) {
         .reduce((sum, cell) => sum + cell.level, 0) / Math.max(1, grassCells.filter((cell) => !cell.pasture).length);
     const pastureAverage = grassCells.filter((cell) => cell.pasture)
         .reduce((sum, cell) => sum + cell.level, 0) / Math.max(1, grassCells.filter((cell) => cell.pasture).length);
-    animalResources.waterHorse = Math.max(0, animalResources.waterHorse - elapsed * 0.0018 * heatFactor);
-    animalResources.waterCamels = Math.max(0, animalResources.waterCamels - elapsed * 0.0070 * heatFactor);
-    animalResources.hayHorse = Math.max(0, animalResources.hayHorse - elapsed * 0.0012 * (1 + Math.max(0, 1.5 - gardenAverage)));
-    animalResources.hayCamels = Math.max(0, animalResources.hayCamels - elapsed * 0.0048 * (1 + Math.max(0, 1.5 - pastureAverage)));
+    // Grundverbrauch plus sichtbare Trink-/Fressphasen ergeben zusammen etwa
+    // 90–100 % je Tag. Heiße Tage erhöhen nur den Wasseranteil.
+    const dailyBasePerSecond = 88 / 86400;
+    animalResources.waterHorse = Math.max(0, animalResources.waterHorse - elapsed * dailyBasePerSecond * heatFactor);
+    animalResources.waterCamels = Math.max(0, animalResources.waterCamels - elapsed * dailyBasePerSecond * heatFactor);
+    animalResources.hayHorse = Math.max(0, animalResources.hayHorse - elapsed * dailyBasePerSecond *
+        (1 + Math.max(0, 1.5 - gardenAverage) * 0.12));
+    animalResources.hayCamels = Math.max(0, animalResources.hayCamels - elapsed * dailyBasePerSecond *
+        (1 + Math.max(0, 1.5 - pastureAverage) * 0.12));
     grassCells.forEach((cell) => {
         const rain = numberValue(state.data.weather?.rain_mm) ?? numberValue(state.data.weather?.precipitation_mm) ?? 0;
         const moisture = 1 + Math.min(1.2, rain * 0.18);
@@ -4120,6 +4218,10 @@ function updateAnimalEcology(time, delta) {
     if (time - lastGrassVisualUpdate > 1400) {
         updateGrassEcologyVisuals();
         lastGrassVisualUpdate = time;
+    }
+    if (time - lastAnimalResourceVisualUpdate > 1000) {
+        updateAnimalResourceVisuals();
+        lastAnimalResourceVisualUpdate = time;
     }
     if (time - lastEcologySave > 12000) {
         updateAnimalResourceVisuals();
@@ -4220,9 +4322,9 @@ function animateHorse(seconds, delta) {
         setHorseAnimation(horse, "Eating");
         horse.headRig.rotation.x = THREE.MathUtils.damp(horse.headRig.rotation.x, 0.94, 5, delta);
         if (horse.mode === "drinking")
-            animalResources.waterHorse = Math.max(0, animalResources.waterHorse - delta * 0.12);
+            animalResources.waterHorse = Math.max(0, animalResources.waterHorse - delta * 0.0003);
         else
-            animalResources.hayHorse = Math.max(0, animalResources.hayHorse - delta * 0.08);
+            animalResources.hayHorse = Math.max(0, animalResources.hayHorse - delta * 0.0003);
         if (seconds >= horse.modeUntil)
             startHorseJourney(horse, position, true);
     }
@@ -4525,6 +4627,7 @@ function createGarden() {
     createAnimalCareStations();
     createCamelPasture();
     horse = createHorse();
+    restoreAnimalDroppings();
 }
 
 function createGridBox() {
@@ -6328,6 +6431,23 @@ function updateLabelPositions() {
     // Fahrzeug, statt am leeren Stellplatz zurückzubleiben.
     labelAnchors.audi.set(audiModel.position.x, 1.72, audiModel.position.z);
     objectBatteryAnchors.audi.set(audiModel.position.x, 0.72, audiModel.position.z);
+    Object.entries(animalResourceLabelAnchors).forEach(([id, localAnchor]) => {
+        const anchor = world.localToWorld(localAnchor.clone());
+        const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
+        const projected = anchor.project(camera);
+        const rawX = (projected.x * 0.5 + 0.5) * rect.width;
+        const rawY = (-projected.y * 0.5 + 0.5) * rect.height;
+        const element = animalResourceLabelElements[id];
+        const separatedX = rawX + (id === "hay" ? -56 : 56);
+        element.style.left = THREE.MathUtils.clamp(separatedX, 48, rect.width - 48) + "px";
+        element.style.top = THREE.MathUtils.clamp(rawY, 42, rect.height - 34) + "px";
+        element.style.setProperty("--resource-label-scale", THREE.MathUtils.clamp(
+            0.72 + state.zoom * 0.25, 0.90, 1.34
+        ));
+        element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
+        element.classList.toggle("outside", rawX < -60 || rawX > rect.width + 60 ||
+            rawY < -50 || rawY > rect.height + 50);
+    });
     Object.entries(labelAnchors).forEach(([id, localAnchor]) => {
         const anchor = world.localToWorld(localAnchor.clone());
         const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);

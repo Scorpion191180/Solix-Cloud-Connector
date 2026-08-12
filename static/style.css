@@ -311,6 +311,57 @@ header p{
     transition:filter .2s ease,opacity .2s ease,border-color .2s ease;
 }
 
+.animal-resource-label{
+    position:absolute;
+    z-index:5;
+    display:grid;
+    width:92px;
+    gap:3px;
+    padding:6px 8px;
+    border:1px solid rgba(226,232,240,.30);
+    border-radius:10px;
+    background:linear-gradient(135deg,rgba(7,15,27,.70),rgba(15,23,42,.52));
+    box-shadow:0 5px 15px rgba(2,6,23,.38);
+    color:#f8fafc;
+    pointer-events:none;
+    transform:translate(-50%,-100%) scale(var(--resource-label-scale,1));
+    transform-origin:50% 100%;
+    transition:opacity .2s ease,filter .2s ease;
+}
+
+.animal-resource-label span{
+    color:#e2e8f0;
+    font-size:8px;
+    font-weight:900;
+    letter-spacing:.08em;
+}
+
+.animal-resource-label strong{
+    font-size:13px;
+    line-height:1;
+}
+
+.animal-resource-label i{
+    display:block;
+    height:4px;
+    overflow:hidden;
+    border-radius:999px;
+    background:rgba(148,163,184,.30);
+}
+
+.animal-resource-label i b{
+    display:block;
+    height:100%;
+    border-radius:inherit;
+    background:#22c55e;
+    transition:width .6s ease,background .3s ease;
+}
+
+.animal-resource-label.low i b{background:#f59e0b;}
+.animal-resource-label.empty i b{background:#ef4444;}
+.animal-resource-label.behind{opacity:.55;}
+.animal-resource-label.outside{opacity:0;}
+
 .house-scene-label::after{
     content:"";
     position:absolute;
