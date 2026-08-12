@@ -3843,6 +3843,7 @@ function createCamelWalkRig(model) {
     const limbDefinitions = [
         {
             phase: 0,
+            mirrorSign: 1,
             upper: "Shoulder_L_31",
             lower: "Elbow_L_30",
             foot: "Wrist_L_29",
@@ -3850,6 +3851,7 @@ function createCamelWalkRig(model) {
         },
         {
             phase: 0,
+            mirrorSign: 1,
             upper: "Hip_L_49",
             lower: "Knee_L_48",
             foot: "Ankle_L_47",
@@ -3857,6 +3859,7 @@ function createCamelWalkRig(model) {
         },
         {
             phase: Math.PI,
+            mirrorSign: -1,
             upper: "Shoulder_R_39",
             lower: "Elbow_R_38",
             foot: "Wrist_R_37",
@@ -3864,6 +3867,7 @@ function createCamelWalkRig(model) {
         },
         {
             phase: Math.PI,
+            mirrorSign: -1,
             upper: "Hip_R_8",
             lower: "Knee_R_7",
             foot: "Ankle_R_6",
@@ -3913,11 +3917,16 @@ function animateDetailedCamelGait(camel, moving, running, delta) {
         // Das untere Gelenk beugt hauptsächlich beim nach vorn geführten Bein;
         // der Fuß gleicht die Beugung aus und bleibt optisch am Boden.
         const lift = Math.max(0, Math.cos(cycle));
-        poseCamelJoint(limb.upper, limb.upperRest, swing * stride * limb.upperScale);
+        // Die Gelenkachsen der rechten Körperseite sind im GLB gespiegelt.
+        // Ohne dieses Vorzeichen hebt die Achsenspiegelung den Phasenversatz
+        // wieder auf und Vorder- bzw. Hinterbeine bewegen sich fälschlich paarweise.
+        const jointSign = limb.mirrorSign;
+        poseCamelJoint(limb.upper, limb.upperRest,
+            swing * stride * limb.upperScale * jointSign);
         poseCamelJoint(limb.lower, limb.lowerRest,
-            -lift * stride * (running ? 0.92 : 0.72));
+            -lift * stride * (running ? 0.92 : 0.72) * jointSign);
         poseCamelJoint(limb.foot, limb.footRest,
-            lift * stride * (running ? 0.62 : 0.48));
+            lift * stride * (running ? 0.62 : 0.48) * jointSign);
     });
     const bob = Math.abs(Math.sin(phase * 2)) * (running ? 0.035 : 0.014) *
         camel.gaitBlend;
@@ -3925,7 +3934,7 @@ function animateDetailedCamelGait(camel, moving, running, delta) {
 }
 
 function loadDetailedCamels() {
-    vehicleLoader.load("/static/models/bactrian-camel.glb?v=81", (gltf) => {
+    vehicleLoader.load("/static/models/bactrian-camel.glb?v=82", (gltf) => {
         const source = gltf.scene;
         // Das Sketchfab-Modell blickt bereits entlang der positiven lokalen
         // Z-Achse. Die frühere 180-Grad-Drehung ließ es rückwärts laufen.
