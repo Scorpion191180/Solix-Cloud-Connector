@@ -640,6 +640,38 @@ header p{
     font-size:.82em;
 }
 
+.house-chart-time-axis{
+    display:grid;
+    grid-template-columns:repeat(5,1fr);
+    align-items:center;
+}
+
+.house-chart-time-axis span{text-align:center;}
+.house-chart-time-axis span:first-child{text-align:left;}
+.house-chart-time-axis span:last-child{text-align:right;}
+
+.house-chart-summary{
+    display:block;
+    margin-top:1px;
+    color:#cbd5e1;
+    font-size:.82em;
+    font-weight:800;
+    text-align:center;
+}
+
+.chart-missing-range{
+    fill:rgba(71,85,105,.20);
+    stroke:rgba(148,163,184,.20);
+    stroke-width:.45;
+    stroke-dasharray:2.2 1.8;
+    vector-effect:non-scaling-stroke;
+}
+
+.chart-missing-label{
+    fill:#94a3b8;
+    font:700 4.1px/1 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
+
 .battery-use-title{
     display:flex;
     align-items:center;

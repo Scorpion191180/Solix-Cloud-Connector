@@ -6632,21 +6632,13 @@ function secondaryBatteryUsageChartHtml(history) {
     if (!points.length)
         return '<span class="house-detail-row"><b>Akkukapazität 24 h</b><span>baut sich im Hintergrund auf</span></span>';
 
-    // Nach einem Deploy oder dem ersten Messwert des Tages existiert noch
-    // keine volle 24-h-Historie. In diesem Fall wird der real vorhandene
-    // Zeitraum ueber die gesamte Diagrammbreite dargestellt und links mit
-    // seiner echten Startzeit beschriftet. Sobald 24 h vorliegen, bleibt die
-    // feste -24-h-Achse erhalten. So wirkt die Kurve nie wie ein 1/5 breiter
-    // Chart, ohne fehlende Messwerte zu erfinden.
+    // Immer dieselbe rollierende 24-h-Achse: Links liegt exakt "vor 24 h",
+    // rechts "jetzt". Fehlende ältere Daten bleiben sichtbar als ungemessener
+    // Bereich, statt den vorhandenen Ausschnitt irreführend breit zu ziehen.
     const fixedStart = now - windowMs;
-    const domainStart = points[0].time <= fixedStart + 5 * 60 * 1000 ?
-        fixedStart : points[0].time;
-    const domainSpan = Math.max(60 * 1000, now - domainStart);
-    const startLabel = domainStart === fixedStart ? "-24 h" :
-        new Date(domainStart).toLocaleTimeString("de-DE", {hour: "2-digit", minute: "2-digit"});
     const coordinates = points.map((point) => ({
         ...point,
-        x: THREE.MathUtils.clamp((point.time - domainStart) / domainSpan * 100, 0, 100),
+        x: THREE.MathUtils.clamp((point.time - fixedStart) / windowMs * 100, 0, 100),
         y: 31 - THREE.MathUtils.clamp(point.percent, 0, 100) / 100 * 27
     }));
     const segments = coordinates.slice(1).map((point, index) => {
@@ -6670,11 +6662,27 @@ function secondaryBatteryUsageChartHtml(history) {
         '<line class="grid" x1="25" y1="1" x2="25" y2="34"></line>' +
         '<line class="grid" x1="50" y1="1" x2="50" y2="34"></line>' +
         '<line class="grid" x1="75" y1="1" x2="75" y2="34"></line>' +
-        segments + extrema + '<circle class="battery-use-point" cx="' + last.x.toFixed(1) +
+        missingChartHistoryHtml(coordinates[0].x) + segments + extrema +
+        '<circle class="battery-use-point" cx="' + last.x.toFixed(1) +
         '" cy="' + last.y.toFixed(1) + '" r="1.8"></circle></svg>' +
-        '<span class="house-sparkline-caption"><span>' + escapeHtml(startLabel) + '</span><span>Tief ' +
-        Math.round(low.percent) + ' % · Hoch ' + Math.round(high.percent) +
-        ' %</span><span>jetzt</span></span>';
+        rolling24HourCaptionHtml('Tief ' + Math.round(low.percent) + ' % · Hoch ' +
+            Math.round(high.percent) + ' %');
+}
+
+function missingChartHistoryHtml(firstX) {
+    const width = THREE.MathUtils.clamp(firstX, 0, 100);
+    if (width < 0.8)
+        return "";
+    const label = width >= 24 ? '<text class="chart-missing-label" x="' +
+        (width / 2).toFixed(1) + '" y="17" text-anchor="middle">noch keine Messwerte</text>' : "";
+    return '<rect class="chart-missing-range" x="0" y="1" width="' +
+        width.toFixed(1) + '" height="30"></rect>' + label;
+}
+
+function rolling24HourCaptionHtml(summary) {
+    return '<span class="house-sparkline-caption house-chart-time-axis">' +
+        '<span>-24 h</span><span>-18 h</span><span>-12 h</span><span>-6 h</span><span>jetzt</span>' +
+        '</span><span class="house-chart-summary">' + escapeHtml(summary) + '</span>';
 }
 
 function chartExtremeMarkers(low, high, formatter) {
@@ -6711,13 +6719,8 @@ function temperatureChartHtml(history, label) {
     const maximum = Math.max(...points.map((point) => point.value));
     const span = Math.max(4, maximum - minimum);
     const fixedStart = now - windowMs;
-    const domainStart = points[0].time <= fixedStart + 5 * 60 * 1000 ?
-        fixedStart : points[0].time;
-    const domainSpan = Math.max(60 * 1000, now - domainStart);
-    const startLabel = domainStart === fixedStart ? "-24 h" :
-        new Date(domainStart).toLocaleTimeString("de-DE", {hour: "2-digit", minute: "2-digit"});
     const coordinates = points.map((point) => ({
-        x: THREE.MathUtils.clamp((point.time - domainStart) / domainSpan * 100, 0, 100),
+        x: THREE.MathUtils.clamp((point.time - fixedStart) / windowMs * 100, 0, 100),
         y: 31 - (point.value - (minimum - 2)) / (span + 4) * 27,
         value: point.value
     }));
@@ -6729,13 +6732,17 @@ function temperatureChartHtml(history, label) {
     return '<span class="battery-use-title"><b>' + escapeHtml(label) + ' · 24 h</b><span>' +
         last.value.toLocaleString("de-DE", {maximumFractionDigits: 1}) + ' °C</span></span>' +
         '<svg class="house-sparkline temperature-chart" viewBox="0 0 100 34" preserveAspectRatio="none" ' +
-        'aria-label="Batterietemperatur der letzten 24 Stunden"><polyline class="line" points="' +
+        'aria-label="Batterietemperatur der letzten 24 Stunden">' +
+        '<line class="grid" x1="25" y1="1" x2="25" y2="34"></line>' +
+        '<line class="grid" x1="50" y1="1" x2="50" y2="34"></line>' +
+        '<line class="grid" x1="75" y1="1" x2="75" y2="34"></line>' +
+        missingChartHistoryHtml(coordinates[0].x) + '<polyline class="line" points="' +
         coordinates.map((point) => point.x.toFixed(1) + ',' + point.y.toFixed(1)).join(' ') +
         '"></polyline>' + extrema + '<circle class="point" cx="' + last.x.toFixed(1) + '" cy="' +
         last.y.toFixed(1) + '" r="1.6"></circle></svg>' +
-        '<span class="house-sparkline-caption"><span>' + escapeHtml(startLabel) + '</span><span>Tief ' +
-        minimum.toLocaleString("de-DE", {maximumFractionDigits: 1}) + ' °C · Hoch ' +
-        maximum.toLocaleString("de-DE", {maximumFractionDigits: 1}) + ' °C</span><span>jetzt</span></span>';
+        rolling24HourCaptionHtml('Tief ' +
+            minimum.toLocaleString("de-DE", {maximumFractionDigits: 1}) + ' °C · Hoch ' +
+            maximum.toLocaleString("de-DE", {maximumFractionDigits: 1}) + ' °C');
 }
 
 function audiBatteryChartHtml(history, sessions) {
