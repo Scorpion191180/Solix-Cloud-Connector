@@ -519,7 +519,8 @@ header p{
 }
 
 .house-detail-grid,
-.house-detail-advanced{
+.house-detail-advanced,
+.house-detail-facts{
     display:grid;
     gap:3px;
 }
@@ -550,6 +551,29 @@ header p{
 
 .house-scene-label.expanded .house-detail-advanced{
     display:grid;
+}
+
+/* Die beiden Solarbank-Charts erhalten eine eigene, volle Zeile. Werte und
+   Diagramm koennen sich dadurch auch auf dem iPhone nie ueberlagern. */
+.house-scene-label.expanded[data-component="battery"],
+.house-scene-label.expanded[data-component="battery3"]{
+    width:min(292px,calc(100vw - 28px));
+    max-width:min(292px,calc(100vw - 28px));
+}
+
+.house-detail-chart{
+    display:block;
+    grid-column:1 / -1;
+    width:100%;
+    min-width:0;
+    overflow:visible;
+}
+
+.house-detail-chart .house-sparkline,
+.house-detail-chart .battery-use-title,
+.house-detail-chart .house-sparkline-caption{
+    width:100%;
+    max-width:none;
 }
 
 .house-scene-more{

@@ -158,6 +158,7 @@ const horseDroppings = [];
 const camelHerd = [];
 const animalDroppings = [];
 const urinePatches = [];
+const animalDemoMode = new URLSearchParams(window.location.search).get("animal_demo") === "1";
 const grassCells = [];
 const grassBladeFields = [];
 const animalResourceVisuals = [];
@@ -3458,6 +3459,10 @@ function loadAnimatedHorse(horseState) {
             model.getObjectByName("spine_5"),
             model.getObjectByName("spine_6")
         ].filter(Boolean);
+        horseState.eliminationRig = ["tail_1", "tail_2", "tail_3", "tail_4"].map((name, index) => {
+            const joint = model.getObjectByName(name);
+            return joint ? { joint, rest: joint.quaternion.clone(), index } : null;
+        }).filter(Boolean);
         horseState.fallback.visible = false;
         horseState.mixer = new THREE.AnimationMixer(model);
         horseState.actions = {};
@@ -3610,10 +3615,10 @@ function createHorse() {
         path: [],
         mode: "walking",
         modeUntil: 0,
-        // Erster Haufen nach etwa 50–70 Minuten; danach ebenfalls nur
-        // ungefaehr stuendlich. Zeiten sind reale Sekunden bei offener App.
-        nextDroppingAt: 3000 + random() * 1200,
-        nextUrinationAt: 900 + random() * 1500,
+        // Die erste Aktion ist schon in einer normalen Sitzung sichtbar;
+        // danach bleibt es beim ungefaehr stuendlichen Rhythmus.
+        nextDroppingAt: animalDemoMode ? 5 : 240 + random() * 240,
+        nextUrinationAt: animalDemoMode ? 14 : 180 + random() * 300,
         travelled: 0,
         stuckFor: 0,
         modelRoot: null,
@@ -3623,6 +3628,8 @@ function createHorse() {
         currentActionName: null,
         headBone: null,
         neckBones: [],
+        eliminationRig: [],
+        elimination: null,
         nextRestAt: 120 + random() * 180,
         nextStableAt: 28 + random() * 52,
         elapsedSeconds: 0,
@@ -3724,21 +3731,39 @@ function restoreAnimalDroppings(replaceExisting = false) {
 }
 
 function addUrinePatch(position, pasture) {
-    const material = new THREE.MeshStandardMaterial({
-        color: 0x789341,
+    const material = new THREE.MeshPhysicalMaterial({
+        color: 0x596528,
         transparent: true,
-        opacity: 0.18,
-        roughness: 1,
+        opacity: 0.58,
+        roughness: 0.10,
+        clearcoat: 1,
+        clearcoatRoughness: 0.04,
         depthWrite: false
     });
-    const patch = addMesh(world, new THREE.CircleGeometry(0.34, 20), material,
-        position.x, 0.032, position.z, { rotation: [-Math.PI / 2, 0, 0], castShadow: false });
-    patch.scale.set(1.25, 0.72, 1);
+    const sheenMaterial = new THREE.MeshPhysicalMaterial({
+        color: 0xd8df8f,
+        transparent: true,
+        opacity: 0.22,
+        roughness: 0.04,
+        clearcoat: 1,
+        clearcoatRoughness: 0.02,
+        depthWrite: false
+    });
+    const patch = new THREE.Group();
+    patch.position.set(position.x, 0.032, position.z);
+    world.add(patch);
+    const wetGround = addMesh(patch, new THREE.CircleGeometry(0.34, 24), material,
+        0, 0, 0, { rotation: [-Math.PI / 2, 0, 0], castShadow: false });
+    wetGround.scale.set(1.25, 0.72, 1);
+    const sheen = addMesh(patch, new THREE.CircleGeometry(0.19, 20), sheenMaterial,
+        -0.05, 0.003, 0.04, { rotation: [-Math.PI / 2, 0, 0], castShadow: false });
+    sheen.scale.set(1.38, 0.52, 1);
     urinePatches.push({
         mesh: patch,
+        materials: [material, sheenMaterial],
         createdAt: performance.now(),
         lifetime: 150000 + Math.random() * 150000,
-        startOpacity: material.opacity
+        startOpacities: [material.opacity, sheenMaterial.opacity]
     });
     fertilizeGrassAt(position.x, position.z, pasture);
 }
@@ -3749,16 +3774,133 @@ function updateUrinePatches(time) {
         const progress = THREE.MathUtils.clamp(
             (time - patch.createdAt) / patch.lifetime, 0, 1
         );
-        patch.mesh.material.opacity = patch.startOpacity * (1 - progress);
+        patch.materials.forEach((material, materialIndex) => {
+            material.opacity = patch.startOpacities[materialIndex] * (1 - progress);
+        });
         patch.mesh.scale.multiplyScalar(1 + Math.max(0, progress - (patch.lastProgress || 0)) * 0.10);
         patch.lastProgress = progress;
         if (progress < 1)
             continue;
         world.remove(patch.mesh);
-        patch.mesh.geometry.dispose();
-        patch.mesh.material.dispose();
+        patch.mesh.traverse((object) => object.geometry?.dispose());
+        patch.materials.forEach((material) => material.dispose());
         urinePatches.splice(index, 1);
     }
+}
+
+function animalRearPosition(animal, species) {
+    const distance = species === "Kamel" ? 0.82 : 0.66;
+    return new THREE.Vector3(
+        animal.group.position.x - Math.sin(animal.group.rotation.y) * distance,
+        0,
+        animal.group.position.z - Math.cos(animal.group.rotation.y) * distance
+    );
+}
+
+function createAnimalEliminationEffect(animal, type, species, seconds) {
+    if (animal.elimination)
+        return false;
+    const visual = new THREE.Group();
+    const camel = species === "Kamel";
+    visual.position.set(0, camel ? 0.78 : 0.70, camel ? -0.84 : -0.68);
+    animal.group.add(visual);
+    const duration = type === "urinating" ? 6.2 : 5.4;
+    const parts = [];
+    let material = null;
+    if (type === "urinating") {
+        material = new THREE.MeshPhysicalMaterial({
+            color: 0xe6c54a,
+            emissive: 0x5a4108,
+            emissiveIntensity: 0.30,
+            transparent: true,
+            opacity: 0,
+            roughness: 0.08,
+            clearcoat: 1,
+            clearcoatRoughness: 0.03,
+            depthWrite: false
+        });
+        const stream = addMesh(visual,
+            new THREE.CylinderGeometry(0.018, 0.032, 0.72, 10), material,
+            0, -0.34, -0.10, { rotation: [0.18, 0, 0], castShadow: false });
+        stream.scale.y = 0.01;
+        parts.push(stream);
+        for (let index = 0; index < 5; index += 1) {
+            const droplet = addMesh(visual, new THREE.SphereGeometry(0.025, 9, 7), material,
+                0, -0.04, -0.10, { castShadow: false });
+            droplet.userData.offset = index / 5;
+            parts.push(droplet);
+        }
+    }
+    else {
+        material = new THREE.MeshStandardMaterial({
+            color: camel ? 0x3d3021 : 0x34251b,
+            roughness: 1
+        });
+        for (let index = 0; index < (camel ? 7 : 5); index += 1) {
+            const pellet = addMesh(visual,
+                new THREE.DodecahedronGeometry(camel ? 0.07 : 0.09, 0), material,
+                (index % 3 - 1) * 0.055, 0, (index % 2) * 0.045,
+                { castShadow: true });
+            pellet.visible = false;
+            pellet.userData.delay = index * 0.48;
+            parts.push(pellet);
+        }
+    }
+    animal.elimination = {
+        type,
+        species,
+        start: seconds,
+        duration,
+        visual,
+        material,
+        parts,
+        groundPosition: animalRearPosition(animal, species)
+    };
+    animal.mode = type;
+    animal.modeUntil = seconds + duration;
+    return true;
+}
+
+function updateAnimalEliminationEffect(animal, seconds) {
+    const effect = animal.elimination;
+    if (!effect)
+        return false;
+    const elapsed = seconds - effect.start;
+    const progress = THREE.MathUtils.clamp(elapsed / effect.duration, 0, 1);
+    const envelope = Math.sin(progress * Math.PI);
+    if (effect.type === "urinating") {
+        effect.material.opacity = 0.78 * Math.min(1, envelope * 2.4);
+        effect.parts[0].scale.y = Math.max(0.01, Math.min(1, envelope * 2.8));
+        effect.parts.slice(1).forEach((droplet) => {
+            const fall = (progress * 5.4 + droplet.userData.offset) % 1;
+            droplet.position.y = -0.04 - fall * 0.68;
+            droplet.position.z = -0.10 - fall * 0.10;
+            droplet.visible = progress > 0.06 && progress < 0.94;
+        });
+    }
+    else {
+        effect.parts.forEach((pellet) => {
+            const localTime = elapsed - pellet.userData.delay;
+            pellet.visible = localTime >= 0;
+            const fall = THREE.MathUtils.clamp(localTime / 0.72, 0, 1);
+            pellet.position.y = -0.68 * fall * fall;
+            pellet.rotation.x += 0.08;
+            pellet.rotation.z += 0.05;
+        });
+    }
+    if (progress < 1)
+        return false;
+    animal.group.remove(effect.visual);
+    effect.visual.traverse((object) => object.geometry?.dispose());
+    effect.material.dispose();
+    if (effect.type === "urinating")
+        addUrinePatch(effect.groundPosition, effect.species === "Kamel");
+    else if (effect.species === "Kamel")
+        addAnimalDropping(effect.groundPosition, "Kamel");
+    else
+        addHorseDropping(effect.groundPosition);
+    animal.elimination = null;
+    return true;
 }
 
 function cleanHorseDroppings() {
@@ -3773,8 +3915,8 @@ function cleanHorseDroppings() {
     });
     urinePatches.splice(0).forEach((patch) => {
         world.remove(patch.mesh);
-        patch.mesh.geometry.dispose();
-        patch.mesh.material.dispose();
+        patch.mesh.traverse((object) => object.geometry?.dispose());
+        patch.materials.forEach((material) => material.dispose());
     });
     animalResources.droppings = [];
     animalCleanLabel.classList.add("outside");
@@ -3916,22 +4058,33 @@ function camelCareTarget(kind, camel) {
         groupMembers.findIndex((member) => member.index === (camel.index ?? 0)));
     const centeredSlot = memberIndex - (groupMembers.length - 1) / 2;
     const slotOffset = centeredSlot * CAMEL_CARE_SLOT_SPACING;
-    return new THREE.Vector3(
-        station.target[0] + station.slotAxis[0] * slotOffset,
-        0,
-        station.target[1] + station.slotAxis[1] * slotOffset
-    );
+    return {
+        point: new THREE.Vector3(
+            station.target[0] + station.slotAxis[0] * slotOffset,
+            0,
+            station.target[1] + station.slotAxis[1] * slotOffset
+        ),
+        // Am Ziel schaut das Kamel wirklich zur Raufe bzw. Tränke. Erst diese
+        // eindeutige Ausrichtung macht die Fress-/Trinkpose gut erkennbar.
+        facingPoint: new THREE.Vector3(station.model[0], 0, station.model[2])
+    };
 }
 
 function chooseCamelTarget(camel) {
     const random = camel.random;
     const careChoice = random();
-    const waterUrgency = animalResources.waterCamels < 28 ? 0.58 : 0.27;
-    const hayUrgency = animalResources.hayCamels < 28 ? 0.86 : 0.55;
-    if (careChoice < waterUrgency)
-        return { point: camelCareTarget("water", camel), intent: "drinking" };
-    if (careChoice < hayUrgency)
-        return { point: camelCareTarget("hay", camel), intent: "feeding" };
+    // Auch bei gefuellten Vorraeten fuehrt deutlich mehr als die Haelfte der
+    // Wege an eine echte Versorgungsstation; bei knappen Vorraeten noch mehr.
+    const waterUrgency = animalResources.waterCamels < 28 ? 0.62 : 0.34;
+    const hayUrgency = animalResources.hayCamels < 28 ? 0.91 : 0.68;
+    if (careChoice < waterUrgency) {
+        const target = camelCareTarget("water", camel);
+        return { ...target, intent: "drinking" };
+    }
+    if (careChoice < hayUrgency) {
+        const target = camelCareTarget("hay", camel);
+        return { ...target, intent: "feeding" };
+    }
     if (horse && random() < 0.12) {
         return {
             point: new THREE.Vector3(-12.38, 0, THREE.MathUtils.clamp(horse.group.position.z, -5.5, 0.6)),
@@ -4024,7 +4177,19 @@ function createBactrianCamel(index) {
     fallback.add(tail);
     addMesh(tail, new THREE.CylinderGeometry(0.045, 0.07, 0.58, 9), dark,
         0, -0.28, -0.08, { rotation: [0.24, 0, 0] });
-    const firstTarget = chooseCamelTarget({ random, index });
+    // Schon kurz nach dem Laden sind Tiere an beiden Stationstypen zu sehen:
+    // zwei starten zur Raufe, zwei zur Tränke, nur das fünfte streift frei.
+    let firstTarget;
+    if (index < 4) {
+        const kind = index % 2 === 0 ? "hay" : "water";
+        const careTarget = camelCareTarget(kind, { random, index });
+        firstTarget = {
+            ...careTarget,
+            intent: kind === "hay" ? "feeding" : "drinking"
+        };
+    }
+    else
+        firstTarget = chooseCamelTarget({ random, index });
     return {
         index,
         group,
@@ -4039,15 +4204,20 @@ function createBactrianCamel(index) {
         mode: "walking",
         modeUntil: 0,
         travelled: 0,
-        nextDroppingAt: 2700 + random() * 2100,
-        nextUrinationAt: 900 + random() * 1500,
+        // Die erste sichtbare Tieraktion erfolgt schon waehrend einer normalen
+        // Sitzung; danach bleibt es beim ungefaehr stuendlichen Rhythmus.
+        nextDroppingAt: animalDemoMode ? 6 + index * 4 : 300 + index * 130 + random() * 160,
+        nextUrinationAt: animalDemoMode ? 16 + index * 4 : 210 + index * 95 + random() * 180,
         elapsedSeconds: 0,
         modelRoot: null,
         mixer: null,
         idleAction: null,
         walkRig: [],
         gaitBlend: 0,
-        detailedTailRig: []
+        detailedTailRig: [],
+        feedingRig: [],
+        facingPoint: firstTarget.facingPoint || null,
+        elimination: null
     };
 }
 
@@ -4141,6 +4311,28 @@ function createCamelTailRig(model) {
     }).filter(Boolean);
 }
 
+function createCamelFeedingRig(model) {
+    const bend = [0.52, 0.44, 0.36, 0.27, 0.16, -0.12];
+    return ["Neck_M_24", "Neck1_M_23", "Neck2_M_22", "Neck3_M_21",
+        "Neck4_M_20", "Head_M_19"].map((name, index) => {
+        const joint = model.getObjectByName(name);
+        return joint ? { joint, rest: joint.quaternion.clone(), bend: bend[index] } : null;
+    }).filter(Boolean);
+}
+
+function poseDetailedCamelHead(camel, mode, seconds) {
+    if (!camel.feedingRig?.length)
+        return;
+    const intensity = mode === "grazing" ? 1.16 :
+        mode === "drinking" ? 1.00 : mode === "feeding" ? 0.82 : 0;
+    const nibble = intensity > 0 ? Math.sin(seconds * 2.1 + camel.index) * 0.035 : 0;
+    camel.feedingRig.forEach((segment, index) => {
+        camelTailRotation.setFromAxisAngle(camelTailAxis,
+            segment.bend * intensity + nibble * (1 - index / 10));
+        segment.joint.quaternion.copy(segment.rest).multiply(camelTailRotation);
+    });
+}
+
 const camelGaitAxis = new THREE.Vector3(0, 0, 1);
 const camelGaitRotation = new THREE.Quaternion();
 
@@ -4190,17 +4382,21 @@ function animateCamelTail(camel, seconds) {
     // Beim Laufen ist der Ausschlag etwas kräftiger; im Stand sorgen zwei
     // überlagerte Frequenzen für die typischen unregelmäßigen Fliegen-Schläge.
     const moving = camel.mode === "walking" || camel.mode === "running";
-    const phase = seconds * (moving ? 2.65 : 1.55) + camel.index * 1.37;
-    const flyFlick = Math.pow(Math.max(0, Math.sin(seconds * 0.47 + camel.index * 2.11)), 12);
+    const phase = seconds * (moving ? 5.8 : 3.4) + camel.index * 1.37;
+    const flyFlick = Math.pow(Math.max(0, Math.sin(seconds * 1.08 + camel.index * 2.11)), 10);
     const swing = Math.sin(phase) * (moving ? 0.20 : 0.13) +
         Math.sin(phase * 2.31 + camel.index) * 0.045 + flyFlick * 0.22;
+    const eliminationLift = camel.mode === "defecating" ? 0.48 :
+        camel.mode === "urinating" ? 0.34 : 0;
     if (!camel.modelRoot) {
         camel.tail.rotation.z = swing;
+        camel.tail.rotation.x = -eliminationLift;
         return;
     }
     camel.detailedTailRig.forEach((segment) => {
         const segmentSwing = swing * (0.42 + segment.index * 0.10) +
-            Math.sin(phase - segment.index * 0.34) * 0.025 * segment.index;
+            Math.sin(phase - segment.index * 0.34) * 0.025 * segment.index +
+            eliminationLift * Math.max(0.24, 1 - segment.index * 0.10);
         camelTailRotation.setFromAxisAngle(camelTailAxis, segmentSwing);
         segment.joint.quaternion.copy(segment.rest).multiply(camelTailRotation);
     });
@@ -4230,6 +4426,7 @@ function loadDetailedCamels() {
             camel.fallback.visible = false;
             camel.walkRig = createCamelWalkRig(model);
             camel.detailedTailRig = createCamelTailRig(model);
+            camel.feedingRig = createCamelFeedingRig(model);
             camel.mixer = new THREE.AnimationMixer(model);
             const idleClip = gltf.animations.find((clip) => clip.name === "Bactrian_Camel_Idle") ||
                 gltf.animations[0];
@@ -4255,6 +4452,7 @@ function startCamelJourney(camel) {
     const target = chooseCamelTarget(camel);
     camel.target = target.point;
     camel.intent = target.intent;
+    camel.facingPoint = target.facingPoint || null;
     camel.mode = camel.random() < 0.10 ? "running" : "walking";
 }
 
@@ -4270,14 +4468,33 @@ function animateCamels(seconds, delta) {
             camel.mixer.update(delta);
         }
         animateCamelTail(camel, seconds);
-        if (["grazing", "drinking", "feeding", "meeting", "idle"].includes(camel.mode)) {
+        if (["urinating", "defecating"].includes(camel.mode)) {
+            if (!camel.modelRoot)
+                camel.neckRig.rotation.x = THREE.MathUtils.damp(camel.neckRig.rotation.x, 0, 5, delta);
+            else {
+                animateDetailedCamelGait(camel, false, false, delta);
+                poseDetailedCamelHead(camel, "idle", seconds);
+            }
+            if (updateAnimalEliminationEffect(camel, seconds))
+                startCamelJourney(camel);
+        }
+        else if (["grazing", "drinking", "feeding", "meeting", "idle"].includes(camel.mode)) {
             const eating = camel.mode === "grazing" || camel.mode === "drinking" || camel.mode === "feeding";
+            if (camel.facingPoint && (camel.mode === "drinking" || camel.mode === "feeding")) {
+                const facingX = camel.facingPoint.x - camel.group.position.x;
+                const facingZ = camel.facingPoint.z - camel.group.position.z;
+                const targetYaw = Math.atan2(facingX, facingZ);
+                const yawDelta = Math.atan2(Math.sin(targetYaw - camel.group.rotation.y),
+                    Math.cos(targetYaw - camel.group.rotation.y));
+                camel.group.rotation.y += yawDelta * Math.min(1, delta * 3.2);
+            }
             if (!camel.modelRoot) {
                 camel.neckRig.rotation.x = THREE.MathUtils.damp(camel.neckRig.rotation.x,
                     eating ? 0.78 : 0, 4, delta);
             }
             else {
                 animateDetailedCamelGait(camel, false, false, delta);
+                poseDetailedCamelHead(camel, camel.mode, seconds);
             }
             if (camel.mode === "grazing")
                 grazeAt(camel.group.position.x, camel.group.position.z, true, delta * 0.12);
@@ -4287,12 +4504,18 @@ function animateCamels(seconds, delta) {
         else {
             if (!camel.modelRoot)
                 camel.neckRig.rotation.x = THREE.MathUtils.damp(camel.neckRig.rotation.x, 0, 4, delta);
+            else
+                poseDetailedCamelHead(camel, "idle", seconds);
             const dx = camel.target.x - camel.group.position.x;
             const dz = camel.target.z - camel.group.position.z;
             const distance = Math.hypot(dx, dz);
             if (distance < 0.30) {
                 camel.mode = camel.intent;
-                camel.modeUntil = seconds + 6 + camel.random() * 12;
+                // Raufe und Tränke bleiben lange genug belegt, damit der
+                // Nutzer die Aktion auch beim zufälligen Kameraschwenk sieht.
+                camel.modeUntil = seconds +
+                    (["feeding", "drinking"].includes(camel.intent) ?
+                        20 + camel.random() * 16 : 10 + camel.random() * 14);
             }
             else {
                 let directionX = dx / Math.max(distance, 0.001);
@@ -4341,12 +4564,12 @@ function animateCamels(seconds, delta) {
                 }
             }
         }
-        if (seconds >= camel.nextDroppingAt) {
-            addAnimalDropping(camel.group.position, "Kamel");
+        if (!camel.elimination && seconds >= camel.nextDroppingAt &&
+            createAnimalEliminationEffect(camel, "defecating", "Kamel", seconds)) {
             camel.nextDroppingAt = seconds + 2800 + camel.random() * 1900;
         }
-        if (seconds >= camel.nextUrinationAt) {
-            addUrinePatch(camel.group.position, true);
+        else if (!camel.elimination && seconds >= camel.nextUrinationAt &&
+            createAnimalEliminationEffect(camel, "urinating", "Kamel", seconds)) {
             camel.nextUrinationAt = seconds + 1100 + camel.random() * 1800;
         }
     });
@@ -4481,6 +4704,24 @@ function horseStableSurfaceHeight(x, z) {
     return 0.28;
 }
 
+const horseEliminationAxis = new THREE.Vector3(0, 0, 1);
+const horseEliminationRotation = new THREE.Quaternion();
+
+function poseHorseElimination(horseState, seconds, delta) {
+    const defecating = horseState.mode === "defecating";
+    setHorseAnimation(horseState, "Idle");
+    horseState.headRig.rotation.x = THREE.MathUtils.damp(horseState.headRig.rotation.x, 0, 5, delta);
+    horseState.headRig.position.y = THREE.MathUtils.damp(horseState.headRig.position.y, 1.54, 5, delta);
+    horseState.tailRig.rotation.x = THREE.MathUtils.damp(horseState.tailRig.rotation.x,
+        defecating ? -0.70 : -0.48, 6, delta);
+    horseState.tailRig.rotation.z = Math.sin(seconds * 2.8) * 0.08;
+    horseState.eliminationRig?.forEach((segment) => {
+        const lift = (defecating ? 0.62 : 0.42) * Math.max(0.25, 1 - segment.index * 0.15);
+        horseEliminationRotation.setFromAxisAngle(horseEliminationAxis, lift);
+        segment.joint.quaternion.copy(segment.rest).multiply(horseEliminationRotation);
+    });
+}
+
 function animateHorse(seconds, delta) {
     if (!horse)
         return;
@@ -4493,7 +4734,14 @@ function animateHorse(seconds, delta) {
         return;
     }
     const position = horse.group.position;
-    if (horse.mode === "grazing") {
+    if (!["urinating", "defecating"].includes(horse.mode))
+        horse.tailRig.rotation.x = THREE.MathUtils.damp(horse.tailRig.rotation.x, 0, 6, delta);
+    if (["urinating", "defecating"].includes(horse.mode)) {
+        poseHorseElimination(horse, seconds, delta);
+        if (updateAnimalEliminationEffect(horse, seconds))
+            startHorseJourney(horse, position, true);
+    }
+    else if (horse.mode === "grazing") {
         // Vollständige Originalanimation: Kopf bis zur Grasnarbe und beide
         // Vorderbeine bleiben sichtbar; die dafür typische Spreizung ist
         // bewusst wieder aktiviert.
@@ -4646,12 +4894,12 @@ function animateHorse(seconds, delta) {
     const inStableRoute = stableFloorY > 0.001;
     position.y = inStableRoute ? stableFloorY + fallbackStepLift :
         THREE.MathUtils.damp(position.y, fallbackStepLift, 14, delta);
-    if (seconds >= horse.nextDroppingAt) {
-        addHorseDropping();
+    if (!horse.elimination && seconds >= horse.nextDroppingAt &&
+        createAnimalEliminationEffect(horse, "defecating", "Pferd", seconds)) {
         horse.nextDroppingAt = seconds + 3000 + horse.random() * 1800;
     }
-    if (seconds >= horse.nextUrinationAt) {
-        addUrinePatch(horse.group.position, false);
+    else if (!horse.elimination && seconds >= horse.nextUrinationAt &&
+        createAnimalEliminationEffect(horse, "urinating", "Pferd", seconds)) {
         horse.nextUrinationAt = seconds + 1200 + horse.random() * 1800;
     }
 }
@@ -6372,21 +6620,33 @@ function pvSparklineHtml(history, stringIndex = null) {
 
 function secondaryBatteryUsageChartHtml(history) {
     const now = Date.now();
+    const windowMs = 24 * 60 * 60 * 1000;
     const points = Array.isArray(history) ? history.map((point) => ({
         time: new Date(point?.time).getTime(),
         percent: numberValue(point?.battery_percent),
         charge: numberValue(point?.charge_w) ?? 0,
         discharge: numberValue(point?.discharge_w) ?? 0
     })).filter((point) => Number.isFinite(point.time) && point.percent != null &&
-        point.time >= now - 24 * 60 * 60 * 1000)
+        point.time >= now - windowMs)
         .sort((left, right) => left.time - right.time) : [];
     if (!points.length)
         return '<span class="house-detail-row"><b>Akkukapazität 24 h</b><span>baut sich im Hintergrund auf</span></span>';
 
+    // Nach einem Deploy oder dem ersten Messwert des Tages existiert noch
+    // keine volle 24-h-Historie. In diesem Fall wird der real vorhandene
+    // Zeitraum ueber die gesamte Diagrammbreite dargestellt und links mit
+    // seiner echten Startzeit beschriftet. Sobald 24 h vorliegen, bleibt die
+    // feste -24-h-Achse erhalten. So wirkt die Kurve nie wie ein 1/5 breiter
+    // Chart, ohne fehlende Messwerte zu erfinden.
+    const fixedStart = now - windowMs;
+    const domainStart = points[0].time <= fixedStart + 5 * 60 * 1000 ?
+        fixedStart : points[0].time;
+    const domainSpan = Math.max(60 * 1000, now - domainStart);
+    const startLabel = domainStart === fixedStart ? "-24 h" :
+        new Date(domainStart).toLocaleTimeString("de-DE", {hour: "2-digit", minute: "2-digit"});
     const coordinates = points.map((point) => ({
         ...point,
-        x: THREE.MathUtils.clamp((point.time - (now - 24 * 60 * 60 * 1000)) /
-            (24 * 60 * 60 * 1000) * 100, 0, 100),
+        x: THREE.MathUtils.clamp((point.time - domainStart) / domainSpan * 100, 0, 100),
         y: 31 - THREE.MathUtils.clamp(point.percent, 0, 100) / 100 * 27
     }));
     const segments = coordinates.slice(1).map((point, index) => {
@@ -6412,7 +6672,7 @@ function secondaryBatteryUsageChartHtml(history) {
         '<line class="grid" x1="75" y1="1" x2="75" y2="34"></line>' +
         segments + extrema + '<circle class="battery-use-point" cx="' + last.x.toFixed(1) +
         '" cy="' + last.y.toFixed(1) + '" r="1.8"></circle></svg>' +
-        '<span class="house-sparkline-caption"><span>-24 h</span><span>Tief ' +
+        '<span class="house-sparkline-caption"><span>' + escapeHtml(startLabel) + '</span><span>Tief ' +
         Math.round(low.percent) + ' % · Hoch ' + Math.round(high.percent) +
         ' %</span><span>jetzt</span></span>';
 }
@@ -6439,18 +6699,25 @@ function chartExtremeMarkers(low, high, formatter) {
 
 function temperatureChartHtml(history, label) {
     const now = Date.now();
+    const windowMs = 24 * 60 * 60 * 1000;
     const points = Array.isArray(history) ? history.map((point) => ({
         time: new Date(point?.time).getTime(),
         value: numberValue(point?.temperature_c)
     })).filter((point) => Number.isFinite(point.time) && point.value != null &&
-        point.time >= now - 24 * 60 * 60 * 1000).sort((a, b) => a.time - b.time) : [];
+        point.time >= now - windowMs).sort((a, b) => a.time - b.time) : [];
     if (!points.length)
         return '<span class="house-detail-row"><b>Temperatur 24 h</b><span>noch kein Sensorwert</span></span>';
     const minimum = Math.min(...points.map((point) => point.value));
     const maximum = Math.max(...points.map((point) => point.value));
     const span = Math.max(4, maximum - minimum);
+    const fixedStart = now - windowMs;
+    const domainStart = points[0].time <= fixedStart + 5 * 60 * 1000 ?
+        fixedStart : points[0].time;
+    const domainSpan = Math.max(60 * 1000, now - domainStart);
+    const startLabel = domainStart === fixedStart ? "-24 h" :
+        new Date(domainStart).toLocaleTimeString("de-DE", {hour: "2-digit", minute: "2-digit"});
     const coordinates = points.map((point) => ({
-        x: THREE.MathUtils.clamp((point.time - (now - 24 * 60 * 60 * 1000)) / (24 * 60 * 60 * 1000) * 100, 0, 100),
+        x: THREE.MathUtils.clamp((point.time - domainStart) / domainSpan * 100, 0, 100),
         y: 31 - (point.value - (minimum - 2)) / (span + 4) * 27,
         value: point.value
     }));
@@ -6466,7 +6733,7 @@ function temperatureChartHtml(history, label) {
         coordinates.map((point) => point.x.toFixed(1) + ',' + point.y.toFixed(1)).join(' ') +
         '"></polyline>' + extrema + '<circle class="point" cx="' + last.x.toFixed(1) + '" cy="' +
         last.y.toFixed(1) + '" r="1.6"></circle></svg>' +
-        '<span class="house-sparkline-caption"><span>-24 h</span><span>Tief ' +
+        '<span class="house-sparkline-caption"><span>' + escapeHtml(startLabel) + '</span><span>Tief ' +
         minimum.toLocaleString("de-DE", {maximumFractionDigits: 1}) + ' °C · Hoch ' +
         maximum.toLocaleString("de-DE", {maximumFractionDigits: 1}) + ' °C</span><span>jetzt</span></span>';
 }
@@ -6519,8 +6786,10 @@ function audiBatteryChartHtml(history, sessions) {
 
 function renderComponentDetail(component) {
     return '<span class="house-detail-grid">' + detailRowsHtml(component.rows) + '</span>' +
-        '<span class="house-detail-advanced">' + detailRowsHtml(component.advancedRows || []) +
-        (component.chart || "") + '</span>';
+        '<span class="house-detail-advanced"><span class="house-detail-facts">' +
+        detailRowsHtml(component.advancedRows || []) + '</span>' +
+        (component.chart ? '<span class="house-detail-chart">' + component.chart + '</span>' : "") +
+        '</span>';
 }
 
 function componentData() {
