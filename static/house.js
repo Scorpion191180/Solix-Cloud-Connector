@@ -257,8 +257,8 @@ async function runAnimalAction(action) {
             throw new Error("Aktion konnte nicht gespeichert werden");
         applySharedAnimalState(await response.json(), true);
         menuCleanStatus.textContent = action === "clean" ? "Grundstück ist sauber." :
-            action === "refill_hay" ? "Beide Heuraufen sind wieder voll." :
-                "Beide Wassertränken sind wieder voll.";
+            action === "refill_hay" ? "Alle Heuraufen sind wieder voll." :
+                "Alle Wassertränken sind wieder voll.";
     }
     catch (error) {
         menuCleanStatus.textContent = error.message;
@@ -3781,9 +3781,12 @@ function cleanHorseDroppings() {
     menuCleanStatus.textContent = "Grundstück ist sauber.";
 }
 
-function createAnimalTrough(position, resourceKey) {
+function createAnimalTrough(position, resourceKey, rotation = 0, stationId = "") {
     const group = new THREE.Group();
     group.position.set(...position);
+    group.rotation.y = rotation;
+    group.name = stationId || `${resourceKey}-trough`;
+    group.userData.animalCareStation = stationId || resourceKey;
     world.add(group);
     const metal = new THREE.MeshStandardMaterial({ color: 0x667078, metalness: 0.62, roughness: 0.40 });
     addBox(group, [1.18, 0.40, 0.58], metal, [0, 0.31, 0], { radius: 0.10 });
@@ -3793,10 +3796,12 @@ function createAnimalTrough(position, resourceKey) {
     animalResourceVisuals.push({ kind: "water", resourceKey, fill });
 }
 
-function createHayRack(position, resourceKey, rotation = 0) {
+function createHayRack(position, resourceKey, rotation = 0, stationId = "") {
     const group = new THREE.Group();
     group.position.set(...position);
     group.rotation.y = rotation;
+    group.name = stationId || `${resourceKey}-rack`;
+    group.userData.animalCareStation = stationId || resourceKey;
     world.add(group);
     const frame = new THREE.MeshStandardMaterial({ color: 0x4d5152, metalness: 0.64, roughness: 0.46 });
     const hay = new THREE.MeshStandardMaterial({ color: 0xc6a13d, roughness: 1 });
@@ -3838,12 +3843,57 @@ function updateAnimalResourceVisuals() {
     }
 }
 
+// Je eine Kamelstation liegt am bisherigen Platz hinter dem Pool und direkt
+// hinter dem schrägen Zaun an der Pergola. Beide Modelle verwenden dieselben
+// Server-Ressourcen (hayCamels/waterCamels), daher füllt der vorhandene Button
+// immer beide Kamelraufen beziehungsweise beide Kameltränken gemeinsam auf.
+const CAMEL_CARE_STATIONS = {
+    water: [
+        {
+            id: "pool-camel-water",
+            model: [-12.28, 0, -3.92],
+            target: [-12.52, -3.92],
+            rotation: 0,
+            slotAxis: [0, 1]
+        },
+        {
+            id: "pergola-camel-water",
+            model: [5.18, 0, -17.52],
+            target: [4.88, -18.18],
+            rotation: 0.49,
+            slotAxis: [0.88, 0.47]
+        }
+    ],
+    hay: [
+        {
+            id: "pool-camel-hay",
+            model: [-12.32, 0, -2.26],
+            target: [-12.58, -2.26],
+            rotation: -Math.PI / 2,
+            slotAxis: [0, 1]
+        },
+        {
+            id: "pergola-camel-hay",
+            model: [3.62, 0, -16.72],
+            target: [3.30, -17.38],
+            rotation: 0.49,
+            slotAxis: [0.88, 0.47]
+        }
+    ]
+};
+// 2,40 m Abstand verhindert auch bei den beiden größten Tieren sichtbare
+// Überschneidungen von Körper, Hals und Höckern an derselben Station.
+const CAMEL_CARE_SLOT_SPACING = 2.40;
+const CAMEL_HERD_SIZE = 5;
+
 function createAnimalCareStations() {
     // Die Pferdetränke ist Teil des 3D-Stalls. Hinter dem Poolzaun verbleiben
-    // nur die Kameltränke sowie die beiden getrennten Heuraufen.
-    createAnimalTrough([-12.28, 0, -3.92], "waterCamels");
+    // zwei miteinander gekoppelte Kamelstationen sowie die Pferde-Heuraufe.
+    CAMEL_CARE_STATIONS.water.forEach((station) =>
+        createAnimalTrough(station.model, "waterCamels", station.rotation, station.id));
     createHayRack([-10.66, 0, -2.26], "hayHorse", Math.PI / 2);
-    createHayRack([-12.32, 0, -2.26], "hayCamels", -Math.PI / 2);
+    CAMEL_CARE_STATIONS.hay.forEach((station) =>
+        createHayRack(station.model, "hayCamels", station.rotation, station.id));
     updateAnimalResourceVisuals();
 }
 
@@ -3851,16 +3901,37 @@ function camelCanStandAt(x, z) {
     return pointInPolygon(x, z, CAMEL_PASTURE_BOUNDARY);
 }
 
+function camelCareTarget(kind, camel) {
+    const stations = CAMEL_CARE_STATIONS[kind];
+    // Gerade/ungerade Tiernummern erhalten eine feste Stationszuordnung.
+    // Dadurch wechseln nicht alle Kamele gleichzeitig zur selben Raufe.
+    const stationIndex = (camel.index ?? 0) % stations.length;
+    const station = stations[stationIndex];
+    // Die Soll-Herdengröße wird auch während des schrittweisen Erzeugens der
+    // Modelle verwendet. Dadurch sind schon die allerersten Ziele korrekt
+    // verteilt und kein Tier startet vorübergehend auf demselben Standplatz.
+    const groupMembers = Array.from({ length: CAMEL_HERD_SIZE }, (_, index) => ({ index }))
+        .filter((member) => member.index % stations.length === stationIndex);
+    const memberIndex = Math.max(0,
+        groupMembers.findIndex((member) => member.index === (camel.index ?? 0)));
+    const centeredSlot = memberIndex - (groupMembers.length - 1) / 2;
+    const slotOffset = centeredSlot * CAMEL_CARE_SLOT_SPACING;
+    return new THREE.Vector3(
+        station.target[0] + station.slotAxis[0] * slotOffset,
+        0,
+        station.target[1] + station.slotAxis[1] * slotOffset
+    );
+}
+
 function chooseCamelTarget(camel) {
     const random = camel.random;
-    const stationOffset = ((camel.index ?? 2) - 2) * 0.68;
     const careChoice = random();
     const waterUrgency = animalResources.waterCamels < 28 ? 0.58 : 0.27;
     const hayUrgency = animalResources.hayCamels < 28 ? 0.86 : 0.55;
     if (careChoice < waterUrgency)
-        return { point: new THREE.Vector3(-12.52, 0, -3.92 + stationOffset), intent: "drinking" };
+        return { point: camelCareTarget("water", camel), intent: "drinking" };
     if (careChoice < hayUrgency)
-        return { point: new THREE.Vector3(-12.58, 0, -2.26 + stationOffset), intent: "feeding" };
+        return { point: camelCareTarget("hay", camel), intent: "feeding" };
     if (horse && random() < 0.12) {
         return {
             point: new THREE.Vector3(-12.38, 0, THREE.MathUtils.clamp(horse.group.position.z, -5.5, 0.6)),
@@ -4175,7 +4246,7 @@ function loadDetailedCamels() {
 }
 
 function createCamelPasture() {
-    for (let index = 0; index < 5; index += 1)
+    for (let index = 0; index < CAMEL_HERD_SIZE; index += 1)
         camelHerd.push(createBactrianCamel(index));
     loadDetailedCamels();
 }
