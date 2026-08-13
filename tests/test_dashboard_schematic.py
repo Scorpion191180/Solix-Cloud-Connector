@@ -21,9 +21,9 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260813-92", dashboard)
-        self.assertIn("house.js?v=20260813-92", dashboard)
-        self.assertIn("app.js?v=20260813-92", dashboard)
+        self.assertIn("style.css?v=20260813-93", dashboard)
+        self.assertIn("house.js?v=20260813-93", dashboard)
+        self.assertIn("app.js?v=20260813-93", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
 
@@ -399,6 +399,10 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("/static/models/bactrian-camel.glb?v=82", script)
         self.assertIn("const CAMEL_PASTURE_BOUNDARY", script)
         self.assertIn("pointInPolygon(x, z, CAMEL_PASTURE_BOUNDARY)", script)
+        self.assertIn("function distanceToPastureBoundary", script)
+        self.assertIn("function camelPathIsClear", script)
+        self.assertIn("function rescueStuckCamel", script)
+        self.assertIn("camel.stuckFor > 2.4", script)
         self.assertIn("[7.02, -19.20]", script)
         self.assertIn("function createCamelTailRig", script)
         self.assertIn("function animateCamelTail", script)

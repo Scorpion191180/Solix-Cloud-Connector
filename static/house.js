@@ -4001,9 +4001,12 @@ const CAMEL_CARE_STATIONS = {
         {
             id: "pergola-camel-water",
             model: [5.18, 0, -17.52],
-            target: [4.88, -18.18],
+            // Die Standplätze liegen parallel zum schrägen Zaun, aber mit
+            // ausreichend Abstand auf der Weideseite. Der frühere diagonale
+            // Versatz setzte das linke Tier praktisch auf die Zaunkante.
+            target: [4.88, -17.28],
             rotation: 0.49,
-            slotAxis: [0.88, 0.47]
+            slotAxis: [1, 0]
         }
     ],
     hay: [
@@ -4017,9 +4020,9 @@ const CAMEL_CARE_STATIONS = {
         {
             id: "pergola-camel-hay",
             model: [3.62, 0, -16.72],
-            target: [3.30, -17.38],
+            target: [3.30, -17.20],
             rotation: 0.49,
-            slotAxis: [0.88, 0.47]
+            slotAxis: [1, 0]
         }
     ]
 };
@@ -4039,8 +4042,56 @@ function createAnimalCareStations() {
     updateAnimalResourceVisuals();
 }
 
-function camelCanStandAt(x, z) {
-    return pointInPolygon(x, z, CAMEL_PASTURE_BOUNDARY);
+function distanceToPastureBoundary(x, z) {
+    let nearest = Infinity;
+    CAMEL_PASTURE_BOUNDARY.forEach((start, index) => {
+        const end = CAMEL_PASTURE_BOUNDARY[(index + 1) % CAMEL_PASTURE_BOUNDARY.length];
+        const dx = end[0] - start[0];
+        const dz = end[1] - start[1];
+        const lengthSquared = dx * dx + dz * dz;
+        const progress = lengthSquared > 0 ? THREE.MathUtils.clamp(
+            ((x - start[0]) * dx + (z - start[1]) * dz) / lengthSquared, 0, 1
+        ) : 0;
+        nearest = Math.min(nearest, Math.hypot(
+            x - (start[0] + dx * progress),
+            z - (start[1] + dz * progress)
+        ));
+    });
+    return nearest;
+}
+
+function camelCanStandAt(x, z, clearance = 0) {
+    return pointInPolygon(x, z, CAMEL_PASTURE_BOUNDARY) &&
+        distanceToPastureBoundary(x, z) >= clearance;
+}
+
+function camelPathIsClear(startX, startZ, endX, endZ, clearance = 0.30) {
+    const distance = Math.hypot(endX - startX, endZ - startZ);
+    const steps = Math.max(1, Math.ceil(distance / 0.28));
+    for (let step = 1; step <= steps; step += 1) {
+        const progress = step / steps;
+        if (!camelCanStandAt(
+            THREE.MathUtils.lerp(startX, endX, progress),
+            THREE.MathUtils.lerp(startZ, endZ, progress),
+            clearance
+        ))
+            return false;
+    }
+    return true;
+}
+
+function chooseCamelRescuePoint(camel) {
+    const origin = camel.group.position;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+        const angle = camel.random() * Math.PI * 2;
+        const radius = 1.6 + camel.random() * 4.4;
+        const x = origin.x + Math.sin(angle) * radius;
+        const z = origin.z + Math.cos(angle) * radius;
+        if (camelCanStandAt(x, z, 0.70) &&
+            camelPathIsClear(origin.x, origin.z, x, z, 0.22))
+            return new THREE.Vector3(x, 0, z);
+    }
+    return new THREE.Vector3(-15.2, 0, -5.0);
 }
 
 function camelCareTarget(kind, camel) {
@@ -4098,7 +4149,7 @@ function chooseCamelTarget(camel) {
         for (let attempt = 0; attempt < 60; attempt += 1) {
             const x = -19.70 + random() * 26.35;
             const z = -18.75 + random() * 7.70;
-            if (camelCanStandAt(x, z))
+            if (camelCanStandAt(x, z, 0.70))
                 return {
                     point: new THREE.Vector3(x, 0, z),
                     intent: random() < 0.82 ? "grazing" : "idle"
@@ -4108,7 +4159,7 @@ function chooseCamelTarget(camel) {
     for (let attempt = 0; attempt < 90; attempt += 1) {
         const x = -20.00 + random() * 26.75;
         const z = -18.85 + random() * 31.55;
-        if (camelCanStandAt(x, z)) {
+        if (camelCanStandAt(x, z, 0.70)) {
             return {
                 point: new THREE.Vector3(x, 0, z),
                 intent: random() < 0.76 ? "grazing" : "idle"
@@ -4217,7 +4268,9 @@ function createBactrianCamel(index) {
         detailedTailRig: [],
         feedingRig: [],
         facingPoint: firstTarget.facingPoint || null,
-        elimination: null
+        elimination: null,
+        stuckFor: 0,
+        lastProgressPosition: group.position.clone()
     };
 }
 
@@ -4454,6 +4507,18 @@ function startCamelJourney(camel) {
     camel.intent = target.intent;
     camel.facingPoint = target.facingPoint || null;
     camel.mode = camel.random() < 0.10 ? "running" : "walking";
+    camel.stuckFor = 0;
+    camel.lastProgressPosition.copy(camel.group.position);
+}
+
+function rescueStuckCamel(camel) {
+    const rescue = chooseCamelRescuePoint(camel);
+    camel.target.copy(rescue);
+    camel.intent = camel.random() < 0.78 ? "grazing" : "idle";
+    camel.facingPoint = null;
+    camel.mode = "walking";
+    camel.stuckFor = 0;
+    camel.lastProgressPosition.copy(camel.group.position);
 }
 
 function animateCamels(seconds, delta) {
@@ -4545,14 +4610,27 @@ function animateCamels(seconds, delta) {
                 const speed = camel.mode === "running" ? 0.92 : 0.30;
                 const nextX = camel.group.position.x + Math.sin(camel.group.rotation.y) * speed * delta;
                 const nextZ = camel.group.position.z + Math.cos(camel.group.rotation.y) * speed * delta;
-                if (camelCanStandAt(nextX, nextZ)) {
+                if (camelCanStandAt(nextX, nextZ, 0.18)) {
                     camel.group.position.x = nextX;
                     camel.group.position.z = nextZ;
                     camel.travelled += speed * delta;
                 }
                 else {
-                    startCamelJourney(camel);
+                    camel.stuckFor += delta * 2.2;
                 }
+                const progress = camel.group.position.distanceTo(camel.lastProgressPosition);
+                if (progress >= 0.24) {
+                    camel.stuckFor = 0;
+                    camel.lastProgressPosition.copy(camel.group.position);
+                }
+                else
+                    camel.stuckFor += delta;
+                // Wenn Ausweichbewegungen oder ein Ziel an einer schrägen
+                // Zaunkante keinen echten Fortschritt mehr zulassen, erhält
+                // das Tier einen sicher erreichbaren Punkt im Weideinneren.
+                // Damit endet auch das sichtbare Links-rechts-Zucken.
+                if (camel.stuckFor > 2.4)
+                    rescueStuckCamel(camel);
                 if (!camel.modelRoot) {
                     camel.legs.forEach((leg) => {
                         leg.rotation.x = Math.sin(camel.travelled * 7.0 + leg.userData.offset) *
