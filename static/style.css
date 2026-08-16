@@ -1132,6 +1132,10 @@ header p{
     cursor:pointer;
 }
 
+.house-stage.icon-capture > :not(canvas){
+    display:none !important;
+}
+
 .house-menu-toggle span{
     width:20px;
     height:2px;

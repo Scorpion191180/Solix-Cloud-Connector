@@ -21,6 +21,7 @@ const menuToggle = document.getElementById("houseMenuToggle");
 const menuPanel = document.getElementById("houseMenuPanel");
 const menuClose = document.getElementById("houseMenuClose");
 const menuCollapse = document.getElementById("houseMenuCollapse");
+const animalSoundToggle = document.getElementById("animalSoundToggle");
 const menuCleanStatus = document.getElementById("houseCleanStatus");
 const menuCareStatus = document.getElementById("houseCareStatus");
 const menuPvToday = document.getElementById("menuPvToday");
@@ -159,6 +160,88 @@ const camelHerd = [];
 const animalDroppings = [];
 const urinePatches = [];
 const animalDemoMode = new URLSearchParams(window.location.search).get("animal_demo") === "1";
+const iconCaptureMode = new URLSearchParams(window.location.search).get("icon_capture") === "1";
+if (iconCaptureMode)
+    stage.classList.add("icon-capture");
+const animalSoundSources = {
+    horse: new Audio("/static/sounds/horse-neigh.ogg?v=94"),
+    camel: new Audio("/static/sounds/camel-call.ogg?v=94")
+};
+let animalSoundsEnabled = true;
+try {
+    animalSoundsEnabled = localStorage.getItem("solix-animal-sounds") !== "off";
+} catch (_error) {
+    // Bleibt auch in eingeschraenkten Safari-/Privatmodi nutzbar.
+}
+let animalSoundsUnlocked = false;
+const animalSoundLastPlayed = { horse: -Infinity, camel: -Infinity };
+
+Object.values(animalSoundSources).forEach((audio) => {
+    audio.preload = "auto";
+    audio.playsInline = true;
+});
+
+function updateAnimalSoundButton() {
+    if (!animalSoundToggle)
+        return;
+    animalSoundToggle.textContent = animalSoundsEnabled ? "🔊 Tierlaute: an" : "🔇 Tierlaute: aus";
+    animalSoundToggle.setAttribute("aria-pressed", animalSoundsEnabled ? "true" : "false");
+}
+
+function unlockAnimalSounds() {
+    if (animalSoundsUnlocked || !animalSoundsEnabled)
+        return;
+    animalSoundsUnlocked = true;
+    // Safari/iOS verlangt einen ersten, direkt durch eine Berührung ausgelösten
+    // Start. Lautstärke null macht diesen Freischaltvorgang unhörbar.
+    Object.values(animalSoundSources).forEach((audio) => {
+        audio.volume = 0;
+        const start = audio.play();
+        if (start?.then) {
+            start.then(() => {
+                audio.pause();
+                audio.currentTime = 0;
+            }).catch(() => {
+                animalSoundsUnlocked = false;
+            });
+        }
+    });
+}
+
+function playAnimalSound(kind, volume = 0.55) {
+    if (!animalSoundsEnabled || !animalSoundsUnlocked || !animalSoundSources[kind])
+        return;
+    const now = performance.now() * 0.001;
+    const cooldown = kind === "camel" ? 34 : 22;
+    if (now - animalSoundLastPlayed[kind] < cooldown)
+        return;
+    animalSoundLastPlayed[kind] = now;
+    // Das bereits per Nutzerberuehrung entsperrte Element wiederverwenden. Das
+    // ist auf iOS zuverlaessiger als ein erst spaeter erzeugter Audio-Klon.
+    const audio = animalSoundSources[kind];
+    audio.pause();
+    audio.currentTime = 0;
+    audio.volume = THREE.MathUtils.clamp(volume, 0, 1);
+    audio.playbackRate = kind === "camel" ? 0.94 + Math.random() * 0.10 : 0.97 + Math.random() * 0.06;
+    audio.play().catch(() => {
+        animalSoundsUnlocked = false;
+    });
+}
+
+window.addEventListener("pointerdown", unlockAnimalSounds, { passive: true });
+window.addEventListener("keydown", unlockAnimalSounds, { passive: true });
+animalSoundToggle?.addEventListener("click", () => {
+    animalSoundsEnabled = !animalSoundsEnabled;
+    try {
+        localStorage.setItem("solix-animal-sounds", animalSoundsEnabled ? "on" : "off");
+    } catch (_error) {
+        // Die Einstellung gilt dann nur fuer die aktuelle Sitzung.
+    }
+    updateAnimalSoundButton();
+    if (animalSoundsEnabled)
+        unlockAnimalSounds();
+});
+updateAnimalSoundButton();
 const grassCells = [];
 const grassBladeFields = [];
 const animalResourceVisuals = [];
@@ -3468,7 +3551,7 @@ function loadAnimatedHorse(horseState) {
         horseState.actions = {};
         gltf.animations.forEach((clip) => {
             const action = horseState.mixer.clipAction(clip);
-            if (clip.name === "lay_to_idle") {
+            if (["lay_to_idle", "Rear"].includes(clip.name)) {
                 action.setLoop(THREE.LoopOnce, 1);
                 action.clampWhenFinished = true;
             }
@@ -3631,6 +3714,7 @@ function createHorse() {
         eliminationRig: [],
         elimination: null,
         nextRestAt: 120 + random() * 180,
+        nextNeighAt: animalDemoMode ? 8 : 55 + random() * 175,
         nextStableAt: 28 + random() * 52,
         elapsedSeconds: 0,
         navigation: null
@@ -4259,6 +4343,10 @@ function createBactrianCamel(index) {
         // Sitzung; danach bleibt es beim ungefaehr stuendlichen Rhythmus.
         nextDroppingAt: animalDemoMode ? 6 + index * 4 : 300 + index * 130 + random() * 160,
         nextUrinationAt: animalDemoMode ? 16 + index * 4 : 210 + index * 95 + random() * 180,
+        nextCallAt: animalDemoMode ? 10 + index * 5 : 75 + index * 58 + random() * 260,
+        nextRestAt: animalDemoMode ? 20 + index * 7 : 180 + index * 70 + random() * 320,
+        callingUntil: 0,
+        restBlend: 0,
         elapsedSeconds: 0,
         modelRoot: null,
         mixer: null,
@@ -4305,6 +4393,7 @@ function createCamelWalkRig(model) {
         {
             phase: 0,
             mirrorSign: 1,
+            front: true,
             upper: "Shoulder_L_31",
             lower: "Elbow_L_30",
             foot: "Wrist_L_29",
@@ -4313,6 +4402,7 @@ function createCamelWalkRig(model) {
         {
             phase: 0,
             mirrorSign: 1,
+            front: false,
             upper: "Hip_L_49",
             lower: "Knee_L_48",
             foot: "Ankle_L_47",
@@ -4321,6 +4411,7 @@ function createCamelWalkRig(model) {
         {
             phase: Math.PI,
             mirrorSign: -1,
+            front: true,
             upper: "Shoulder_R_39",
             lower: "Elbow_R_38",
             foot: "Wrist_R_37",
@@ -4329,6 +4420,7 @@ function createCamelWalkRig(model) {
         {
             phase: Math.PI,
             mirrorSign: -1,
+            front: false,
             upper: "Hip_R_8",
             lower: "Knee_R_7",
             foot: "Ankle_R_6",
@@ -4377,8 +4469,10 @@ function poseDetailedCamelHead(camel, mode, seconds) {
     if (!camel.feedingRig?.length)
         return;
     const intensity = mode === "grazing" ? 1.16 :
-        mode === "drinking" ? 1.00 : mode === "feeding" ? 0.82 : 0;
-    const nibble = intensity > 0 ? Math.sin(seconds * 2.1 + camel.index) * 0.035 : 0;
+        mode === "drinking" ? 1.00 : mode === "feeding" ? 0.82 :
+            mode === "calling" ? -0.22 : 0;
+    const nibble = intensity !== 0 ? Math.sin(seconds * (mode === "calling" ? 4.4 : 2.1) + camel.index) *
+        (mode === "calling" ? 0.065 : 0.035) : 0;
     camel.feedingRig.forEach((segment, index) => {
         camelTailRotation.setFromAxisAngle(camelTailAxis,
             segment.bend * intensity + nibble * (1 - index / 10));
@@ -4425,6 +4519,44 @@ function animateDetailedCamelGait(camel, moving, running, delta) {
     const bob = Math.abs(Math.sin(phase * 2)) * (running ? 0.035 : 0.014) *
         camel.gaitBlend;
     camel.group.position.y = THREE.MathUtils.damp(camel.group.position.y, bob, 10, delta);
+}
+
+function animateCamelRestPose(camel, resting, delta) {
+    const target = resting ? 1 : 0;
+    camel.restBlend = THREE.MathUtils.damp(camel.restBlend || 0, target, resting ? 2.2 : 2.8, delta);
+    const blend = camel.restBlend;
+    camel.group.position.y = THREE.MathUtils.damp(
+        camel.group.position.y,
+        -0.44 * camel.group.scale.x * blend,
+        5,
+        delta
+    );
+    if (!camel.modelRoot) {
+        camel.legs.forEach((leg, index) => {
+            const front = index < 2;
+            const side = index % 2 ? -1 : 1;
+            leg.rotation.x = THREE.MathUtils.damp(
+                leg.rotation.x,
+                (front ? 1.08 : -1.02) * side * blend,
+                5,
+                delta
+            );
+        });
+        camel.body.rotation.x = THREE.MathUtils.damp(camel.body.rotation.x, 0.06 * blend, 4, delta);
+        camel.neckRig.rotation.x = THREE.MathUtils.damp(camel.neckRig.rotation.x, 0.22 * blend, 4, delta);
+        return;
+    }
+    camel.gaitBlend = THREE.MathUtils.damp(camel.gaitBlend || 0, 0, 5, delta);
+    camel.walkRig.forEach((limb) => {
+        const sign = limb.mirrorSign;
+        const upper = (limb.front ? 0.72 : -0.86) * sign * blend;
+        const lower = (limb.front ? -1.18 : 1.28) * sign * blend;
+        const foot = (limb.front ? 0.54 : -0.62) * sign * blend;
+        poseCamelJoint(limb.upper, limb.upperRest, upper);
+        poseCamelJoint(limb.lower, limb.lowerRest, lower);
+        poseCamelJoint(limb.foot, limb.footRest, foot);
+    });
+    poseDetailedCamelHead(camel, resting ? "feeding" : "idle", camel.elapsedSeconds);
 }
 
 const camelTailAxis = new THREE.Vector3(0, 0, 1);
@@ -4533,7 +4665,26 @@ function animateCamels(seconds, delta) {
             camel.mixer.update(delta);
         }
         animateCamelTail(camel, seconds);
-        if (["urinating", "defecating"].includes(camel.mode)) {
+        const stationaryMode = ["grazing", "drinking", "feeding", "meeting", "idle"].includes(camel.mode);
+        if (stationaryMode && seconds >= camel.nextCallAt) {
+            camel.callingUntil = seconds + 5.4;
+            camel.nextCallAt = seconds + 420 + camel.random() * 900;
+            playAnimalSound("camel", 0.42 + camel.index * 0.025);
+        }
+        const camelCalling = seconds < camel.callingUntil;
+        if (camel.mode === "resting") {
+            animateCamelRestPose(camel, true, delta);
+            if (seconds >= camel.modeUntil) {
+                camel.mode = "rising";
+                camel.modeUntil = seconds + 3.6;
+            }
+        }
+        else if (camel.mode === "rising") {
+            animateCamelRestPose(camel, false, delta);
+            if (seconds >= camel.modeUntil || camel.restBlend < 0.025)
+                startCamelJourney(camel);
+        }
+        else if (["urinating", "defecating"].includes(camel.mode)) {
             if (!camel.modelRoot)
                 camel.neckRig.rotation.x = THREE.MathUtils.damp(camel.neckRig.rotation.x, 0, 5, delta);
             else {
@@ -4555,11 +4706,11 @@ function animateCamels(seconds, delta) {
             }
             if (!camel.modelRoot) {
                 camel.neckRig.rotation.x = THREE.MathUtils.damp(camel.neckRig.rotation.x,
-                    eating ? 0.78 : 0, 4, delta);
+                    camelCalling ? -0.18 : eating ? 0.78 : 0, 4, delta);
             }
             else {
                 animateDetailedCamelGait(camel, false, false, delta);
-                poseDetailedCamelHead(camel, camel.mode, seconds);
+                poseDetailedCamelHead(camel, camelCalling ? "calling" : camel.mode, seconds);
             }
             if (camel.mode === "grazing")
                 grazeAt(camel.group.position.x, camel.group.position.z, true, delta * 0.12);
@@ -4575,12 +4726,24 @@ function animateCamels(seconds, delta) {
             const dz = camel.target.z - camel.group.position.z;
             const distance = Math.hypot(dx, dz);
             if (distance < 0.30) {
-                camel.mode = camel.intent;
-                // Raufe und Tränke bleiben lange genug belegt, damit der
-                // Nutzer die Aktion auch beim zufälligen Kameraschwenk sieht.
-                camel.modeUntil = seconds +
-                    (["feeding", "drinking"].includes(camel.intent) ?
-                        20 + camel.random() * 16 : 10 + camel.random() * 14);
+                const hour = new Date().getHours();
+                const night = hour >= 22 || hour < 6;
+                const canRest = ["grazing", "idle"].includes(camel.intent) &&
+                    seconds >= camel.nextRestAt &&
+                    (animalDemoMode || camel.random() < (night ? 0.34 : 0.12));
+                if (canRest) {
+                    camel.mode = "resting";
+                    camel.modeUntil = seconds + (night ? 30 + camel.random() * 42 : 14 + camel.random() * 20);
+                    camel.nextRestAt = seconds + (night ? 300 + camel.random() * 520 : 720 + camel.random() * 980);
+                }
+                else {
+                    camel.mode = camel.intent;
+                    // Raufe und Tränke bleiben lange genug belegt, damit der
+                    // Nutzer die Aktion auch beim zufälligen Kameraschwenk sieht.
+                    camel.modeUntil = seconds +
+                        (["feeding", "drinking"].includes(camel.intent) ?
+                            20 + camel.random() * 16 : 10 + camel.random() * 14);
+                }
             }
             else {
                 let directionX = dx / Math.max(distance, 0.001);
@@ -4812,11 +4975,32 @@ function animateHorse(seconds, delta) {
         return;
     }
     const position = horse.group.position;
+    const horseBusy = ["urinating", "defecating", "resting", "rising", "stable-rest", "neighing"].includes(horse.mode);
+    if (!horseBusy && seconds >= horse.nextNeighAt) {
+        horse.mode = "neighing";
+        horse.modeUntil = seconds + 2.35;
+        horse.nextNeighAt = seconds + 360 + horse.random() * 840;
+        playAnimalSound("horse", 0.62);
+    }
     if (!["urinating", "defecating"].includes(horse.mode))
         horse.tailRig.rotation.x = THREE.MathUtils.damp(horse.tailRig.rotation.x, 0, 6, delta);
     if (["urinating", "defecating"].includes(horse.mode)) {
         poseHorseElimination(horse, seconds, delta);
         if (updateAnimalEliminationEffect(horse, seconds))
+            startHorseJourney(horse, position, true);
+    }
+    else if (horse.mode === "neighing") {
+        // Das vorhandene Aufbäumen passt zum Wiehern und bewegt Kopf, Hals und
+        // Vorderbeine gemeinsam. Der prozedurale Ersatz hebt dieselben Partien.
+        setHorseAnimation(horse, "Rear", 0.20);
+        if (!horse.modelRoot) {
+            horse.headRig.rotation.x = THREE.MathUtils.damp(horse.headRig.rotation.x, -0.28, 7, delta);
+            horse.legs.slice(0, 2).forEach((leg, index) => {
+                leg.rotation.x = THREE.MathUtils.damp(leg.rotation.x,
+                    (index ? -1 : 1) * 0.72, 7, delta);
+            });
+        }
+        if (seconds >= horse.modeUntil)
             startHorseJourney(horse, position, true);
     }
     else if (horse.mode === "grazing") {
@@ -5278,6 +5462,24 @@ audiBatteryVisual = vehicleModels.audi.battery;
 loadDetailedVehicles(vehicleModels);
 const gridBoxModel = createGridBox();
 const chargingConnection = createAudiChargeConnection();
+
+if (animalDemoMode) {
+    // Ausschließlich für die lokale Vorschau: Damit lassen sich seltene
+    // Zustände prüfen, ohne die Produktionsansicht oder Live-Daten zu ändern.
+    window.solixAnimalDebug = () => ({
+        soundsUnlocked: animalSoundsUnlocked,
+        horse: horse ? {
+            mode: horse.mode,
+            animation: horse.currentActionName,
+            nextNeighIn: Math.max(0, horse.nextNeighAt - horse.elapsedSeconds)
+        } : null,
+        camels: camelHerd.map((camel) => ({
+            mode: camel.mode,
+            restBlend: Number((camel.restBlend || 0).toFixed(3)),
+            calling: camel.elapsedSeconds < camel.callingUntil
+        }))
+    });
+}
 
 const AUDI_HOME_POSE = Object.freeze({ x: 5.00, z: 1.00, yaw: Math.PI });
 const AUDI_OFFSCREEN_POSE = Object.freeze({ x: 11.45, z: -18.50, yaw: Math.PI });
