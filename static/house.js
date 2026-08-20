@@ -160,6 +160,9 @@ const camelHerd = [];
 const animalDroppings = [];
 const urinePatches = [];
 const animalDemoMode = new URLSearchParams(window.location.search).get("animal_demo") === "1";
+const animalFocusMode = new URLSearchParams(window.location.search).get("animal_focus");
+if (animalDemoMode)
+    stage.dataset.animalDemo = "true";
 const iconCaptureMode = new URLSearchParams(window.location.search).get("icon_capture") === "1";
 if (iconCaptureMode)
     stage.classList.add("icon-capture");
@@ -174,6 +177,7 @@ try {
     // Bleibt auch in eingeschraenkten Safari-/Privatmodi nutzbar.
 }
 let animalSoundsUnlocked = false;
+let animalSoundUnlockPending = false;
 const animalSoundLastPlayed = { horse: -Infinity, camel: -Infinity };
 
 Object.values(animalSoundSources).forEach((audio) => {
@@ -189,22 +193,27 @@ function updateAnimalSoundButton() {
 }
 
 function unlockAnimalSounds() {
-    if (animalSoundsUnlocked || !animalSoundsEnabled)
+    if (animalSoundsUnlocked || animalSoundUnlockPending || !animalSoundsEnabled)
         return;
-    animalSoundsUnlocked = true;
+    animalSoundUnlockPending = true;
     // Safari/iOS verlangt einen ersten, direkt durch eine Berührung ausgelösten
     // Start. Lautstärke null macht diesen Freischaltvorgang unhörbar.
-    Object.values(animalSoundSources).forEach((audio) => {
+    const attempts = Object.values(animalSoundSources).map((audio) => {
         audio.volume = 0;
         const start = audio.play();
-        if (start?.then) {
-            start.then(() => {
+        if (start?.then)
+            return start.then(() => {
                 audio.pause();
                 audio.currentTime = 0;
-            }).catch(() => {
-                animalSoundsUnlocked = false;
-            });
-        }
+                return true;
+            }).catch(() => false);
+        return Promise.resolve(false);
+    });
+    // Ein einzelner fehlgeschlagener Start darf einen bereits erfolgreichen
+    // zweiten Ton nicht wieder sperren (Race Condition auf iOS/Safari).
+    Promise.all(attempts).then((results) => {
+        animalSoundsUnlocked = results.some(Boolean);
+        animalSoundUnlockPending = false;
     });
 }
 
@@ -3502,16 +3511,15 @@ function loadAnimatedHorse(horseState) {
             const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
             const tuned = sourceMaterials.map((source) => {
                 const material = source.clone();
-                // Kastanienbrauner Farbton aus IMG_3402. Die vorhandene
-                // Farbpalette behaelt dunkle Maehne, Schweif und Hufe.
-                // Wärmeres, rötliches Kastanienbraun wie auf IMG_3402. Die
-                // Textur bleibt erhalten, sodass Mähne, Schweif und dunkle
-                // Beine weiterhin ihren natürlichen Kontrast behalten.
-                material.color.setHex(0xb85a32);
+                // Die Modellpalette liefert bereits die Schattierung. Dieser
+                // warme Grundfilter ergibt zusammen mit ihr das leuchtende
+                // Kastanienbraun aus IMG_3402, ohne Mähne, Schweif und die
+                // dunklen Beine rot einzufärben.
+                material.color.setHex(0xe8a866);
                 material.metalness = 0;
-                material.roughness = 0.58;
-                material.clearcoat = 0.18;
-                material.clearcoatRoughness = 0.62;
+                material.roughness = 0.48;
+                material.clearcoat = 0.28;
+                material.clearcoatRoughness = 0.48;
                 material.needsUpdate = true;
                 return material;
             });
@@ -3527,12 +3535,34 @@ function loadAnimatedHorse(horseState) {
                 roughness: 0.90,
                 side: THREE.DoubleSide
             });
-            const blaze = new THREE.Mesh(new THREE.SphereGeometry(0.075, 16, 12), blazeMaterial);
-            blaze.name = "Weisse Blesse";
-            blaze.position.set(0, 0.20, 0.055);
-            blaze.scale.set(0.48, 1.55, 0.20);
-            blaze.castShadow = false;
-            headBone.add(blaze);
+            [
+                { name: "Blesse Stirn", position: [0, 0.235, 0.064], scale: [0.48, 1.38, 0.18] },
+                { name: "Blesse Nase", position: [-0.004, 0.105, 0.086], scale: [0.58, 1.30, 0.17] },
+                { name: "Helle Schnauze", position: [0.004, -0.010, 0.108], scale: [0.76, 0.82, 0.17] }
+            ].forEach((marking) => {
+                const patch = new THREE.Mesh(new THREE.SphereGeometry(0.085, 18, 14), blazeMaterial);
+                patch.name = marking.name;
+                patch.position.set(...marking.position);
+                patch.scale.set(...marking.scale);
+                patch.castShadow = false;
+                headBone.add(patch);
+            });
+        }
+
+        // Auf dem Referenzfoto trägt das linke Vorderbein einen deutlich
+        // höheren weißen Socken. Als Kind des Sprunggelenks folgt er jeder
+        // Geh-, Renn- und Ruheanimation des vorhandenen Skeletts.
+        const sockBone = model.getObjectByName("front_leg_ankle_l");
+        if (sockBone) {
+            const sock = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.078, 0.066, 0.205, 16, 1),
+                new THREE.MeshStandardMaterial({ color: 0xf1ead9, roughness: 0.84 })
+            );
+            sock.name = "Weisser Vorderbeinsocken";
+            sock.position.set(0, 0.075, 0);
+            sock.scale.z = 0.88;
+            sock.castShadow = true;
+            sockBone.add(sock);
         }
 
         horseState.group.add(model);
@@ -3714,7 +3744,7 @@ function createHorse() {
         eliminationRig: [],
         elimination: null,
         nextRestAt: 120 + random() * 180,
-        nextNeighAt: animalDemoMode ? 8 : 55 + random() * 175,
+        nextNeighAt: animalDemoMode ? 7 : 18 + random() * 32,
         nextStableAt: 28 + random() * 52,
         elapsedSeconds: 0,
         navigation: null
@@ -4344,7 +4374,7 @@ function createBactrianCamel(index) {
         nextDroppingAt: animalDemoMode ? 6 + index * 4 : 300 + index * 130 + random() * 160,
         nextUrinationAt: animalDemoMode ? 16 + index * 4 : 210 + index * 95 + random() * 180,
         nextCallAt: animalDemoMode ? 10 + index * 5 : 75 + index * 58 + random() * 260,
-        nextRestAt: animalDemoMode ? 20 + index * 7 : 180 + index * 70 + random() * 320,
+        nextRestAt: animalDemoMode ? 14 + index * 4 : 90 + index * 52 + random() * 120,
         callingUntil: 0,
         restBlend: 0,
         elapsedSeconds: 0,
@@ -4633,8 +4663,29 @@ function createCamelPasture() {
     loadDetailedCamels();
 }
 
+function chooseCamelRestTarget(camel) {
+    const candidates = grassCells
+        .filter((cell) => cell.pasture && camelCanStandAt(cell.x, cell.z, 0.70))
+        .sort((left, right) =>
+            Math.hypot(left.x - camel.group.position.x, left.z - camel.group.position.z) -
+            Math.hypot(right.x - camel.group.position.x, right.z - camel.group.position.z));
+    // Einer der nahen Plätze verhindert unnötige Märsche quer über die ganze
+    // Weide, variiert die Liegeorte aber weiterhin sichtbar.
+    const nearby = candidates.slice(0, Math.min(8, candidates.length));
+    const cell = nearby[Math.floor(camel.random() * nearby.length)];
+    if (!cell)
+        return chooseCamelTarget(camel);
+    return {
+        point: new THREE.Vector3(cell.x, 0, cell.z),
+        intent: "idle"
+    };
+}
+
 function startCamelJourney(camel) {
-    const target = chooseCamelTarget(camel);
+    const restingCamels = camelHerd.filter((other) =>
+        ["resting", "rising"].includes(other.mode)).length;
+    const restDue = camel.elapsedSeconds >= camel.nextRestAt && restingCamels < 2;
+    const target = restDue ? chooseCamelRestTarget(camel) : chooseCamelTarget(camel);
     camel.target = target.point;
     camel.intent = target.intent;
     camel.facingPoint = target.facingPoint || null;
@@ -4728,13 +4779,18 @@ function animateCamels(seconds, delta) {
             if (distance < 0.30) {
                 const hour = new Date().getHours();
                 const night = hour >= 22 || hour < 6;
+                const restingCamels = camelHerd.filter((other) =>
+                    ["resting", "rising"].includes(other.mode)).length;
+                // Ist der persönliche Zeitpunkt erreicht, legt sich das Tier
+                // am nächsten geeigneten Gras-/Ruheplatz sicher hin. Die alte
+                // zusätzliche Zufallsprüfung konnte die Aktion unbegrenzt
+                // verschieben und machte sie in der Praxis kaum sichtbar.
                 const canRest = ["grazing", "idle"].includes(camel.intent) &&
-                    seconds >= camel.nextRestAt &&
-                    (animalDemoMode || camel.random() < (night ? 0.34 : 0.12));
+                    seconds >= camel.nextRestAt && restingCamels < 2;
                 if (canRest) {
                     camel.mode = "resting";
-                    camel.modeUntil = seconds + (night ? 30 + camel.random() * 42 : 14 + camel.random() * 20);
-                    camel.nextRestAt = seconds + (night ? 300 + camel.random() * 520 : 720 + camel.random() * 980);
+                    camel.modeUntil = seconds + (night ? 50 + camel.random() * 40 : 28 + camel.random() * 22);
+                    camel.nextRestAt = seconds + (night ? 260 + camel.random() * 220 : 420 + camel.random() * 300);
                 }
                 else {
                     camel.mode = camel.intent;
@@ -4977,10 +5033,14 @@ function animateHorse(seconds, delta) {
     const position = horse.group.position;
     const horseBusy = ["urinating", "defecating", "resting", "rising", "stable-rest", "neighing"].includes(horse.mode);
     if (!horseBusy && seconds >= horse.nextNeighAt) {
+        const soundReady = animalSoundsEnabled && animalSoundsUnlocked;
         horse.mode = "neighing";
         horse.modeUntil = seconds + 2.35;
-        horse.nextNeighAt = seconds + 360 + horse.random() * 840;
-        playAnimalSound("horse", 0.62);
+        // Normalerweise alle 2,5 bis 4,5 Minuten. War iOS beim letzten Termin
+        // noch nicht durch eine Berührung für Audio freigeschaltet, folgt nach
+        // 20 bis 40 Sekunden ein neuer Versuch statt erst viele Minuten später.
+        horse.nextNeighAt = seconds + (soundReady ? 150 + horse.random() * 120 : 20 + horse.random() * 20);
+        playAnimalSound("horse", 0.74);
     }
     if (!["urinating", "defecating"].includes(horse.mode))
         horse.tailRig.rotation.x = THREE.MathUtils.damp(horse.tailRig.rotation.x, 0, 6, delta);
@@ -5464,6 +5524,25 @@ const gridBoxModel = createGridBox();
 const chargingConnection = createAudiChargeConnection();
 
 if (animalDemoMode) {
+    const focusAnimal = animalFocusMode === "camel" ? camelHerd[0] : animalFocusMode === "horse" ? horse : null;
+    if (focusAnimal) {
+        state.yaw = state.targetYaw = 0;
+        state.pitch = state.targetPitch = -0.04;
+        state.zoom = state.targetZoom = 1;
+        cameraTarget.set(focusAnimal.group.position.x, 1.05, focusAnimal.group.position.z);
+        cameraBaseOffset.set(-3.2, 1.85, -4.3);
+        state.panX = state.targetPanX = 0;
+        state.panY = state.targetPanY = 0;
+        if (animalFocusMode === "horse") {
+            horse.group.rotation.y = Math.PI;
+            horse.mode = "stable-rest";
+            horse.modeUntil = Number.POSITIVE_INFINITY;
+        }
+        else {
+            focusAnimal.mode = "resting";
+            focusAnimal.modeUntil = Number.POSITIVE_INFINITY;
+        }
+    }
     // Ausschließlich für die lokale Vorschau: Damit lassen sich seltene
     // Zustände prüfen, ohne die Produktionsansicht oder Live-Daten zu ändern.
     window.solixAnimalDebug = () => ({
@@ -7601,6 +7680,8 @@ function resize() {
         compactView ? 12.0 : 9.1,
         compactView ? 21.4 : 16.0
     );
+    if (animalDemoMode && ["horse", "camel"].includes(animalFocusMode))
+        basePosition.copy(cameraTarget).add(new THREE.Vector3(-3.2, 1.85, -4.3));
     cameraBaseOffset.copy(basePosition).sub(cameraTarget);
     updateCameraTransform();
     camera.updateProjectionMatrix();
@@ -7936,6 +8017,13 @@ function animate(time) {
     animatePondFish(seconds);
     animateHorse(seconds, delta);
     animateCamels(seconds, delta);
+    if (animalDemoMode) {
+        stage.dataset.animalSounds = animalSoundsUnlocked ? "unlocked" : "locked";
+        stage.dataset.horseMode = horse?.mode || "missing";
+        stage.dataset.horseAnimation = horse?.currentActionName || "loading";
+        stage.dataset.camelResting = String(camelHerd.filter((camel) =>
+            ["resting", "rising"].includes(camel.mode)).length);
+    }
     updateAnimalEcology(time, delta);
     animateWeather(seconds, delta);
     animateExteriorRoomLights(delta);
