@@ -21,9 +21,9 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260820-95b", dashboard)
-        self.assertIn("house.js?v=20260820-95b", dashboard)
-        self.assertIn("app.js?v=20260820-95b", dashboard)
+        self.assertIn("style.css?v=20260821-96", dashboard)
+        self.assertIn("house.js?v=20260821-96", dashboard)
+        self.assertIn("app.js?v=20260821-96", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
 
@@ -445,6 +445,9 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("function chooseCamelRestTarget", script)
         self.assertIn('camel.mode === "resting"', script)
         self.assertIn("seconds >= camel.nextRestAt && restingCamels < 2", script)
+        self.assertIn("-1.04 * camel.group.scale.x * blend", script)
+        self.assertIn("limb.front ? -2.28 : 2.42", script)
+        self.assertIn('poseDetailedCamelHead(camel, "idle"', script)
         self.assertIn('playAnimalSound("camel"', script)
         self.assertIn("mirrorSign: -1", script)
         self.assertIn("const jointSign = limb.mirrorSign", script)

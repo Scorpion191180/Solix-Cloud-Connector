@@ -4555,10 +4555,14 @@ function animateCamelRestPose(camel, resting, delta) {
     const target = resting ? 1 : 0;
     camel.restBlend = THREE.MathUtils.damp(camel.restBlend || 0, target, resting ? 2.2 : 2.8, delta);
     const blend = camel.restBlend;
+    // Ein ruhendes Kamel liegt auf Brust und Bauch. Die fruehere Absenkung um
+    // 0,44 m liess den Rumpf sichtbar schweben und zeigte nur eine kniende
+    // Zwischenpose. Die tiefere Bodenlage wird mit der individuellen
+    // Tiergroesse skaliert, damit auch das groesste Tier sauber aufliegt.
     camel.group.position.y = THREE.MathUtils.damp(
         camel.group.position.y,
-        -0.44 * camel.group.scale.x * blend,
-        5,
+        -1.04 * camel.group.scale.x * blend,
+        5.5,
         delta
     );
     if (!camel.modelRoot) {
@@ -4579,14 +4583,19 @@ function animateCamelRestPose(camel, resting, delta) {
     camel.gaitBlend = THREE.MathUtils.damp(camel.gaitBlend || 0, 0, 5, delta);
     camel.walkRig.forEach((limb) => {
         const sign = limb.mirrorSign;
-        const upper = (limb.front ? 0.72 : -0.86) * sign * blend;
-        const lower = (limb.front ? -1.18 : 1.28) * sign * blend;
-        const foot = (limb.front ? 0.54 : -0.62) * sign * blend;
+        // Vorderbeine werden unter die Brust, Hinterbeine unter den Bauch
+        // gefaltet. Die deutlich staerkere Beugung an Knie und Sprunggelenk
+        // verhindert die bisher halb ausgestreckte Kniestellung.
+        const upper = (limb.front ? 1.34 : -1.50) * sign * blend;
+        const lower = (limb.front ? -2.28 : 2.42) * sign * blend;
+        const foot = (limb.front ? 1.12 : -1.24) * sign * blend;
         poseCamelJoint(limb.upper, limb.upperRest, upper);
         poseCamelJoint(limb.lower, limb.lowerRest, lower);
         poseCamelJoint(limb.foot, limb.footRest, foot);
     });
-    poseDetailedCamelHead(camel, resting ? "feeding" : "idle", camel.elapsedSeconds);
+    // Im Liegen bleibt der lange Hals aufrecht; die Fresspose wuerde den Kopf
+    // unnatuerlich bis zum Boden ziehen.
+    poseDetailedCamelHead(camel, "idle", camel.elapsedSeconds);
 }
 
 const camelTailAxis = new THREE.Vector3(0, 0, 1);
