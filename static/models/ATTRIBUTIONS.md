@@ -27,6 +27,12 @@ original downloads.
   [“Bactrian Camel (Low Poly)”](https://sketchfab.com/3d-models/bactrian-camel-low-poly-1fb4d897df2e4d12ab185302a36b3d5f)
   by [Nyilonelycompany](https://sketchfab.com/Nyilonelycompany), licensed under
   [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/).
+- **Animated parrot, stork and flamingo** — created by
+  [Mirada](https://mirada.com/) for *ROME* and distributed as lightweight,
+  animated example assets in the
+  [three.js repository](https://github.com/mrdoob/three.js/tree/dev/examples/models/gltf).
+  The source repository is published under the
+  [MIT License](https://github.com/mrdoob/three.js/blob/dev/LICENSE).
 
 The optimized files use meshoptimizer compression. meshoptimizer/gltfpack is
 licensed under the [MIT License](https://github.com/zeux/meshoptimizer).

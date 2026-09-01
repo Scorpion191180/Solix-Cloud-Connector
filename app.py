@@ -32,6 +32,7 @@ class AutomationSettingsUpdate(BaseModel):
 
 class AnimalActionCommand(BaseModel):
     action: str
+    resource: str | None = None
 
 
 class AnimalDroppingCommand(BaseModel):
@@ -134,7 +135,7 @@ async def animals():
 async def animal_action(command: AnimalActionCommand):
     """Refill food/water or clean the shared virtual property."""
     try:
-        return animal_state.action(command.action)
+        return animal_state.action(command.action, command.resource)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

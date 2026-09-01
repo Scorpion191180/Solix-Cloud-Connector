@@ -179,6 +179,7 @@ try {
 let animalSoundsUnlocked = false;
 let animalSoundUnlockPending = false;
 const animalSoundLastPlayed = { horse: -Infinity, camel: -Infinity };
+let birdAudioContext = null;
 
 Object.values(animalSoundSources).forEach((audio) => {
     audio.preload = "auto";
@@ -193,6 +194,20 @@ function updateAnimalSoundButton() {
 }
 
 function unlockAnimalSounds() {
+    if (animalSoundsEnabled && !birdAudioContext) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (AudioContextClass) {
+            try {
+                birdAudioContext = new AudioContextClass();
+                birdAudioContext.resume().catch(() => {});
+            }
+            catch (_error) {
+                birdAudioContext = null;
+            }
+        }
+    }
+    else if (animalSoundsEnabled && birdAudioContext?.state === "suspended")
+        birdAudioContext.resume().catch(() => {});
     if (animalSoundsUnlocked || animalSoundUnlockPending || !animalSoundsEnabled)
         return;
     animalSoundUnlockPending = true;
@@ -253,26 +268,37 @@ animalSoundToggle?.addEventListener("click", () => {
 updateAnimalSoundButton();
 const grassCells = [];
 const grassBladeFields = [];
+const gardenBirds = [];
 const animalResourceVisuals = [];
-const animalResourceLabelAnchors = {
-    hay: new THREE.Vector3(-11.30, 1.54, -2.26),
-    water: new THREE.Vector3(-12.28, 1.22, -3.92)
-};
+const animalResourceLabelAnchors = {};
 const animalResourceLabelElements = {};
-[
-    ["hay", "🌾", "HEU"],
-    ["water", "💧", "WASSER"]
-].forEach(([id, icon, label]) => {
+const ANIMAL_RESOURCE_API_KEYS = Object.freeze({
+    hayHorse: "hay_horse",
+    hayCamelPool: "hay_camel_pool",
+    hayCamelPergola: "hay_camel_pergola",
+    waterHorse: "water_horse",
+    waterCamelPool: "water_camel_pool",
+    waterCamelPergola: "water_camel_pergola"
+});
+
+function registerAnimalResourceLabel(id, icon, label, resourceKey, anchorObject, offsetY) {
+    if (animalResourceLabelElements[id])
+        return;
     const element = document.createElement("div");
-    element.className = "animal-resource-label";
-    element.dataset.resource = id;
-    const action = id === "hay" ? "refill_hay" : "refill_water";
+    element.className = "animal-resource-label healthy";
+    element.dataset.resource = resourceKey;
     element.innerHTML = `<span>${icon} ${label}</span><strong>100 %</strong>` +
         '<i><b style="width:100%"></b></i>' +
-        `<button type="button" data-animal-action="${action}">Auffüllen</button>`;
+        `<button type="button" data-animal-action="refill_resource" ` +
+        `data-animal-resource="${ANIMAL_RESOURCE_API_KEYS[resourceKey]}">Auffüllen</button>`;
     stage.appendChild(element);
     animalResourceLabelElements[id] = element;
-});
+    animalResourceLabelAnchors[id] = {
+        object: anchorObject,
+        offset: new THREE.Vector3(0, offsetY, 0),
+        resourceKey
+    };
+}
 const animalCleanLabel = document.createElement("div");
 animalCleanLabel.className = "animal-clean-label outside";
 animalCleanLabel.innerHTML = '<span>🧹 HINTERLASSENSCHAFTEN</span>' +
@@ -286,9 +312,11 @@ let streetLampBulb = null;
 function defaultAnimalResources() {
     return {
         hayHorse: 100,
-        hayCamels: 100,
+        hayCamelPool: 100,
+        hayCamelPergola: 100,
         waterHorse: 100,
-        waterCamels: 100,
+        waterCamelPool: 100,
+        waterCamelPergola: 100,
         droppings: [],
         grassLevels: [],
         grassFertility: [],
@@ -309,9 +337,15 @@ function applySharedAnimalState(shared, restoreDroppings = false) {
     if (!shared || shared.available !== true)
         return;
     animalResources.hayHorse = numberValue(shared.hay_horse) ?? animalResources.hayHorse;
-    animalResources.hayCamels = numberValue(shared.hay_camels) ?? animalResources.hayCamels;
+    animalResources.hayCamelPool = numberValue(shared.hay_camel_pool) ??
+        numberValue(shared.hay_camels) ?? animalResources.hayCamelPool;
+    animalResources.hayCamelPergola = numberValue(shared.hay_camel_pergola) ??
+        numberValue(shared.hay_camels) ?? animalResources.hayCamelPergola;
     animalResources.waterHorse = numberValue(shared.water_horse) ?? animalResources.waterHorse;
-    animalResources.waterCamels = numberValue(shared.water_camels) ?? animalResources.waterCamels;
+    animalResources.waterCamelPool = numberValue(shared.water_camel_pool) ??
+        numberValue(shared.water_camels) ?? animalResources.waterCamelPool;
+    animalResources.waterCamelPergola = numberValue(shared.water_camel_pergola) ??
+        numberValue(shared.water_camels) ?? animalResources.waterCamelPergola;
     animalResources.droppings = Array.isArray(shared.droppings) ? shared.droppings : [];
     const revision = numberValue(shared.revision) ?? lastAnimalRevision;
     if (restoreDroppings || revision !== lastAnimalRevision)
@@ -339,19 +373,20 @@ async function syncAnimalState() {
     }
 }
 
-async function runAnimalAction(action) {
+async function runAnimalAction(action, resource = null) {
     try {
         const response = await fetch("/api/animals/action", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action })
+            body: JSON.stringify({ action, resource })
         });
         if (!response.ok)
             throw new Error("Aktion konnte nicht gespeichert werden");
         applySharedAnimalState(await response.json(), true);
         menuCleanStatus.textContent = action === "clean" ? "Grundstück ist sauber." :
-            action === "refill_hay" ? "Alle Heuraufen sind wieder voll." :
-                "Alle Wassertränken sind wieder voll.";
+            action === "refill_resource" ? "Diese Futter- oder Wasserstelle ist wieder voll." :
+                action === "refill_hay" ? "Alle Heuraufen sind wieder voll." :
+                    "Alle Wassertränken sind wieder voll.";
     }
     catch (error) {
         menuCleanStatus.textContent = error.message;
@@ -363,7 +398,8 @@ stage.addEventListener("click", (event) => {
     if (!actionButton)
         return;
     event.stopPropagation();
-    runAnimalAction(actionButton.dataset.animalAction);
+    runAnimalAction(actionButton.dataset.animalAction,
+        actionButton.dataset.animalResource || null);
 });
 
 function numberValue(value) {
@@ -1706,6 +1742,8 @@ function createHorseStableDoor(parent, position) {
     const troughFill = addBox(trough, [0.53, 0.035, 0.41], materials.water.clone(),
         [0, 0.18, 0], { radius: 0.04, castShadow: false });
     animalResourceVisuals.push({ kind: "water", resourceKey: "waterHorse", fill: troughFill });
+    registerAnimalResourceLabel("horse-water", "💧", "PFERDETRÄNKE",
+        "waterHorse", trough, 0.90);
     const stableLampMaterial = new THREE.MeshBasicMaterial({ color: 0xffc66d, toneMapped: false });
     addMesh(stable, new THREE.SphereGeometry(0.075, 12, 8), stableLampMaterial,
         0.44, 0.76, 2.70, { castShadow: false });
@@ -3728,6 +3766,10 @@ function createAnimalTrough(position, resourceKey, rotation = 0, stationId = "")
     const fill = addBox(group, [1.02, 0.10, 0.44], fillMaterial,
         [0, 0.53, 0], { radius: 0.07, castShadow: false });
     animalResourceVisuals.push({ kind: "water", resourceKey, fill });
+    const location = stationId.includes("pergola") ? "PERGOLA" :
+        resourceKey === "waterHorse" ? "PFERD" : "POOL";
+    registerAnimalResourceLabel(stationId || resourceKey, "💧", `${location} · TRÄNKE`,
+        resourceKey, group, 1.18);
 }
 
 function createHayRack(position, resourceKey, rotation = 0, stationId = "") {
@@ -3749,6 +3791,10 @@ function createHayRack(position, resourceKey, rotation = 0, stationId = "") {
         });
     const fill = addBox(group, [0.96, 0.68, 0.44], hay, [0, 0.50, 0.27], { radius: 0.05 });
     animalResourceVisuals.push({ kind: "hay", resourceKey, fill });
+    const location = stationId.includes("pergola") ? "PERGOLA" :
+        resourceKey === "hayHorse" ? "PFERD" : "POOL";
+    registerAnimalResourceLabel(stationId || resourceKey, "🌾", `${location} · HEU`,
+        resourceKey, group, 1.45);
 }
 
 function updateAnimalResourceVisuals() {
@@ -3764,27 +3810,30 @@ function updateAnimalResourceVisuals() {
         }
     });
     if (menuCareStatus) {
-        const hay = Math.round((animalResources.hayHorse + animalResources.hayCamels) / 2);
-        const water = Math.round((animalResources.waterHorse + animalResources.waterCamels) / 2);
+        const hay = Math.round((animalResources.hayHorse + animalResources.hayCamelPool +
+            animalResources.hayCamelPergola) / 3);
+        const water = Math.round((animalResources.waterHorse + animalResources.waterCamelPool +
+            animalResources.waterCamelPergola) / 3);
         menuCareStatus.textContent = `Heu ${hay} % · Wasser ${water} %`;
-        [["hay", hay], ["water", water]].forEach(([id, value]) => {
+        Object.entries(animalResourceLabelAnchors).forEach(([id, anchor]) => {
             const element = animalResourceLabelElements[id];
+            const value = Math.round(numberValue(animalResources[anchor.resourceKey]) ?? 0);
             element.querySelector("strong").textContent = `${value} %`;
             element.querySelector("b").style.width = `${value}%`;
-            element.classList.toggle("low", value <= 25);
-            element.classList.toggle("empty", value <= 3);
+            element.classList.toggle("healthy", value > 50);
+            element.classList.toggle("warning", value <= 20 && value > 10);
+            element.classList.toggle("critical", value <= 10);
         });
     }
 }
 
-// Je eine Kamelstation liegt am bisherigen Platz hinter dem Pool und direkt
-// hinter dem schrägen Zaun an der Pergola. Beide Modelle verwenden dieselben
-// Server-Ressourcen (hayCamels/waterCamels), daher füllt der vorhandene Button
-// immer beide Kamelraufen beziehungsweise beide Kameltränken gemeinsam auf.
+// Je eine Kamelstation liegt hinter dem Pool und an der Pergola. Jede physische
+// Raufe und Tränke besitzt einen eigenen Serverwert und einen eigenen Button.
 const CAMEL_CARE_STATIONS = {
     water: [
         {
             id: "pool-camel-water",
+            resourceKey: "waterCamelPool",
             model: [-12.28, 0, -3.92],
             target: [-12.52, -3.92],
             rotation: 0,
@@ -3792,6 +3841,7 @@ const CAMEL_CARE_STATIONS = {
         },
         {
             id: "pergola-camel-water",
+            resourceKey: "waterCamelPergola",
             model: [5.18, 0, -17.52],
             // Die Standplätze liegen parallel zum schrägen Zaun, aber mit
             // ausreichend Abstand auf der Weideseite. Der frühere diagonale
@@ -3804,6 +3854,7 @@ const CAMEL_CARE_STATIONS = {
     hay: [
         {
             id: "pool-camel-hay",
+            resourceKey: "hayCamelPool",
             model: [-12.32, 0, -2.26],
             target: [-12.58, -2.26],
             rotation: -Math.PI / 2,
@@ -3811,6 +3862,7 @@ const CAMEL_CARE_STATIONS = {
         },
         {
             id: "pergola-camel-hay",
+            resourceKey: "hayCamelPergola",
             model: [3.62, 0, -16.72],
             target: [3.30, -17.20],
             rotation: 0.49,
@@ -3827,10 +3879,10 @@ function createAnimalCareStations() {
     // Die Pferdetränke ist Teil des 3D-Stalls. Hinter dem Poolzaun verbleiben
     // zwei miteinander gekoppelte Kamelstationen sowie die Pferde-Heuraufe.
     CAMEL_CARE_STATIONS.water.forEach((station) =>
-        createAnimalTrough(station.model, "waterCamels", station.rotation, station.id));
-    createHayRack([-10.66, 0, -2.26], "hayHorse", Math.PI / 2);
+        createAnimalTrough(station.model, station.resourceKey, station.rotation, station.id));
+    createHayRack([-10.66, 0, -2.26], "hayHorse", Math.PI / 2, "horse-hay");
     CAMEL_CARE_STATIONS.hay.forEach((station) =>
-        createHayRack(station.model, "hayCamels", station.rotation, station.id));
+        createHayRack(station.model, station.resourceKey, station.rotation, station.id));
     updateAnimalResourceVisuals();
 }
 
@@ -3909,24 +3961,25 @@ function camelCareTarget(kind, camel) {
         ),
         // Am Ziel schaut das Kamel wirklich zur Raufe bzw. Tränke. Erst diese
         // eindeutige Ausrichtung macht die Fress-/Trinkpose gut erkennbar.
-        facingPoint: new THREE.Vector3(station.model[0], 0, station.model[2])
+        facingPoint: new THREE.Vector3(station.model[0], 0, station.model[2]),
+        resourceKey: station.resourceKey
     };
 }
 
 function chooseCamelTarget(camel) {
     const random = camel.random;
     const careChoice = random();
+    const waterTarget = camelCareTarget("water", camel);
+    const hayTarget = camelCareTarget("hay", camel);
     // Auch bei gefuellten Vorraeten fuehrt deutlich mehr als die Haelfte der
     // Wege an eine echte Versorgungsstation; bei knappen Vorraeten noch mehr.
-    const waterUrgency = animalResources.waterCamels < 28 ? 0.62 : 0.34;
-    const hayUrgency = animalResources.hayCamels < 28 ? 0.91 : 0.68;
+    const waterUrgency = animalResources[waterTarget.resourceKey] < 28 ? 0.62 : 0.34;
+    const hayUrgency = animalResources[hayTarget.resourceKey] < 28 ? 0.91 : 0.68;
     if (careChoice < waterUrgency) {
-        const target = camelCareTarget("water", camel);
-        return { ...target, intent: "drinking" };
+        return { ...waterTarget, intent: "drinking" };
     }
     if (careChoice < hayUrgency) {
-        const target = camelCareTarget("hay", camel);
-        return { ...target, intent: "feeding" };
+        return { ...hayTarget, intent: "feeding" };
     }
     if (horse && random() < 0.12) {
         return {
@@ -4006,8 +4059,14 @@ function createBactrianCamel(index) {
         legs,
         tail,
         random,
+        // Jedes Tier frisst und trinkt sichtbar unterschiedlich lange. Die
+        // persistenten Stationsraten auf dem Server berücksichtigen dieselbe
+        // feste Verteilung (drei Tiere am Pool, zwei an der Pergola).
+        hayAppetite: [1.16, 0.82, 0.94, 1.08, 1.28][index],
+        waterAppetite: [0.86, 1.22, 1.04, 0.92, 1.17][index],
         target: firstTarget.point,
         intent: firstTarget.intent,
+        resourceKey: firstTarget.resourceKey || null,
         mode: "walking",
         modeUntil: 0,
         travelled: 0,
@@ -4316,6 +4375,287 @@ function createCamelPasture() {
     loadDetailedCamels();
 }
 
+// Drei echte, animierte GLB-Arten bilden eine kleine, wechselnde Vogelwelt.
+// Verschiedene Größen, Gewohnheiten und Besuchszeiten verhindern, dass alle
+// Tiere dasselbe tun. Die Dateien liegen lokal und bremsen die Szene daher
+// nicht durch externe Requests aus.
+const BIRD_VISITOR_CONFIGS = [
+    { name: "Halsbandsittich", model: "parrot", height: 0.34, tint: 0x75ad54,
+        feedBias: 0.68, poolBias: 0.18, pastureBias: 0.18, song: [1980, 2460, 2190] },
+    { name: "Alexandersittich", model: "parrot", height: 0.42, tint: 0x4b9a58,
+        feedBias: 0.58, poolBias: 0.12, pastureBias: 0.28, song: [1720, 2240, 2640] },
+    { name: "Rotflügelsittich", model: "parrot", height: 0.30, tint: 0xb87557,
+        feedBias: 0.77, poolBias: 0.28, pastureBias: 0.08, song: [2320, 2860, 2540] },
+    { name: "Grüner Sittich", model: "parrot", height: 0.28, tint: 0x8aa94d,
+        feedBias: 0.82, poolBias: 0.10, pastureBias: 0.14, song: [2600, 3100, 2760] },
+    { name: "Weißstorch", model: "stork", height: 1.02, tint: 0xffffff,
+        feedBias: 0.55, poolBias: 0.86, pastureBias: 0.72, song: [410, 330, 460] },
+    { name: "Schwarzstorch", model: "stork", height: 0.96, tint: 0x5b6267,
+        feedBias: 0.48, poolBias: 0.78, pastureBias: 0.88, song: [360, 445, 300] },
+    { name: "Rosaflamingo", model: "flamingo", height: 1.14, tint: 0xf2a6b8,
+        feedBias: 0.36, poolBias: 0.96, pastureBias: 0.80, song: [520, 610, 480] },
+    { name: "Chileflamingo", model: "flamingo", height: 1.02, tint: 0xe6b2b9,
+        feedBias: 0.42, poolBias: 0.92, pastureBias: 0.76, song: [470, 560, 430] }
+];
+
+const BIRD_MODEL_FILES = Object.freeze({
+    parrot: "/static/models/bird-parrot.glb?v=98",
+    stork: "/static/models/bird-stork.glb?v=98",
+    flamingo: "/static/models/bird-flamingo.glb?v=98"
+});
+
+function tuneBirdModel(model, config) {
+    const tint = new THREE.Color(config.tint);
+    model.traverse((object) => {
+        if (!object.isMesh)
+            return;
+        object.castShadow = true;
+        object.receiveShadow = true;
+        const sources = Array.isArray(object.material) ? object.material : [object.material];
+        const materials = sources.map((source) => {
+            const material = source.clone();
+            material.color.lerp(tint, config.model === "parrot" ? 0.46 : 0.22);
+            material.roughness = Math.max(0.62, material.roughness ?? 0.68);
+            material.metalness = 0;
+            material.needsUpdate = true;
+            return material;
+        });
+        object.material = Array.isArray(object.material) ? materials : materials[0];
+    });
+}
+
+function birdPoolTarget(bird) {
+    const localChoices = [
+        [-0.72, 0.98, -1.82], [0.66, 0.98, -1.78],
+        [-0.78, 0.98, 1.80], [0.74, 0.98, 1.78]
+    ];
+    const local = localChoices[Math.floor(bird.random() * localChoices.length)];
+    const point = new THREE.Vector3(...local);
+    point.applyAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(-60));
+    point.add(new THREE.Vector3(-7.19, 0, -5.92));
+    return { point, activity: "drinking-pool", pasture: false };
+}
+
+function birdTroughTarget(bird) {
+    const stations = CAMEL_CARE_STATIONS.water;
+    const station = stations[Math.floor(bird.random() * stations.length)];
+    const side = bird.random() < 0.5 ? -1 : 1;
+    return {
+        point: new THREE.Vector3(
+            station.model[0] + Math.cos(station.rotation) * side * 0.38,
+            0.58,
+            station.model[2] - Math.sin(station.rotation) * side * 0.38
+        ),
+        activity: "drinking-trough",
+        pasture: true,
+        resourceKey: station.resourceKey
+    };
+}
+
+function birdGrassTarget(bird) {
+    let choices = grassCells.filter((cell) =>
+        cell.pasture === (bird.random() < bird.config.pastureBias));
+    if (!choices.length)
+        choices = grassCells;
+    const cell = choices[Math.floor(bird.random() * choices.length)];
+    if (!cell)
+        return { point: new THREE.Vector3(-9, 0.04, -8), activity: "feeding", pasture: false };
+    return {
+        point: new THREE.Vector3(
+            cell.x + (bird.random() - 0.5) * 0.55,
+            0.045,
+            cell.z + (bird.random() - 0.5) * 0.55
+        ),
+        activity: "feeding",
+        pasture: cell.pasture
+    };
+}
+
+function chooseBirdActivityTarget(bird) {
+    if (bird.random() < bird.config.feedBias)
+        return birdGrassTarget(bird);
+    return bird.random() < bird.config.poolBias ? birdPoolTarget(bird) : birdTroughTarget(bird);
+}
+
+function birdSkyPoint(bird, opposite = false) {
+    const side = (bird.index % 4 + (opposite ? 2 : 0)) % 4;
+    const spread = (bird.random() - 0.5) * 13;
+    const height = 6.5 + bird.random() * 5.5;
+    if (side === 0)
+        return new THREE.Vector3(-22, height, spread);
+    if (side === 1)
+        return new THREE.Vector3(22, height, spread);
+    if (side === 2)
+        return new THREE.Vector3(spread, height, -22);
+    return new THREE.Vector3(spread, height, 22);
+}
+
+function playBirdSong(bird) {
+    if (!animalSoundsEnabled || !birdAudioContext || birdAudioContext.state !== "running")
+        return;
+    const now = birdAudioContext.currentTime;
+    const notes = bird.config.song;
+    const master = birdAudioContext.createGain();
+    master.gain.setValueAtTime(0.0001, now);
+    master.gain.exponentialRampToValueAtTime(
+        bird.config.model === "parrot" ? 0.020 : 0.014, now + 0.025);
+    master.gain.exponentialRampToValueAtTime(0.0001, now + 0.78);
+    master.connect(birdAudioContext.destination);
+    notes.forEach((frequency, index) => {
+        const oscillator = birdAudioContext.createOscillator();
+        const gain = birdAudioContext.createGain();
+        const start = now + index * (bird.config.model === "stork" ? 0.105 : 0.16);
+        oscillator.type = bird.config.model === "stork" ? "square" : "sine";
+        oscillator.frequency.setValueAtTime(frequency * (0.96 + bird.random() * 0.08), start);
+        oscillator.frequency.exponentialRampToValueAtTime(frequency * 1.10, start + 0.11);
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(0.52, start + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.15);
+        oscillator.connect(gain).connect(master);
+        oscillator.start(start);
+        oscillator.stop(start + 0.17);
+    });
+}
+
+function createGardenBird(config, index, gltf) {
+    const random = seededNoise(12000 + index * 719);
+    const group = new THREE.Group();
+    group.name = config.name;
+    group.visible = false;
+    world.add(group);
+    const model = cloneSkeleton(gltf.scene);
+    tuneBirdModel(model, config);
+    model.updateMatrixWorld(true);
+    let bounds = new THREE.Box3().setFromObject(model);
+    const size = bounds.getSize(new THREE.Vector3());
+    model.scale.setScalar(config.height / Math.max(size.y, 0.001));
+    model.updateMatrixWorld(true);
+    bounds = new THREE.Box3().setFromObject(model);
+    const center = bounds.getCenter(new THREE.Vector3());
+    model.position.set(-center.x, -bounds.min.y, -center.z);
+    group.add(model);
+    const mixer = new THREE.AnimationMixer(model);
+    const action = gltf.animations[0] ? mixer.clipAction(gltf.animations[0]) : null;
+    action?.setLoop(THREE.LoopRepeat, Infinity).play();
+    const bird = {
+        index, config, random, group, model, mixer, action,
+        state: "away", target: new THREE.Vector3(), activity: "feeding",
+        pasture: false, resourceKey: null, stateUntil: 0,
+        nextVisitAt: 3 + index * 7 + random() * 8,
+        nextSongAt: 12 + index * 4 + random() * 24,
+        visitsRemaining: 0, travelled: 0
+    };
+    gardenBirds.push(bird);
+    return bird;
+}
+
+function startBirdVisit(bird, seconds) {
+    const activity = chooseBirdActivityTarget(bird);
+    bird.group.position.copy(birdSkyPoint(bird));
+    bird.group.visible = true;
+    bird.target.copy(activity.point);
+    bird.activity = activity.activity;
+    bird.pasture = activity.pasture;
+    bird.resourceKey = activity.resourceKey || null;
+    bird.visitsRemaining = 1 + Math.floor(bird.random() * 3);
+    bird.state = "flying-in";
+    bird.stateUntil = seconds + 48;
+}
+
+function startBirdDeparture(bird, seconds) {
+    bird.target.copy(birdSkyPoint(bird, true));
+    bird.state = "flying-out";
+    bird.stateUntil = seconds + 42;
+}
+
+function startNextBirdActivity(bird, seconds) {
+    if (bird.visitsRemaining <= 0 || bird.random() < 0.24) {
+        startBirdDeparture(bird, seconds);
+        return;
+    }
+    bird.visitsRemaining -= 1;
+    const activity = chooseBirdActivityTarget(bird);
+    bird.target.copy(activity.point);
+    bird.activity = activity.activity;
+    bird.pasture = activity.pasture;
+    bird.resourceKey = activity.resourceKey || null;
+    bird.state = "flying-between";
+    bird.stateUntil = seconds + 34;
+}
+
+function animateGardenBirds(seconds, delta) {
+    if (reduceMotion)
+        return;
+    gardenBirds.forEach((bird) => {
+        if (bird.state === "away") {
+            if (seconds >= bird.nextVisitAt)
+                startBirdVisit(bird, seconds);
+            return;
+        }
+        const flying = bird.state.startsWith("flying");
+        bird.mixer.timeScale = flying ? 1.05 + bird.index * 0.035 : 0;
+        bird.mixer.update(delta);
+        if (seconds >= bird.nextSongAt && !flying) {
+            playBirdSong(bird);
+            bird.nextSongAt = seconds + 24 + bird.index * 5 + bird.random() * 75;
+        }
+        if (flying) {
+            bird.model.rotation.z = THREE.MathUtils.damp(bird.model.rotation.z, 0, 5, delta);
+            const direction = bird.target.clone().sub(bird.group.position);
+            const distance = direction.length();
+            if (distance < (bird.state === "flying-out" ? 0.75 : 0.20)) {
+                if (bird.state === "flying-out") {
+                    bird.group.visible = false;
+                    bird.state = "away";
+                    bird.nextVisitAt = seconds + 38 + bird.index * 4 + bird.random() * 95;
+                }
+                else {
+                    bird.group.position.copy(bird.target);
+                    bird.state = bird.activity;
+                    const personalDuration = 7 + bird.index * 0.75 + bird.random() * 13;
+                    bird.stateUntil = seconds + personalDuration;
+                }
+                return;
+            }
+            direction.normalize();
+            const targetYaw = Math.atan2(direction.x, direction.z) - Math.PI / 2;
+            const yawDelta = Math.atan2(Math.sin(targetYaw - bird.group.rotation.y),
+                Math.cos(targetYaw - bird.group.rotation.y));
+            bird.group.rotation.y += yawDelta * Math.min(1, delta * 5.2);
+            const speed = (bird.config.model === "parrot" ? 4.2 : 3.25) * delta;
+            bird.group.position.addScaledVector(direction, Math.min(speed, distance));
+            bird.group.position.y += Math.sin(seconds * 7 + bird.index) * delta * 0.035;
+            bird.travelled += speed;
+            if (seconds >= bird.stateUntil)
+                startBirdDeparture(bird, seconds);
+            return;
+        }
+        const pecking = bird.state === "feeding" || bird.state.startsWith("drinking");
+        const peck = pecking ? (0.20 + Math.max(0, Math.sin(seconds * 4.8 + bird.index)) * 0.48) : 0;
+        bird.model.rotation.z = THREE.MathUtils.damp(bird.model.rotation.z, -peck, 7, delta);
+        bird.group.position.y = bird.target.y + (bird.state === "feeding" ?
+            Math.max(0, Math.sin(seconds * 3.6 + bird.index)) * 0.018 : 0);
+        if (bird.state === "feeding")
+            grazeAt(bird.group.position.x, bird.group.position.z, bird.pasture, delta * 0.008);
+        if (seconds >= bird.stateUntil)
+            startNextBirdActivity(bird, seconds);
+    });
+}
+
+function createGardenBirds() {
+    Object.entries(BIRD_MODEL_FILES).forEach(([modelType, url]) => {
+        vehicleLoader.load(url, (gltf) => {
+            BIRD_VISITOR_CONFIGS.forEach((config, index) => {
+                if (config.model === modelType)
+                    createGardenBird(config, index, gltf);
+            });
+        }, undefined, () => {
+            // Kein geometrischer Platzhalter: bei einem seltenen Ladefehler
+            // bleibt die jeweilige Art unsichtbar und wird beim Neuladen erneut geladen.
+        });
+    });
+}
+
 function chooseCamelRestTarget(camel) {
     const candidates = grassCells
         .filter((cell) => cell.pasture && camelCanStandAt(cell.x, cell.z, 0.70))
@@ -4341,6 +4681,7 @@ function startCamelJourney(camel) {
     const target = restDue ? chooseCamelRestTarget(camel) : chooseCamelTarget(camel);
     camel.target = target.point;
     camel.intent = target.intent;
+    camel.resourceKey = target.resourceKey || null;
     camel.facingPoint = target.facingPoint || null;
     camel.mode = camel.random() < 0.10 ? "running" : "walking";
     camel.stuckFor = 0;
@@ -4449,9 +4790,11 @@ function animateCamels(seconds, delta) {
                     camel.mode = camel.intent;
                     // Raufe und Tränke bleiben lange genug belegt, damit der
                     // Nutzer die Aktion auch beim zufälligen Kameraschwenk sieht.
+                    const appetite = camel.intent === "feeding" ? camel.hayAppetite :
+                        camel.intent === "drinking" ? camel.waterAppetite : 1;
                     camel.modeUntil = seconds +
                         (["feeding", "drinking"].includes(camel.intent) ?
-                            20 + camel.random() * 16 : 10 + camel.random() * 14);
+                            (20 + camel.random() * 16) * appetite : 10 + camel.random() * 14);
                 }
             }
             else {
@@ -5050,6 +5393,7 @@ function createGarden() {
     createFencePath([[7.20, -16.50], [7.20, 6.35]], fence, 0.88);
     createAnimalCareStations();
     createCamelPasture();
+    createGardenBirds();
     horse = createHorse();
     restoreAnimalDroppings();
 }
@@ -7194,15 +7538,14 @@ function updateLabelPositions() {
     // Fahrzeug, statt am leeren Stellplatz zurückzubleiben.
     labelAnchors.audi.set(audiModel.position.x, 1.72, audiModel.position.z);
     objectBatteryAnchors.audi.set(audiModel.position.x, 0.72, audiModel.position.z);
-    Object.entries(animalResourceLabelAnchors).forEach(([id, localAnchor]) => {
-        const anchor = world.localToWorld(localAnchor.clone());
+    Object.entries(animalResourceLabelAnchors).forEach(([id, anchorInfo]) => {
+        const anchor = anchorInfo.object.localToWorld(anchorInfo.offset.clone());
         const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
         const projected = anchor.project(camera);
         const rawX = (projected.x * 0.5 + 0.5) * rect.width;
         const rawY = (-projected.y * 0.5 + 0.5) * rect.height;
         const element = animalResourceLabelElements[id];
-        const separatedX = rawX + (id === "hay" ? -56 : 56);
-        element.style.left = THREE.MathUtils.clamp(separatedX, 48, rect.width - 48) + "px";
+        element.style.left = THREE.MathUtils.clamp(rawX, 48, rect.width - 48) + "px";
         element.style.top = THREE.MathUtils.clamp(rawY, 42, rect.height - 34) + "px";
         element.style.setProperty("--resource-label-scale", THREE.MathUtils.clamp(
             0.72 + state.zoom * 0.25, 0.90, 1.34
@@ -7668,6 +8011,7 @@ function animate(time) {
     animateSchematicBattery(secondarySolarBankBatteryVisual, seconds);
     animateSchematicBattery(audiBatteryVisual, seconds);
     animatePondFish(seconds);
+    animateGardenBirds(seconds, delta);
     animateHorse(seconds, delta);
     animateCamels(seconds, delta);
     if (animalDemoMode) {

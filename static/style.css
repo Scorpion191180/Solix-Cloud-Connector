@@ -357,10 +357,28 @@ header p{
     transition:width .6s ease,background .3s ease;
 }
 
-.animal-resource-label.low i b{background:#f59e0b;}
-.animal-resource-label.empty i b{background:#ef4444;}
+.animal-resource-label.healthy{opacity:0;pointer-events:none;}
+.animal-resource-label.warning{
+    border-color:#facc15;
+    animation:animal-resource-warning 1.15s ease-in-out infinite;
+}
+.animal-resource-label.warning i b{background:#facc15;}
+.animal-resource-label.critical{
+    border-color:#ef4444;
+    animation:animal-resource-critical .72s ease-in-out infinite;
+}
+.animal-resource-label.critical i b{background:#ef4444;}
+@keyframes animal-resource-warning{
+    0%,100%{box-shadow:0 5px 15px rgba(2,6,23,.38),0 0 5px rgba(250,204,21,.24);}
+    50%{box-shadow:0 5px 15px rgba(2,6,23,.38),0 0 18px rgba(250,204,21,.86);}
+}
+@keyframes animal-resource-critical{
+    0%,100%{box-shadow:0 5px 15px rgba(2,6,23,.38),0 0 6px rgba(239,68,68,.30);}
+    50%{box-shadow:0 5px 15px rgba(2,6,23,.38),0 0 21px rgba(239,68,68,.98);}
+}
 .animal-resource-label.behind{opacity:.55;}
-.animal-resource-label.outside{opacity:0;}
+.animal-resource-label.healthy.behind,
+.animal-resource-label.outside{opacity:0;pointer-events:none;}
 
 .animal-resource-label button,
 .animal-clean-label button{
