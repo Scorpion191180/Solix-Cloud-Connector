@@ -27,12 +27,16 @@ original downloads.
   [“Bactrian Camel (Low Poly)”](https://sketchfab.com/3d-models/bactrian-camel-low-poly-1fb4d897df2e4d12ab185302a36b3d5f)
   by [Nyilonelycompany](https://sketchfab.com/Nyilonelycompany), licensed under
   [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/).
-- **Animated parrot, stork and flamingo** — created by
-  [Mirada](https://mirada.com/) for *ROME* and distributed as lightweight,
-  animated example assets in the
-  [three.js repository](https://github.com/mrdoob/three.js/tree/dev/examples/models/gltf).
-  The source repository is published under the
-  [MIT License](https://github.com/mrdoob/three.js/blob/dev/LICENSE).
+- **Animated pigeon** — based on
+  [“Animated Bird, Pigeon”](https://sketchfab.com/3d-models/animated-bird-pigeon-797d27b68af3453e865149435df6aa30)
+  by [dudecon](https://sketchfab.com/dudecon), licensed under
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The asset contains
+  separate flapping, gliding, landing, standing-idle and take-off clips.
+- **Australasian swamphen and nestling** — based on
+  [“Australasian Swamphen”](https://actg.itch.io/australasian-swamphen) by
+  ACTG, dedicated to the public domain under
+  [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). Both assets
+  contain separate idle, walking and flying clips.
 
 The optimized files use meshoptimizer compression. meshoptimizer/gltfpack is
 licensed under the [MIT License](https://github.com/zeux/meshoptimizer).

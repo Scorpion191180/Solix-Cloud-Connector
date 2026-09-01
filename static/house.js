@@ -161,6 +161,11 @@ const animalDroppings = [];
 const urinePatches = [];
 const animalDemoMode = new URLSearchParams(window.location.search).get("animal_demo") === "1";
 const animalFocusMode = new URLSearchParams(window.location.search).get("animal_focus");
+let nextCamelHerdRestAt = animalDemoMode ? 10 : 160;
+let camelHerdRestSerial = 0;
+let camelHerdRestDeadline = 0;
+let camelHerdRestDuration = 0;
+let camelHerdRestStarted = false;
 if (animalDemoMode)
     stage.dataset.animalDemo = "true";
 const iconCaptureMode = new URLSearchParams(window.location.search).get("icon_capture") === "1";
@@ -3039,7 +3044,9 @@ function horseCanStandAt(x, z) {
     ];
     const atLandscape = landscapeObstacles.some(([obstacleX, obstacleZ, radius]) =>
         Math.hypot(x - obstacleX, z - obstacleZ) < radius + 0.72);
-    return !(onHouse || atPool || atPond || atPergola || atAudi || atParkedCars || atLandscape);
+    const atCareStation = animalCareStationBlocksAnimal(x, z, 0.42, true);
+    return !(onHouse || atPool || atPond || atPergola || atAudi || atParkedCars ||
+        atLandscape || atCareStation);
 }
 
 function horseIsOnGrass(x, z) {
@@ -3393,7 +3400,7 @@ function startHorseJourney(horseState, origin, forceGarden = false) {
         return;
     }
     if (!forceGarden && (animalResources.hayHorse < 55 || careChoice < 0.40) &&
-        setHorseRoute(horseState, new THREE.Vector3(-9.98, 0, -2.26))) {
+        setHorseRoute(horseState, new THREE.Vector3(-9.48, 0, -2.26))) {
         horseState.navigation = "horse-hay";
         horseState.mode = "walking";
         return;
@@ -3835,7 +3842,7 @@ const CAMEL_CARE_STATIONS = {
             id: "pool-camel-water",
             resourceKey: "waterCamelPool",
             model: [-12.28, 0, -3.92],
-            target: [-12.52, -3.92],
+            target: [-13.38, -3.92],
             rotation: 0,
             slotAxis: [0, 1]
         },
@@ -3846,7 +3853,7 @@ const CAMEL_CARE_STATIONS = {
             // Die Standplätze liegen parallel zum schrägen Zaun, aber mit
             // ausreichend Abstand auf der Weideseite. Der frühere diagonale
             // Versatz setzte das linke Tier praktisch auf die Zaunkante.
-            target: [4.88, -17.28],
+            target: [4.40, -16.90],
             rotation: 0.49,
             slotAxis: [1, 0]
         }
@@ -3856,7 +3863,7 @@ const CAMEL_CARE_STATIONS = {
             id: "pool-camel-hay",
             resourceKey: "hayCamelPool",
             model: [-12.32, 0, -2.26],
-            target: [-12.58, -2.26],
+            target: [-13.42, -2.26],
             rotation: -Math.PI / 2,
             slotAxis: [0, 1]
         },
@@ -3864,7 +3871,7 @@ const CAMEL_CARE_STATIONS = {
             id: "pergola-camel-hay",
             resourceKey: "hayCamelPergola",
             model: [3.62, 0, -16.72],
-            target: [3.30, -17.20],
+            target: [3.06, -17.56],
             rotation: 0.49,
             slotAxis: [1, 0]
         }
@@ -3874,6 +3881,31 @@ const CAMEL_CARE_STATIONS = {
 // Überschneidungen von Körper, Hals und Höckern an derselben Station.
 const CAMEL_CARE_SLOT_SPACING = 2.40;
 const CAMEL_HERD_SIZE = 5;
+
+function pointInRotatedStation(x, z, position, rotation, clearance = 0) {
+    const deltaX = x - position[0];
+    const deltaZ = z - position[2];
+    const cos = Math.cos(-rotation);
+    const sin = Math.sin(-rotation);
+    const localX = deltaX * cos - deltaZ * sin;
+    const localZ = deltaX * sin + deltaZ * cos;
+    return Math.abs(localX) < 0.72 + clearance && Math.abs(localZ) < 0.56 + clearance;
+}
+
+function animalCareStationBlocksAnimal(x, z, clearance = 0, includeHorseStations = false) {
+    const camelStation = [...CAMEL_CARE_STATIONS.water, ...CAMEL_CARE_STATIONS.hay]
+        .some((station) => pointInRotatedStation(x, z, station.model, station.rotation, clearance));
+    if (camelStation)
+        return true;
+    if (!includeHorseStations)
+        return false;
+    // Pferderaufe im Garten und Tränke im Stall. Beide bleiben physische
+    // Hindernisse; die Tiere stellen sich mit genügend Abstand davor.
+    if (pointInRotatedStation(x, z, [-10.66, 0, -2.26], Math.PI / 2, clearance))
+        return true;
+    return Math.abs(x + 1.60) < 0.48 + clearance &&
+        Math.abs(z + 1.94) < 0.42 + clearance;
+}
 
 function createAnimalCareStations() {
     // Die Pferdetränke ist Teil des 3D-Stalls. Hinter dem Poolzaun verbleiben
@@ -3906,7 +3938,8 @@ function distanceToPastureBoundary(x, z) {
 
 function camelCanStandAt(x, z, clearance = 0) {
     return pointInPolygon(x, z, CAMEL_PASTURE_BOUNDARY) &&
-        distanceToPastureBoundary(x, z) >= clearance;
+        distanceToPastureBoundary(x, z) >= clearance &&
+        !animalCareStationBlocksAnimal(x, z, 0.36);
 }
 
 function camelPathIsClear(startX, startZ, endX, endZ, clearance = 0.30) {
@@ -4078,6 +4111,10 @@ function createBactrianCamel(index) {
         nextRestAt: animalDemoMode ? 14 + index * 4 : 90 + index * 52 + random() * 120,
         callingUntil: 0,
         restBlend: 0,
+        restTransitionStarted: 0,
+        restEndsAt: 0,
+        herdRestId: 0,
+        restGroundDrop: 1.19 * scale,
         elapsedSeconds: 0,
         modelRoot: null,
         mixer: null,
@@ -4252,44 +4289,73 @@ function animateDetailedCamelGait(camel, moving, running, delta) {
     camel.group.position.y = THREE.MathUtils.damp(camel.group.position.y, bob, 10, delta);
 }
 
-function animateCamelRestPose(camel, resting, delta) {
-    const target = resting ? 1 : 0;
-    camel.restBlend = THREE.MathUtils.damp(camel.restBlend || 0, target, resting ? 2.2 : 2.8, delta);
-    const blend = camel.restBlend;
-    // Ein ruhendes Kamel liegt auf Brust und Bauch. Die fruehere Absenkung um
-    // 0,44 m liess den Rumpf sichtbar schweben und zeigte nur eine kniende
-    // Zwischenpose. Die tiefere Bodenlage wird mit der individuellen
-    // Tiergroesse skaliert, damit auch das groesste Tier sauber aufliegt.
+function camelRestStep(progress, start, end) {
+    const normalized = THREE.MathUtils.clamp((progress - start) / Math.max(0.001, end - start), 0, 1);
+    return normalized * normalized * (3 - 2 * normalized);
+}
+
+function animateCamelRestPose(camel, phase, seconds, delta) {
+    const duration = phase === "rising" ? 4.8 : 5.2;
+    const elapsed = Math.max(0, seconds - (camel.restTransitionStarted || seconds));
+    const progress = THREE.MathUtils.clamp(elapsed / duration, 0, 1);
+    let leftFront;
+    let rightFront;
+    let hind;
+    let bodyDrop;
+    if (phase === "resting") {
+        leftFront = rightFront = hind = bodyDrop = 1;
+    }
+    else if (phase === "rising") {
+        // Beim Aufstehen hebt das Kamel zuerst die Hinterhand. Die Vorderbeine
+        // bleiben noch gefaltet, bis der Rumpf bereits deutlich oben ist.
+        hind = 1 - camelRestStep(progress, 0.00, 0.34);
+        bodyDrop = 1 - camelRestStep(progress, 0.04, 0.48);
+        rightFront = 1 - camelRestStep(progress, 0.42, 0.88);
+        leftFront = 1 - camelRestStep(progress, 0.52, 1.00);
+    }
+    else {
+        // Hinlegen in natürlicher Reihenfolge: erst ein Vorderknie, leicht
+        // versetzt das zweite, dann Hinterbeine und zuletzt Brust/Bauch.
+        leftFront = camelRestStep(progress, 0.02, 0.32);
+        rightFront = camelRestStep(progress, 0.10, 0.40);
+        hind = camelRestStep(progress, 0.28, 0.68);
+        bodyDrop = camelRestStep(progress, 0.36, 0.90);
+    }
+    camel.restBlend = bodyDrop;
+    // Der Rumpf wird so weit abgesenkt, dass Brust und Bauch auf dem Boden
+    // aufliegen. Dieser Wert ist pro Tier skaliert und verhindert sowohl
+    // Schweben als auch Einsinken der verschieden großen Kamele.
     camel.group.position.y = THREE.MathUtils.damp(
         camel.group.position.y,
-        -1.04 * camel.group.scale.x * blend,
-        5.5,
+        -camel.restGroundDrop * bodyDrop,
+        7.5,
         delta
     );
     if (!camel.modelRoot) {
         camel.legs.forEach((leg, index) => {
             const front = index < 2;
             const side = index % 2 ? -1 : 1;
+            const fold = front ? (index % 2 ? rightFront : leftFront) : hind;
             leg.rotation.x = THREE.MathUtils.damp(
                 leg.rotation.x,
-                (front ? 1.08 : -1.02) * side * blend,
+                (front ? 1.08 : -1.02) * side * fold,
                 5,
                 delta
             );
         });
-        camel.body.rotation.x = THREE.MathUtils.damp(camel.body.rotation.x, 0.06 * blend, 4, delta);
-        camel.neckRig.rotation.x = THREE.MathUtils.damp(camel.neckRig.rotation.x, 0.22 * blend, 4, delta);
+        camel.body.rotation.x = THREE.MathUtils.damp(camel.body.rotation.x, 0.06 * bodyDrop, 4, delta);
+        camel.neckRig.rotation.x = THREE.MathUtils.damp(camel.neckRig.rotation.x, 0.22 * bodyDrop, 4, delta);
         return;
     }
     camel.gaitBlend = THREE.MathUtils.damp(camel.gaitBlend || 0, 0, 5, delta);
     camel.walkRig.forEach((limb) => {
         const sign = limb.mirrorSign;
+        const fold = limb.front ? (sign > 0 ? leftFront : rightFront) : hind;
         // Vorderbeine werden unter die Brust, Hinterbeine unter den Bauch
-        // gefaltet. Die deutlich staerkere Beugung an Knie und Sprunggelenk
-        // verhindert die bisher halb ausgestreckte Kniestellung.
-        const upper = (limb.front ? 1.34 : -1.50) * sign * blend;
-        const lower = (limb.front ? -2.28 : 2.42) * sign * blend;
-        const foot = (limb.front ? 1.12 : -1.24) * sign * blend;
+        // gefaltet. Beide Vorderknie folgen bewusst leicht zeitversetzt.
+        const upper = (limb.front ? 1.34 : -1.50) * sign * fold;
+        const lower = (limb.front ? -2.28 : 2.42) * sign * fold;
+        const foot = (limb.front ? 1.12 : -1.24) * sign * fold;
         poseCamelJoint(limb.upper, limb.upperRest, upper);
         poseCamelJoint(limb.lower, limb.lowerRest, lower);
         poseCamelJoint(limb.foot, limb.footRest, foot);
@@ -4375,33 +4441,32 @@ function createCamelPasture() {
     loadDetailedCamels();
 }
 
-// Drei echte, animierte GLB-Arten bilden eine kleine, wechselnde Vogelwelt.
-// Verschiedene Größen, Gewohnheiten und Besuchszeiten verhindern, dass alle
-// Tiere dasselbe tun. Die Dateien liegen lokal und bremsen die Szene daher
-// nicht durch externe Requests aus.
+// Die Vogelarten verwenden Modelle mit passenden Boden- UND Fluganimationen.
+// Damit fliegt kein langbeiniges Tier mehr im Sitzen über die Wiese und ein
+// gelandeter Vogel schlaegt nicht weiter mit den Fluegeln.
 const BIRD_VISITOR_CONFIGS = [
-    { name: "Halsbandsittich", model: "parrot", height: 0.34, tint: 0x75ad54,
-        feedBias: 0.68, poolBias: 0.18, pastureBias: 0.18, song: [1980, 2460, 2190] },
-    { name: "Alexandersittich", model: "parrot", height: 0.42, tint: 0x4b9a58,
-        feedBias: 0.58, poolBias: 0.12, pastureBias: 0.28, song: [1720, 2240, 2640] },
-    { name: "Rotflügelsittich", model: "parrot", height: 0.30, tint: 0xb87557,
-        feedBias: 0.77, poolBias: 0.28, pastureBias: 0.08, song: [2320, 2860, 2540] },
-    { name: "Grüner Sittich", model: "parrot", height: 0.28, tint: 0x8aa94d,
-        feedBias: 0.82, poolBias: 0.10, pastureBias: 0.14, song: [2600, 3100, 2760] },
-    { name: "Weißstorch", model: "stork", height: 1.02, tint: 0xffffff,
-        feedBias: 0.55, poolBias: 0.86, pastureBias: 0.72, song: [410, 330, 460] },
-    { name: "Schwarzstorch", model: "stork", height: 0.96, tint: 0x5b6267,
-        feedBias: 0.48, poolBias: 0.78, pastureBias: 0.88, song: [360, 445, 300] },
-    { name: "Rosaflamingo", model: "flamingo", height: 1.14, tint: 0xf2a6b8,
-        feedBias: 0.36, poolBias: 0.96, pastureBias: 0.80, song: [520, 610, 480] },
-    { name: "Chileflamingo", model: "flamingo", height: 1.02, tint: 0xe6b2b9,
-        feedBias: 0.42, poolBias: 0.92, pastureBias: 0.76, song: [470, 560, 430] }
+    { name: "Stadttaube", model: "pigeon", height: 0.31, tint: 0x89939c,
+        feedBias: 0.84, poolBias: 0.18, pastureBias: 0.18, song: [620, 540, 590] },
+    { name: "Ringeltaube", model: "pigeon", height: 0.42, tint: 0x707982,
+        feedBias: 0.78, poolBias: 0.14, pastureBias: 0.46, song: [510, 440, 480] },
+    { name: "Tuerkentaube", model: "pigeon", height: 0.34, tint: 0xb4aa99,
+        feedBias: 0.80, poolBias: 0.20, pastureBias: 0.28, song: [580, 500, 550] },
+    { name: "Felsentaube", model: "pigeon", height: 0.33, tint: 0x667988,
+        feedBias: 0.86, poolBias: 0.16, pastureBias: 0.20, song: [650, 570, 610] },
+    { name: "Purpurhuhn", model: "swamphen", height: 0.49, tint: 0x547184,
+        feedBias: 0.68, poolBias: 0.82, pastureBias: 0.76, song: [820, 960, 740] },
+    { name: "Teichhuhn", model: "swamphen", height: 0.43, tint: 0x59666b,
+        feedBias: 0.72, poolBias: 0.74, pastureBias: 0.66, song: [1050, 880, 1180] },
+    { name: "Junges Purpurhuhn", model: "swamphenNestling", height: 0.24, tint: 0x7b7770,
+        feedBias: 0.90, poolBias: 0.44, pastureBias: 0.84, song: [1320, 1480, 1390] },
+    { name: "Junges Teichhuhn", model: "swamphenNestling", height: 0.21, tint: 0x68645f,
+        feedBias: 0.92, poolBias: 0.38, pastureBias: 0.82, song: [1450, 1610, 1510] }
 ];
 
 const BIRD_MODEL_FILES = Object.freeze({
-    parrot: "/static/models/bird-parrot.glb?v=98",
-    stork: "/static/models/bird-stork.glb?v=98",
-    flamingo: "/static/models/bird-flamingo.glb?v=98"
+    pigeon: "/static/models/bird-pigeon-animated.glb?v=99",
+    swamphen: "/static/models/bird-swamphen.glb?v=99",
+    swamphenNestling: "/static/models/bird-swamphen-nestling.glb?v=99"
 });
 
 function tuneBirdModel(model, config) {
@@ -4414,7 +4479,7 @@ function tuneBirdModel(model, config) {
         const sources = Array.isArray(object.material) ? object.material : [object.material];
         const materials = sources.map((source) => {
             const material = source.clone();
-            material.color.lerp(tint, config.model === "parrot" ? 0.46 : 0.22);
+            material.color.lerp(tint, config.model === "pigeon" ? 0.20 : 0.14);
             material.roughness = Math.max(0.62, material.roughness ?? 0.68);
             material.metalness = 0;
             material.needsUpdate = true;
@@ -4517,6 +4582,57 @@ function playBirdSong(bird) {
     });
 }
 
+function birdClipByWords(animations, words) {
+    return animations.find((clip) => {
+        const name = clip.name.toLowerCase();
+        return words.some((word) => name.includes(word));
+    }) || null;
+}
+
+function createBirdActions(mixer, animations) {
+    const clips = {
+        fly: birdClipByWords(animations, ["flapping", "_fly", "flying"]),
+        glide: birdClipByWords(animations, ["gliding", "glide"]),
+        landing: birdClipByWords(animations, ["landing", "land"]),
+        idle: birdClipByWords(animations, ["standing idle", "_pose", "idle"]),
+        walking: birdClipByWords(animations, ["_walk", "walking"]),
+        takeoff: birdClipByWords(animations, ["takeoff", "take_off"])
+    };
+    if (!clips.fly)
+        clips.fly = animations[0] || null;
+    if (!clips.idle)
+        clips.idle = clips.walking || animations[0] || null;
+    return Object.fromEntries(Object.entries(clips).map(([name, clip]) => {
+        if (!clip)
+            return [name, null];
+        const action = mixer.clipAction(clip);
+        if (["landing", "takeoff"].includes(name)) {
+            action.setLoop(THREE.LoopOnce, 1);
+            action.clampWhenFinished = true;
+        }
+        else
+            action.setLoop(THREE.LoopRepeat, Infinity);
+        return [name, action];
+    }));
+}
+
+function setBirdAnimation(bird, name, fade = 0.20) {
+    const next = bird.actions[name] || bird.actions.idle || bird.actions.fly;
+    if (!next || (bird.currentAction === next && next.isRunning()))
+        return;
+    if (bird.currentAction && bird.currentAction !== next)
+        bird.currentAction.fadeOut(fade);
+    next.enabled = true;
+    next.reset().setEffectiveWeight(1).setEffectiveTimeScale(1).fadeIn(fade).play();
+    bird.currentAction = next;
+    bird.currentActionName = name;
+}
+
+function birdAnimationDuration(bird, name) {
+    const action = bird.actions[name];
+    return action?.getClip()?.duration || 0.8;
+}
+
 function createGardenBird(config, index, gltf) {
     const random = seededNoise(12000 + index * 719);
     const group = new THREE.Group();
@@ -4535,16 +4651,21 @@ function createGardenBird(config, index, gltf) {
     model.position.set(-center.x, -bounds.min.y, -center.z);
     group.add(model);
     const mixer = new THREE.AnimationMixer(model);
-    const action = gltf.animations[0] ? mixer.clipAction(gltf.animations[0]) : null;
-    action?.setLoop(THREE.LoopRepeat, Infinity).play();
+    const actions = createBirdActions(mixer, gltf.animations);
     const bird = {
-        index, config, random, group, model, mixer, action,
+        index, config, random, group, model, mixer, actions,
         state: "away", target: new THREE.Vector3(), activity: "feeding",
         pasture: false, resourceKey: null, stateUntil: 0,
         nextVisitAt: 3 + index * 7 + random() * 8,
         nextSongAt: 12 + index * 4 + random() * 24,
-        visitsRemaining: 0, travelled: 0
+        visitsRemaining: 0, travelled: 0,
+        currentAction: null, currentActionName: "",
+        headRig: model.getObjectByName("DEF-head_08") ||
+            model.getObjectByName("head") || model.getObjectByName("Head"),
+        pendingFlightState: null,
+        pendingTarget: new THREE.Vector3()
     };
+    setBirdAnimation(bird, "idle", 0);
     gardenBirds.push(bird);
     return bird;
 }
@@ -4560,12 +4681,33 @@ function startBirdVisit(bird, seconds) {
     bird.visitsRemaining = 1 + Math.floor(bird.random() * 3);
     bird.state = "flying-in";
     bird.stateUntil = seconds + 48;
+    setBirdAnimation(bird, "fly", 0.12);
+}
+
+function beginBirdTakeoff(bird, flightState, target, seconds) {
+    bird.pendingFlightState = flightState;
+    bird.pendingTarget.copy(target);
+    if (bird.actions.takeoff) {
+        bird.state = "taking-off";
+        bird.stateUntil = seconds + birdAnimationDuration(bird, "takeoff");
+        setBirdAnimation(bird, "takeoff", 0.12);
+    }
+    else {
+        bird.state = flightState;
+        bird.target.copy(target);
+        bird.stateUntil = seconds + 42;
+        setBirdAnimation(bird, "fly", 0.12);
+    }
 }
 
 function startBirdDeparture(bird, seconds) {
-    bird.target.copy(birdSkyPoint(bird, true));
-    bird.state = "flying-out";
-    bird.stateUntil = seconds + 42;
+    beginBirdTakeoff(bird, "flying-out", birdSkyPoint(bird, true), seconds);
+}
+
+function finishBirdLanding(bird, seconds) {
+    bird.state = bird.activity;
+    bird.stateUntil = seconds + 7 + bird.index * 0.75 + bird.random() * 13;
+    setBirdAnimation(bird, "idle", 0.16);
 }
 
 function startNextBirdActivity(bird, seconds) {
@@ -4579,8 +4721,14 @@ function startNextBirdActivity(bird, seconds) {
     bird.activity = activity.activity;
     bird.pasture = activity.pasture;
     bird.resourceKey = activity.resourceKey || null;
-    bird.state = "flying-between";
-    bird.stateUntil = seconds + 34;
+    const distance = bird.group.position.distanceTo(activity.point);
+    if (bird.actions.walking && distance < 4.7) {
+        bird.state = "walking-between";
+        bird.stateUntil = seconds + 34;
+        setBirdAnimation(bird, "walking", 0.18);
+    }
+    else
+        beginBirdTakeoff(bird, "flying-between", activity.point, seconds);
 }
 
 function animateGardenBirds(seconds, delta) {
@@ -4593,14 +4741,22 @@ function animateGardenBirds(seconds, delta) {
             return;
         }
         const flying = bird.state.startsWith("flying");
-        bird.mixer.timeScale = flying ? 1.05 + bird.index * 0.035 : 0;
+        bird.mixer.timeScale = 1;
         bird.mixer.update(delta);
-        if (seconds >= bird.nextSongAt && !flying) {
+        if (bird.state === "taking-off" && seconds >= bird.stateUntil) {
+            bird.state = bird.pendingFlightState;
+            bird.target.copy(bird.pendingTarget);
+            bird.stateUntil = seconds + 42;
+            setBirdAnimation(bird, "fly", 0.12);
+        }
+        if (bird.state === "landing" && seconds >= bird.stateUntil)
+            finishBirdLanding(bird, seconds);
+        if (seconds >= bird.nextSongAt && !flying &&
+            !["taking-off", "landing"].includes(bird.state)) {
             playBirdSong(bird);
             bird.nextSongAt = seconds + 24 + bird.index * 5 + bird.random() * 75;
         }
         if (flying) {
-            bird.model.rotation.z = THREE.MathUtils.damp(bird.model.rotation.z, 0, 5, delta);
             const direction = bird.target.clone().sub(bird.group.position);
             const distance = direction.length();
             if (distance < (bird.state === "flying-out" ? 0.75 : 0.20)) {
@@ -4611,18 +4767,22 @@ function animateGardenBirds(seconds, delta) {
                 }
                 else {
                     bird.group.position.copy(bird.target);
-                    bird.state = bird.activity;
-                    const personalDuration = 7 + bird.index * 0.75 + bird.random() * 13;
-                    bird.stateUntil = seconds + personalDuration;
+                    if (bird.actions.landing) {
+                        bird.state = "landing";
+                        bird.stateUntil = seconds + birdAnimationDuration(bird, "landing");
+                        setBirdAnimation(bird, "landing", 0.10);
+                    }
+                    else
+                        finishBirdLanding(bird, seconds);
                 }
                 return;
             }
             direction.normalize();
-            const targetYaw = Math.atan2(direction.x, direction.z) - Math.PI / 2;
+            const targetYaw = Math.atan2(direction.x, direction.z);
             const yawDelta = Math.atan2(Math.sin(targetYaw - bird.group.rotation.y),
                 Math.cos(targetYaw - bird.group.rotation.y));
             bird.group.rotation.y += yawDelta * Math.min(1, delta * 5.2);
-            const speed = (bird.config.model === "parrot" ? 4.2 : 3.25) * delta;
+            const speed = (bird.config.model === "pigeon" ? 4.2 : 3.25) * delta;
             bird.group.position.addScaledVector(direction, Math.min(speed, distance));
             bird.group.position.y += Math.sin(seconds * 7 + bird.index) * delta * 0.035;
             bird.travelled += speed;
@@ -4630,11 +4790,34 @@ function animateGardenBirds(seconds, delta) {
                 startBirdDeparture(bird, seconds);
             return;
         }
+        if (bird.state === "walking-between") {
+            const direction = bird.target.clone().sub(bird.group.position);
+            direction.y = 0;
+            const distance = direction.length();
+            if (distance < 0.08) {
+                bird.group.position.copy(bird.target);
+                finishBirdLanding(bird, seconds);
+                return;
+            }
+            direction.normalize();
+            const targetYaw = Math.atan2(direction.x, direction.z);
+            const yawDelta = Math.atan2(Math.sin(targetYaw - bird.group.rotation.y),
+                Math.cos(targetYaw - bird.group.rotation.y));
+            bird.group.rotation.y += yawDelta * Math.min(1, delta * 5.4);
+            bird.group.position.addScaledVector(direction, Math.min(0.36 * delta, distance));
+            if (seconds >= bird.stateUntil)
+                startBirdDeparture(bird, seconds);
+            return;
+        }
+        if (["taking-off", "landing"].includes(bird.state))
+            return;
         const pecking = bird.state === "feeding" || bird.state.startsWith("drinking");
-        const peck = pecking ? (0.20 + Math.max(0, Math.sin(seconds * 4.8 + bird.index)) * 0.48) : 0;
-        bird.model.rotation.z = THREE.MathUtils.damp(bird.model.rotation.z, -peck, 7, delta);
-        bird.group.position.y = bird.target.y + (bird.state === "feeding" ?
-            Math.max(0, Math.sin(seconds * 3.6 + bird.index)) * 0.018 : 0);
+        const peck = pecking ? Math.max(0, Math.sin(seconds * 4.8 + bird.index)) * 0.42 : 0;
+        // Nur der Kopf senkt sich. Das ganze Tier bleibt korrekt auf seinen
+        // Beinen stehen – besonders wichtig bei den langbeinigen Wasservoegeln.
+        if (bird.headRig && peck > 0)
+            bird.headRig.rotateX(peck);
+        bird.group.position.y = bird.target.y;
         if (bird.state === "feeding")
             grazeAt(bird.group.position.x, bird.group.position.z, bird.pasture, delta * 0.008);
         if (seconds >= bird.stateUntil)
@@ -4654,6 +4837,66 @@ function createGardenBirds() {
             // bleibt die jeweilige Art unsichtbar und wird beim Neuladen erneut geladen.
         });
     });
+}
+
+function camelHerdRestLayout() {
+    const offsets = [
+        [-3.0, -1.12], [0, -1.20], [3.0, -1.08],
+        [-1.52, 1.28], [1.52, 1.34]
+    ];
+    const candidates = grassCells.filter((cell) => cell.pasture);
+    for (let attempt = 0; attempt < Math.min(220, candidates.length); attempt += 1) {
+        const cell = candidates[(attempt * 37 + camelHerdRestSerial * 19) % candidates.length];
+        if (offsets.every(([dx, dz]) => camelCanStandAt(cell.x + dx, cell.z + dz, 0.72)))
+            return offsets.map(([dx, dz]) => new THREE.Vector3(cell.x + dx, 0, cell.z + dz));
+    }
+    return [
+        new THREE.Vector3(-18.2, 0, -7.4), new THREE.Vector3(-15.2, 0, -7.5),
+        new THREE.Vector3(-12.2, 0, -7.3), new THREE.Vector3(-16.7, 0, -5.0),
+        new THREE.Vector3(-13.7, 0, -4.9)
+    ];
+}
+
+function scheduleCamelHerdRest(seconds) {
+    if ((animalDemoMode && animalFocusMode === "camel") || seconds < nextCamelHerdRestAt || camelHerd.some((camel) =>
+        ["couching", "resting", "rising", "herd-waiting"].includes(camel.mode)))
+        return;
+    camelHerdRestSerial += 1;
+    camelHerdRestDeadline = seconds + 65;
+    camelHerdRestDuration = (new Date().getHours() >= 22 || new Date().getHours() < 6) ? 85 : 56;
+    camelHerdRestStarted = false;
+    const layout = camelHerdRestLayout();
+    camelHerd.forEach((camel, index) => {
+        camel.herdRestId = camelHerdRestSerial;
+        camel.target.copy(layout[index]);
+        camel.intent = "herd-rest";
+        camel.resourceKey = null;
+        camel.facingPoint = null;
+        camel.mode = "walking";
+        camel.stuckFor = 0;
+        camel.lastProgressPosition.copy(camel.group.position);
+    });
+    nextCamelHerdRestAt = seconds + (animalDemoMode ? 105 : 300 + Math.random() * 190);
+}
+
+function beginCamelCouching(camel, seconds) {
+    camel.mode = "couching";
+    camel.restTransitionStarted = seconds;
+    camel.restEndsAt = seconds + camelHerdRestDuration;
+    camel.modeUntil = seconds + 5.2;
+}
+
+function coordinateCamelHerdRest(seconds) {
+    if (!camelHerdRestSerial || camelHerdRestStarted)
+        return;
+    const members = camelHerd.filter((camel) => camel.herdRestId === camelHerdRestSerial);
+    if (!members.length)
+        return;
+    const waiting = members.filter((camel) => camel.mode === "herd-waiting");
+    if (waiting.length === members.length || (seconds >= camelHerdRestDeadline && waiting.length >= 3)) {
+        camelHerdRestStarted = true;
+        waiting.forEach((camel) => beginCamelCouching(camel, seconds));
+    }
 }
 
 function chooseCamelRestTarget(camel) {
@@ -4676,13 +4919,14 @@ function chooseCamelRestTarget(camel) {
 
 function startCamelJourney(camel) {
     const restingCamels = camelHerd.filter((other) =>
-        ["resting", "rising"].includes(other.mode)).length;
-    const restDue = camel.elapsedSeconds >= camel.nextRestAt && restingCamels < 2;
+        ["couching", "resting", "rising"].includes(other.mode)).length;
+    const restDue = camel.elapsedSeconds >= camel.nextRestAt && restingCamels < 4;
     const target = restDue ? chooseCamelRestTarget(camel) : chooseCamelTarget(camel);
     camel.target = target.point;
     camel.intent = target.intent;
     camel.resourceKey = target.resourceKey || null;
     camel.facingPoint = target.facingPoint || null;
+    camel.herdRestId = 0;
     camel.mode = camel.random() < 0.10 ? "running" : "walking";
     camel.stuckFor = 0;
     camel.lastProgressPosition.copy(camel.group.position);
@@ -4701,6 +4945,8 @@ function rescueStuckCamel(camel) {
 function animateCamels(seconds, delta) {
     if (reduceMotion)
         return;
+    scheduleCamelHerdRest(seconds);
+    coordinateCamelHerdRest(seconds);
     camelHerd.forEach((camel) => {
         camel.elapsedSeconds = seconds;
         if (camel.mixer) {
@@ -4717,15 +4963,23 @@ function animateCamels(seconds, delta) {
             playAnimalSound("camel", 0.42 + camel.index * 0.025);
         }
         const camelCalling = seconds < camel.callingUntil;
-        if (camel.mode === "resting") {
-            animateCamelRestPose(camel, true, delta);
+        if (camel.mode === "couching") {
+            animateCamelRestPose(camel, "couching", seconds, delta);
+            if (seconds >= camel.modeUntil) {
+                camel.mode = "resting";
+                camel.modeUntil = camel.restEndsAt;
+            }
+        }
+        else if (camel.mode === "resting") {
+            animateCamelRestPose(camel, "resting", seconds, delta);
             if (seconds >= camel.modeUntil) {
                 camel.mode = "rising";
-                camel.modeUntil = seconds + 3.6;
+                camel.restTransitionStarted = seconds;
+                camel.modeUntil = seconds + 4.8;
             }
         }
         else if (camel.mode === "rising") {
-            animateCamelRestPose(camel, false, delta);
+            animateCamelRestPose(camel, "rising", seconds, delta);
             if (seconds >= camel.modeUntil || camel.restBlend < 0.025)
                 startCamelJourney(camel);
         }
@@ -4774,16 +5028,21 @@ function animateCamels(seconds, delta) {
                 const hour = new Date().getHours();
                 const night = hour >= 22 || hour < 6;
                 const restingCamels = camelHerd.filter((other) =>
-                    ["resting", "rising"].includes(other.mode)).length;
+                    ["couching", "resting", "rising"].includes(other.mode)).length;
                 // Ist der persönliche Zeitpunkt erreicht, legt sich das Tier
                 // am nächsten geeigneten Gras-/Ruheplatz sicher hin. Die alte
                 // zusätzliche Zufallsprüfung konnte die Aktion unbegrenzt
                 // verschieben und machte sie in der Praxis kaum sichtbar.
                 const canRest = ["grazing", "idle"].includes(camel.intent) &&
-                    seconds >= camel.nextRestAt && restingCamels < 2;
-                if (canRest) {
-                    camel.mode = "resting";
-                    camel.modeUntil = seconds + (night ? 50 + camel.random() * 40 : 28 + camel.random() * 22);
+                    seconds >= camel.nextRestAt && restingCamels < 4;
+                if (camel.intent === "herd-rest") {
+                    camel.mode = "herd-waiting";
+                    if (camelHerdRestStarted)
+                        beginCamelCouching(camel, seconds);
+                }
+                else if (canRest) {
+                    camelHerdRestDuration = night ? 50 + camel.random() * 40 : 28 + camel.random() * 22;
+                    beginCamelCouching(camel, seconds);
                     camel.nextRestAt = seconds + (night ? 260 + camel.random() * 220 : 420 + camel.random() * 300);
                 }
                 else {
@@ -5118,7 +5377,9 @@ function animateHorse(seconds, delta) {
                 return;
             }
             if (horse.navigation === "stable-water-entry") {
-                horse.target = new THREE.Vector3(-1.48, 0, -1.80);
+                // Der Körper bleibt vor der Tränke; nur Kopf und Hals reichen
+                // zum Wasser. Zuvor stand das Pferd geometrisch in der Wanne.
+                horse.target = new THREE.Vector3(-2.45, 0, -1.80);
                 horse.path = [];
                 horse.navigation = "stable-water-inside";
                 horse.mode = "walking";
@@ -5553,6 +5814,11 @@ if (animalDemoMode) {
             mode: camel.mode,
             restBlend: Number((camel.restBlend || 0).toFixed(3)),
             calling: camel.elapsedSeconds < camel.callingUntil
+        })),
+        birds: gardenBirds.map((bird) => ({
+            name: bird.config.name,
+            state: bird.state,
+            animation: bird.currentActionName
         }))
     });
 }
@@ -8019,7 +8285,10 @@ function animate(time) {
         stage.dataset.horseMode = horse?.mode || "missing";
         stage.dataset.horseAnimation = horse?.currentActionName || "loading";
         stage.dataset.camelResting = String(camelHerd.filter((camel) =>
-            ["resting", "rising"].includes(camel.mode)).length);
+            ["couching", "resting", "rising"].includes(camel.mode)).length);
+        stage.dataset.birdAnimations = gardenBirds
+            .map((bird) => `${bird.config.name}:${bird.state}/${bird.currentActionName}`)
+            .join("|");
     }
     updateAnimalEcology(time, delta);
     animateWeather(seconds, delta);
