@@ -2297,259 +2297,6 @@ function createInteriorDollhouse() {
     return { group: interior, devices };
 }
 
-function createCarBodyShell(car, material, profile, width) {
-    const shape = new THREE.Shape();
-    profile.forEach(([lengthPosition, height], index) => {
-        if (index === 0)
-            shape.moveTo(lengthPosition, height);
-        else
-            shape.lineTo(lengthPosition, height);
-    });
-    shape.closePath();
-    const geometry = new THREE.ExtrudeGeometry(shape, {
-        depth: width,
-        steps: 1,
-        bevelEnabled: true,
-        bevelSegments: 4,
-        bevelSize: 0.055,
-        bevelThickness: 0.045
-    });
-    geometry.translate(0, 0, -width / 2);
-    return addMesh(car, geometry, material, 0, 0, 0, {
-        rotation: [0, -Math.PI / 2, 0]
-    });
-}
-
-function createDetailedWheel(car, x, z, tireMaterial, rimMaterial, bodySide, wheelScale = 1) {
-    const outerX = x + Math.sign(x) * 0.105;
-    const wheel = addMesh(car, new THREE.CylinderGeometry(0.32 * wheelScale, 0.32 * wheelScale, 0.19, 32),
-        tireMaterial, x, 0.38, z, { rotation: [0, 0, Math.PI / 2] });
-    addMesh(wheel, new THREE.CylinderGeometry(0.155 * wheelScale, 0.155 * wheelScale, 0.195, 24),
-        rimMaterial, 0, 0, 0, { castShadow: false });
-    addMesh(car, new THREE.TorusGeometry(0.225 * wheelScale, 0.036 * wheelScale, 10, 28), rimMaterial,
-        outerX, 0.38, z, { rotation: [0, Math.PI / 2, 0], castShadow: false });
-    for (let spoke = 0; spoke < 5; spoke += 1)
-        addBox(car, [0.026, 0.235 * wheelScale, 0.030], rimMaterial, [outerX, 0.38, z], {
-            rotation: [spoke * Math.PI / 5 + 0.16, 0, 0],
-            castShadow: false
-        });
-    addMesh(car, new THREE.CylinderGeometry(0.050, 0.050, 0.205, 20),
-        rimMaterial, outerX, 0.38, z, { rotation: [0, 0, Math.PI / 2], castShadow: false });
-
-    // Sichtbare Radhauskante und Seitenschweller statt einer glatten Spielzeug-Karosserie.
-    addMesh(car, new THREE.TorusGeometry(0.345 * wheelScale, 0.025, 8, 28), tireMaterial,
-        Math.sign(x) * (bodySide + 0.018), 0.43, z,
-        { rotation: [0, Math.PI / 2, 0], castShadow: false });
-    car.userData.wheels ||= [];
-    wheel.userData.spinAxis = "y";
-    car.userData.wheels.push(wheel);
-    return wheel;
-}
-
-function createCar(color, model = "generic") {
-    const car = new THREE.Group();
-    const isAudi = model === "audi-q3";
-    const isYeti = model === "skoda-yeti";
-    const isFox = model === "vw-fox";
-    const paint = new THREE.MeshPhysicalMaterial({
-        color,
-        metalness: 0.72,
-        roughness: 0.20,
-        clearcoat: 1,
-        clearcoatRoughness: 0.1
-    });
-    const black = new THREE.MeshStandardMaterial({ color: 0x07090c, roughness: 0.42 });
-    const rim = new THREE.MeshStandardMaterial({ color: isAudi ? 0x06080a : 0x85909a, metalness: 0.86, roughness: 0.25 });
-    const contactShadow = new THREE.MeshBasicMaterial({
-        color: 0x050708,
-        transparent: true,
-        opacity: 0.28,
-        depthWrite: false
-    });
-    addMesh(car, new THREE.CircleGeometry(1.0, 36), contactShadow, 0, 0.08, 0, {
-        rotation: [-Math.PI / 2, 0, 0],
-        castShadow: false,
-        receiveShadow: false
-    }).scale.set(0.92, 1.85, 1);
-    const profile = isYeti ? [
-        [-1.66, 0.28], [-1.66, 0.86], [-1.46, 1.30], [-1.18, 1.48],
-        [0.62, 1.48], [1.02, 1.12], [1.70, 0.84], [1.70, 0.28]
-    ] : isFox ? [
-        [-1.50, 0.28], [-1.50, 0.92], [-1.25, 1.26], [-0.84, 1.41],
-        [0.54, 1.39], [1.00, 1.08], [1.53, 0.78], [1.53, 0.28]
-    ] : [
-        [-1.72, 0.28], [-1.72, 0.78], [-1.45, 1.02], [-0.92, 1.34],
-        [0.62, 1.34], [1.10, 1.02], [1.74, 0.80], [1.74, 0.28]
-    ];
-    createCarBodyShell(car, paint, profile, isFox ? 1.58 : 1.70);
-    const noseZ = isFox ? 1.55 : 1.73;
-    const tailZ = isFox ? -1.53 : -1.71;
-    addBox(car, [isFox ? 1.40 : 1.58, 0.18, isFox ? 0.62 : 0.82], paint,
-        [0, 0.82, isFox ? 1.24 : 1.32], { radius: 0.075 });
-    addBox(car, [isFox ? 1.43 : 1.60, 0.16, 0.10], black,
-        [0, 0.39, noseZ], { radius: 0.035 });
-
-    // Unterboden, Stoßfänger und Innenraum geben der Silhouette auch beim Zoomen echte Tiefe.
-    addBox(car, [isFox ? 1.46 : 1.62, 0.13, isFox ? 2.42 : 2.72], black,
-        [0, 0.30, -0.02], { radius: 0.045 });
-    addBox(car, [isFox ? 1.40 : 1.56, 0.18, 0.26], black,
-        [0, 0.43, noseZ - 0.05], { radius: 0.055 });
-    addBox(car, [isFox ? 1.38 : 1.54, 0.17, 0.24], black,
-        [0, 0.42, tailZ + 0.05], { radius: 0.050 });
-    [-0.42, 0.34].forEach((z) => {
-        addBox(car, [0.56, 0.52, 0.48], black, [0, 0.89, z], { radius: 0.09 });
-        addBox(car, [0.50, 0.09, 0.40], black, [0, 1.15, z], { radius: 0.04 });
-    });
-
-    // Separate Scheibenflächen folgen den geneigten Karosserielinien und reflektieren die Umgebung.
-    const cabinLength = isYeti ? 1.88 : isFox ? 1.46 : 1.72;
-    const cabinY = isYeti ? 1.14 : isFox ? 1.08 : 1.04;
-    [-0.84, 0.84].forEach((x) =>
-        addBox(car, [0.045, isYeti ? 0.56 : 0.48, cabinLength], materials.glass,
-            [x * (isFox ? 0.91 : 1), cabinY, -0.16], { radius: 0.035, castShadow: false }));
-    addBox(car, [1.46, 0.50, 0.055], materials.glass, [0, cabinY, 0.82], {
-        rotation: [-0.43, 0, 0], radius: 0.025, castShadow: false
-    });
-    addBox(car, [1.42, 0.46, 0.055], materials.glass, [0, cabinY, -0.96], {
-        rotation: [0.34, 0, 0], radius: 0.025, castShadow: false
-    });
-    addBox(car, [isFox ? 1.30 : 1.48, 0.10, cabinLength * 0.92], paint,
-        [0, cabinY + 0.34, -0.16], { radius: 0.045 });
-    [-0.83, 0.83].forEach((x) =>
-        addBox(car, [0.045, 0.09, cabinLength + 0.10], black,
-            [x * (isFox ? 0.91 : 1), cabinY - 0.31, -0.16], { radius: 0.015 }));
-    [-0.83, 0.83].forEach((x) =>
-        [-0.48, 0.34].forEach((z) =>
-            addBox(car, [0.050, 0.52, 0.045], black,
-                [x * (isFox ? 0.91 : 1), cabinY, z], { castShadow: false })));
-
-    // Türfugen, Griffe und Spiegel geben den Fahrzeugen auch aus der Nähe eine erkennbare Karosserie.
-    const sideX = isFox ? 0.77 : 0.86;
-    [-1, 1].forEach((sideSign) => {
-        [-0.52, 0.38].forEach((z) =>
-            addBox(car, [0.022, 0.62, 0.026], black,
-                [sideSign * sideX, 0.78, z], { castShadow: false }));
-        [-0.47, 0.44].forEach((z) =>
-            addBox(car, [0.035, 0.035, 0.24], rim,
-                [sideSign * (sideX + 0.018), 0.96, z], { radius: 0.012, castShadow: false }));
-        addBox(car, [0.16, 0.12, 0.28], paint,
-            [sideSign * (sideX + 0.11), cabinY + 0.02, 0.62], { radius: 0.045 });
-        addBox(car, [0.025, 0.055, isFox ? 1.55 : 1.86], paint,
-            [sideSign * (sideX + 0.025), 0.76, -0.04], { radius: 0.012 });
-        addBox(car, [0.050, 0.11, 1.34], black,
-            [sideSign * (sideX + 0.018), 0.29, -0.02], { radius: 0.025 });
-    });
-    [tailZ, noseZ].forEach((z) =>
-        addBox(car, [1.58, 0.14, 0.10], black, [0, 0.40, z], { radius: 0.04 }));
-    [-0.81, 0.81].forEach((x) =>
-        addBox(car, [0.07, 0.13, 2.30], black, [x, 0.38, -0.05], { radius: 0.025 }));
-
-    const wheelZ = isYeti ? 1.10 : isFox ? 0.98 : 1.08;
-    [[-sideX, -wheelZ], [sideX, -wheelZ], [-sideX, wheelZ], [sideX, wheelZ]].forEach(([x, z]) =>
-        createDetailedWheel(car, x, z, black, rim, sideX, isAudi ? 1.10 : 1));
-
-    const plate = new THREE.MeshStandardMaterial({ color: 0xf1efe7, roughness: 0.55 });
-    addBox(car, [0.52, 0.13, 0.035], plate, [0, 0.50, tailZ - 0.07], { radius: 0.014, castShadow: false });
-    addBox(car, [0.46, 0.12, 0.035], plate, [0, 0.48, noseZ + 0.07], { radius: 0.014, castShadow: false });
-
-    const front = new THREE.MeshStandardMaterial({ color: 0xcdf3ff, emissive: 0xa8def7, emissiveIntensity: 1.8 });
-    const rear = new THREE.MeshStandardMaterial({ color: 0xff263c, emissive: 0xb00016, emissiveIntensity: 1.2 });
-    [-0.55, 0.55].forEach((x) => {
-        addBox(car, [0.38, 0.10, 0.05], front, [x, 0.67, noseZ + 0.055], { radius: 0.025, castShadow: false });
-        addBox(car, [0.38, 0.11, 0.05], rear, [x, 0.67, tailZ - 0.055], { radius: 0.025, castShadow: false });
-    });
-
-    if (isAudi) {
-        // Audi Q3: breite Singleframe-Front, vier Ringe, Dachreling und kompakte SUV-Silhouette.
-        addBox(car, [1.05, 0.26, 0.05], black, [0, 0.49, 1.79], { radius: 0.08 });
-        [-0.34, -0.11, 0.11, 0.34].forEach((x) =>
-            addMesh(car, new THREE.TorusGeometry(0.105, 0.018, 8, 18), rim, x, 0.60, 1.82, { rotation: [Math.PI / 2, 0, 0], castShadow: false }));
-        [-0.67, 0.67].forEach((x) =>
-            addBox(car, [0.18, 0.12, 0.28], paint, [x, 1.03, 0.48], { radius: 0.05 }));
-        [-0.56, 0.56].forEach((x) =>
-            addBox(car, [0.045, 0.08, 1.65], rim, [x, 1.38, -0.18], { radius: 0.015 }));
-        addBox(car, [0.92, 0.035, 0.92], materials.glass, [0, 1.405, -0.25], {
-            radius: 0.025,
-            castShadow: false
-        });
-        addBox(car, [1.20, 0.10, 0.34], paint, [0, 1.28, -1.48], { radius: 0.045 });
-        addBox(car, [0.48, 0.12, 0.045], new THREE.MeshStandardMaterial({ color: 0xe7e7df, roughness: 0.52 }), [0, 0.50, -1.68], { radius: 0.018, castShadow: false });
-        [-0.62, 0.62].forEach((x) => {
-            addBox(car, [0.28, 0.18, 0.045], black, [x, 0.42, 1.80], { radius: 0.045 });
-            addBox(car, [0.34, 0.045, 0.055], front, [x, 0.76, 1.80], {
-                rotation: [0, 0, x < 0 ? -0.10 : 0.10], radius: 0.018, castShadow: false
-            });
-            addBox(car, [0.33, 0.055, 0.050], rear, [x, 0.78, -1.75], {
-                rotation: [0, 0, x < 0 ? 0.11 : -0.11], radius: 0.018, castShadow: false
-            });
-        });
-        addBox(car, [1.28, 0.035, 0.045], rear, [0, 0.79, -1.755], { radius: 0.012, castShadow: false });
-        addBox(car, [0.76, 0.025, 0.055], black, [0, 1.20, 0.80], {
-            rotation: [-0.43, 0, 0], castShadow: false
-        });
-    }
-    else if (isYeti) {
-        // Skoda Yeti: hoher, kantiger Aufbau, flaches Dach und charakteristische Zusatzscheinwerfer.
-        addBox(car, [1.54, 0.12, 1.92], paint, [0, 1.50, -0.34], { radius: 0.035 });
-        addBox(car, [0.76, 0.30, 0.055], black, [0, 0.51, 1.80], { radius: 0.045 });
-        [-0.49, 0.49].forEach((x) => {
-            addMesh(car, new THREE.CylinderGeometry(0.115, 0.115, 0.05, 18), front,
-                x, 0.70, 1.82, { rotation: [Math.PI / 2, 0, 0], castShadow: false });
-            addMesh(car, new THREE.CylinderGeometry(0.075, 0.075, 0.055, 18), front,
-                x, 0.48, 1.82, { rotation: [Math.PI / 2, 0, 0], castShadow: false });
-        });
-        [-0.26, -0.13, 0, 0.13, 0.26].forEach((x) =>
-            addBox(car, [0.035, 0.20, 0.025], rim, [x, 0.55, 1.855], { castShadow: false }));
-        [-0.55, 0.55].forEach((x) =>
-            addBox(car, [0.045, 0.06, 1.72], rim, [x, 1.61, -0.28], { radius: 0.012 }));
-        addBox(car, [1.32, 0.055, 0.055], rear, [0, 0.78, -1.75], { radius: 0.018, castShadow: false });
-        addBox(car, [1.16, 0.08, 0.26], black, [0, 0.39, -1.71], { radius: 0.035 });
-    }
-    else if (isFox) {
-        // VW Fox: kurzes, hohes Heck, große Frontscheibe und mittiges VW-Zeichen.
-        addBox(car, [1.25, 0.10, 1.18], paint, [0, 1.40, -0.28], { radius: 0.07 });
-        addBox(car, [0.82, 0.18, 0.05], black, [0, 0.49, 1.66], { radius: 0.07 });
-        addMesh(car, new THREE.TorusGeometry(0.13, 0.025, 8, 22), rim,
-            0, 0.58, 1.70, { rotation: [Math.PI / 2, 0, 0], castShadow: false });
-        addBox(car, [0.025, 0.19, 0.025], rim, [0, 0.58, 1.73], { castShadow: false });
-        addBox(car, [0.18, 0.025, 0.025], rim, [0, 0.58, 1.73], { castShadow: false });
-        addBox(car, [1.08, 0.09, 0.26], paint, [0, 1.30, -1.48], { radius: 0.045 });
-        addBox(car, [1.18, 0.055, 0.050], rear, [0, 0.78, -1.57], { radius: 0.018, castShadow: false });
-        addBox(car, [0.72, 0.045, 0.055], black, [0, 1.12, 0.82], {
-            rotation: [-0.43, 0, 0], castShadow: false
-        });
-    }
-    return car;
-}
-
-function createAudiWheelSpinners(slot) {
-    const tire = new THREE.MeshStandardMaterial({ color: 0x050608, roughness: 0.72 });
-    const rim = new THREE.MeshStandardMaterial({ color: 0x0a0c0f, metalness: 0.88, roughness: 0.22 });
-    const edge = new THREE.MeshStandardMaterial({ color: 0x626970, metalness: 0.90, roughness: 0.20 });
-    const wheels = [];
-    [-1, 1].forEach((side) => {
-        [-1.22, 1.22].forEach((z) => {
-            const wheel = new THREE.Group();
-            wheel.position.set(side * 0.925, 0.39, z);
-            slot.add(wheel);
-            addMesh(wheel, new THREE.TorusGeometry(0.305, 0.045, 12, 32), tire,
-                0, 0, 0, { rotation: [0, Math.PI / 2, 0], castShadow: false });
-            addMesh(wheel, new THREE.TorusGeometry(0.205, 0.025, 10, 28), edge,
-                side * 0.012, 0, 0, { rotation: [0, Math.PI / 2, 0], castShadow: false });
-            for (let spoke = 0; spoke < 5; spoke += 1)
-                addBox(wheel, [0.030, 0.31, 0.035], rim,
-                    [side * 0.020, 0, 0], {
-                        rotation: [spoke * Math.PI / 5, 0, 0],
-                        castShadow: false
-                    });
-            addMesh(wheel, new THREE.CylinderGeometry(0.055, 0.055, 0.055, 18), edge,
-                side * 0.030, 0, 0, { rotation: [0, 0, Math.PI / 2], castShadow: false });
-            wheels.push(wheel);
-        });
-    });
-    return wheels;
-}
-
 function createAudiBrakeLights(slot) {
     const lights = new THREE.Group();
     lights.name = "Audi brake lights";
@@ -2578,55 +2325,46 @@ function createVehicles() {
     const audiSlot = new THREE.Group();
     audiSlot.position.set(5.00, 0.02, 1.0);
     audiSlot.rotation.y = Math.PI;
+    audiSlot.userData.assetLoaded = false;
     world.add(audiSlot);
-    const audiFallback = createCar(0x008dc8, "audi-q3");
-    audiFallback.scale.set(1.10, 1.17, 1.08);
-    audiSlot.add(audiFallback);
     const audiBattery = createAudiBatteryPack(audiSlot);
     const audiBrakeLights = createAudiBrakeLights(audiSlot);
 
     // IMG_7378: schwarzer Skoda Yeti mittig, kleiner schwarzer VW Fox ganz rechts.
     const yetiSlot = new THREE.Group();
     yetiSlot.position.set(0, 0.02, 8.72);
+    yetiSlot.userData.assetLoaded = false;
     world.add(yetiSlot);
-    const yetiFallback = createCar(0x1b2329, "skoda-yeti");
-    yetiFallback.scale.set(1.04, 1.16, 1.08);
-    yetiSlot.add(yetiFallback);
 
     const foxSlot = new THREE.Group();
     foxSlot.position.set(2.10, 0.02, 8.45);
     // Die Garagentore liegen aus Sicht des Stellplatzes in negativer Z-Richtung.
     // Eine halbe Drehung stellt deshalb den Fox mit der Motorhaube zur Garage.
     foxSlot.rotation.y = Math.PI;
+    foxSlot.userData.assetLoaded = false;
     world.add(foxSlot);
-    const foxFallback = createCar(0x202327, "vw-fox");
-    foxFallback.scale.set(0.82, 0.88, 0.80);
-    foxSlot.add(foxFallback);
 
     // Vor dem linken Tor steht der schwarze Karoq ebenfalls mit seiner Front
-    // zum Gebäude. Bis das Detailmodell geladen ist, bleibt ein gleich großer
-    // prozeduraler SUV als ausfallsicherer Platzhalter sichtbar.
+    // zum Gebäude. Die Slots bleiben bis zum GLB-Download bewusst leer, damit
+    // keine alten prozeduralen Autos mehr erzeugt und anschließend ersetzt werden.
     const karoqSlot = new THREE.Group();
     karoqSlot.position.set(-2.10, 0.02, 8.72);
     // Das Karoq-Quellmodell definiert die Front entgegengesetzt zu den anderen
     // Fahrzeugdateien. Ohne zusätzliche Halbdrehung zeigt seine Haube zur Garage.
     karoqSlot.rotation.y = 0;
+    karoqSlot.userData.assetLoaded = false;
     world.add(karoqSlot);
-    const karoqFallback = createCar(0x14191d, "skoda-yeti");
-    karoqFallback.scale.set(1.12, 1.14, 1.14);
-    karoqSlot.add(karoqFallback);
 
     return {
         audi: {
             slot: audiSlot,
-            fallback: audiFallback,
             battery: audiBattery,
             brakeLights: audiBrakeLights,
-            wheels: audiFallback.userData.wheels || []
+            wheels: []
         },
-        yeti: { slot: yetiSlot, fallback: yetiFallback },
-        fox: { slot: foxSlot, fallback: foxFallback },
-        karoq: { slot: karoqSlot, fallback: karoqFallback }
+        yeti: { slot: yetiSlot },
+        fox: { slot: foxSlot },
+        karoq: { slot: karoqSlot }
     };
 }
 
@@ -2739,10 +2477,10 @@ function loadVehicleAsset(vehicle, config) {
                 receiveShadow: false
             });
         shadow.scale.set(config.width * 0.46, config.length * 0.46, 1);
-        vehicle.slot.remove(vehicle.fallback);
         vehicle.slot.userData.assetLoaded = true;
     }, undefined, () => {
-        // Bei einem Netzfehler bleibt das vorhandene prozedurale Fahrzeug sichtbar.
+        // Kein zweites Altmodell nachladen: Bei einem Netzfehler bleibt der Slot
+        // leer und der nächste Seitenaufruf versucht das Detailmodell erneut.
         vehicle.slot.userData.assetLoaded = false;
     });
 }
@@ -3576,7 +3314,7 @@ function loadAnimatedHorse(horseState) {
             const joint = model.getObjectByName(name);
             return joint ? { joint, rest: joint.quaternion.clone(), index } : null;
         }).filter(Boolean);
-        horseState.fallback.visible = false;
+        horseState.group.userData.assetLoaded = true;
         horseState.mixer = new THREE.AnimationMixer(model);
         horseState.actions = {};
         gltf.animations.forEach((clip) => {
@@ -3592,9 +3330,9 @@ function loadAnimatedHorse(horseState) {
         });
         setHorseAnimation(horseState, "Walk", 0);
     }, undefined, () => {
-        // Offline oder bei einem alten Browser bleibt das detaillierte
-        // prozedurale Pferd als sichere Rueckfallansicht erhalten.
-        horseState.fallback.visible = true;
+        // Keine alte Ersatzgeometrie mehr aufbauen. Der nächste Seitenaufruf
+        // versucht das einzige, detaillierte Pferdemodell erneut zu laden.
+        horseState.group.userData.assetLoaded = false;
     });
 }
 
@@ -3640,86 +3378,26 @@ function startHorseJourney(horseState, origin, forceGarden = false) {
 function createHorse() {
     const group = new THREE.Group();
     group.position.set(0.50, 0, -8.20);
+    group.userData.assetLoaded = false;
     world.add(group);
-    const fallback = new THREE.Group();
-    group.add(fallback);
-    const coat = new THREE.MeshPhysicalMaterial({
-        color: 0x8b431f, roughness: 0.54, clearcoat: 0.34, clearcoatRoughness: 0.52
-    });
-    const coatLight = new THREE.MeshPhysicalMaterial({
-        color: 0xb7652d, roughness: 0.58, clearcoat: 0.28, clearcoatRoughness: 0.56
-    });
-    const dark = new THREE.MeshStandardMaterial({ color: 0x261914, roughness: 0.96 });
-    const whiteMarking = new THREE.MeshStandardMaterial({ color: 0xf2ead9, roughness: 0.88 });
-    const hoof = new THREE.MeshStandardMaterial({ color: 0x28231f, roughness: 0.82 });
-    const eye = new THREE.MeshStandardMaterial({ color: 0x030303, roughness: 0.32 });
-    const body = addMesh(fallback, new THREE.SphereGeometry(0.72, 28, 18), coat,
-        0, 1.28, 0, { castShadow: true });
-    body.scale.set(1.25, 0.72, 0.62);
-    const chest = addMesh(fallback, new THREE.SphereGeometry(0.50, 24, 16), coatLight,
-        0, 1.34, 0.48, { castShadow: true });
-    chest.scale.set(0.82, 1.02, 0.74);
+    const loadingRig = new THREE.Group();
+    loadingRig.name = "Unsichtbares Pferde-Lade-Rig";
+    group.add(loadingRig);
 
+    // Nur leere Transform-Gruppen bleiben für die Bewegungslogik erhalten.
+    // Sichtbar wird ausschließlich das animierte GLB-Modell nach seinem Download.
     const headRig = new THREE.Group();
     headRig.position.set(0, 1.54, 0.52);
-    fallback.add(headRig);
-    addMesh(headRig, new THREE.CylinderGeometry(0.27, 0.38, 0.94, 18), coat,
-        0, 0.28, 0.25, { rotation: [-0.42, 0, 0] });
-    const head = addMesh(headRig, new THREE.SphereGeometry(0.34, 24, 16), coatLight,
-        0, 0.67, 0.58, { castShadow: true });
-    head.scale.set(0.70, 0.76, 1.16);
-    const muzzle = addMesh(headRig, new THREE.SphereGeometry(0.24, 20, 14), dark,
-        0, 0.58, 0.88, { castShadow: true });
-    muzzle.scale.set(0.74, 0.62, 1.0);
-    // Weiße, unregelmäßig breite Blesse und helle Schnauzenkante aus der
-    // persönlichen Fotovorlage. Die Elemente liegen knapp vor dem Fell und
-    // wirken dadurch wie echte Abzeichen statt wie aufgeklebte Rechtecke.
-    const blazeTop = addMesh(headRig, new THREE.SphereGeometry(0.13, 18, 12), whiteMarking,
-        0, 0.82, 0.86, { castShadow: false });
-    blazeTop.scale.set(0.50, 1.36, 0.18);
-    const blazeLower = addMesh(headRig, new THREE.SphereGeometry(0.15, 18, 12), whiteMarking,
-        -0.015, 0.66, 0.99, { castShadow: false });
-    blazeLower.scale.set(0.46, 1.10, 0.16);
-    const paleMuzzle = addMesh(headRig, new THREE.SphereGeometry(0.17, 18, 12), whiteMarking,
-        0, 0.57, 1.075, { castShadow: false });
-    paleMuzzle.scale.set(0.72, 0.38, 0.20);
-    [-0.17, 0.17].forEach((x) => {
-        addMesh(headRig, new THREE.ConeGeometry(0.085, 0.28, 10), coat,
-            x, 1.00, 0.49, { rotation: [0.12, 0, x < 0 ? 0.16 : -0.16] });
-        addMesh(headRig, new THREE.SphereGeometry(0.035, 10, 8), eye,
-            x * 1.23, 0.76, 0.74, { castShadow: false });
-    });
-    for (let index = 0; index < 6; index += 1)
-        addMesh(headRig, new THREE.ConeGeometry(0.065, 0.30, 8), dark,
-            0, 0.80 - index * 0.13, 0.30 + index * 0.02,
-            { rotation: [0.16, 0, Math.PI / 2], castShadow: false });
+    loadingRig.add(headRig);
 
     const legs = [];
-    [[-0.43, 0.46], [0.43, 0.46], [-0.43, -0.48], [0.43, -0.48]].forEach(([x, z], index) => {
-        const leg = new THREE.Group();
-        leg.position.set(x, 1.10, z);
-        fallback.add(leg);
-        addMesh(leg, new THREE.CylinderGeometry(0.105, 0.085, 0.88, 12), coat,
-            0, -0.42, 0);
-        const lowerLegMaterial = index === 1 || index === 3 ? whiteMarking : dark;
-        addMesh(leg, new THREE.CylinderGeometry(0.075, 0.065, 0.56, 12), lowerLegMaterial,
-            0, -1.08, 0);
-        addBox(leg, [0.18, 0.13, 0.26], hoof, [0, -1.40, 0.04], { radius: 0.035 });
-        leg.userData.walkOffset = index % 2 ? Math.PI : 0;
-        legs.push(leg);
-    });
     const tailRig = new THREE.Group();
     tailRig.position.set(0, 1.48, -0.64);
-    fallback.add(tailRig);
-    for (let index = 0; index < 5; index += 1)
-        addMesh(tailRig, new THREE.ConeGeometry(0.15 - index * 0.018, 0.46, 10), dark,
-            0, -0.20 - index * 0.28, -index * 0.08,
-            { rotation: [0.24, 0, 0], castShadow: true });
+    loadingRig.add(tailRig);
 
     const random = seededNoise(191180);
     const horseState = {
         group,
-        fallback,
         headRig,
         tailRig,
         legs,
@@ -4289,59 +3967,24 @@ function createBactrianCamel(index) {
     group.position.set(-15.8 + (index % 3) * 1.45, 0, -7.4 + Math.floor(index / 3) * 3.0 + random());
     const scale = [0.82, 0.96, 1.08, 0.90, 1.14][index];
     group.scale.setScalar(scale);
+    group.userData.assetLoaded = false;
     world.add(group);
-    const fallback = new THREE.Group();
-    fallback.name = "Kamel Platzhalter";
-    group.add(fallback);
-    const coats = [0x8e6844, 0xb08a5c, 0x6f5139, 0xc1a274, 0x7d5b3e];
-    const coat = new THREE.MeshPhysicalMaterial({
-        color: coats[index], roughness: 0.74, clearcoat: 0.08, clearcoatRoughness: 0.80
-    });
-    const dark = new THREE.MeshStandardMaterial({ color: 0x34291f, roughness: 0.96 });
-    const eye = new THREE.MeshStandardMaterial({ color: 0x070504, roughness: 0.30 });
-    const body = addMesh(fallback, new THREE.SphereGeometry(0.72, 28, 18), coat,
-        0, 1.33, 0, { castShadow: true });
-    body.scale.set(0.78, 0.70, 1.36);
-    [-0.48, 0.45].forEach((z, humpIndex) => {
-        const hump = addMesh(fallback, new THREE.SphereGeometry(0.46, 24, 16), coat,
-            0, 1.90 + (humpIndex === 0 ? 0.04 : 0), z, { castShadow: true });
-        hump.scale.set(0.78, 1.08, 0.72);
-    });
+    const loadingRig = new THREE.Group();
+    loadingRig.name = "Unsichtbares Kamel-Lade-Rig";
+    group.add(loadingRig);
+
+    // Die alten, aus Kugeln und Zylindern gebauten Kamele werden nicht mehr
+    // erzeugt. Diese leeren Gruppen halten lediglich die Animationszustände
+    // stabil, bis das einzige sichtbare GLB-Modell geladen ist.
+    const body = new THREE.Group();
+    loadingRig.add(body);
     const neckRig = new THREE.Group();
     neckRig.position.set(0, 1.52, 0.82);
-    fallback.add(neckRig);
-    addMesh(neckRig, new THREE.CylinderGeometry(0.25, 0.37, 1.20, 16), coat,
-        0, 0.36, 0.33, { rotation: [-0.48, 0, 0] });
-    const head = addMesh(neckRig, new THREE.SphereGeometry(0.30, 22, 14), coat,
-        0, 0.90, 0.76, { castShadow: true });
-    head.scale.set(0.72, 0.62, 1.10);
-    const muzzle = addMesh(neckRig, new THREE.SphereGeometry(0.19, 18, 12), dark,
-        0, 0.82, 1.00, { castShadow: true });
-    muzzle.scale.set(0.72, 0.52, 0.92);
-    [-0.15, 0.15].forEach((x) => {
-        addMesh(neckRig, new THREE.ConeGeometry(0.055, 0.18, 9), coat,
-            x, 1.13, 0.67, { rotation: [0.05, 0, x < 0 ? 0.16 : -0.16] });
-        addMesh(neckRig, new THREE.SphereGeometry(0.026, 9, 7), eye,
-            x * 1.16, 0.99, 0.91, { castShadow: false });
-    });
+    loadingRig.add(neckRig);
     const legs = [];
-    [[-0.34, 0.62], [0.34, 0.62], [-0.34, -0.62], [0.34, -0.62]].forEach(([x, z], legIndex) => {
-        const leg = new THREE.Group();
-        leg.position.set(x, 1.08, z);
-        fallback.add(leg);
-        addMesh(leg, new THREE.CylinderGeometry(0.095, 0.075, 0.82, 12), coat,
-            0, -0.38, 0);
-        addMesh(leg, new THREE.CylinderGeometry(0.070, 0.060, 0.56, 12), dark,
-            0, -1.02, 0);
-        addBox(leg, [0.19, 0.11, 0.28], dark, [0, -1.33, 0.04], { radius: 0.045 });
-        leg.userData.offset = legIndex % 2 ? Math.PI : 0;
-        legs.push(leg);
-    });
     const tail = new THREE.Group();
     tail.position.set(0, 1.46, -0.92);
-    fallback.add(tail);
-    addMesh(tail, new THREE.CylinderGeometry(0.045, 0.07, 0.58, 9), dark,
-        0, -0.28, -0.08, { rotation: [0.24, 0, 0] });
+    loadingRig.add(tail);
     // Schon kurz nach dem Laden sind Tiere an beiden Stationstypen zu sehen:
     // zwei starten zur Raufe, zwei zur Tränke, nur das fünfte streift frei.
     let firstTarget;
@@ -4358,7 +4001,6 @@ function createBactrianCamel(index) {
     return {
         index,
         group,
-        fallback,
         body,
         neckRig,
         legs,
@@ -4647,7 +4289,7 @@ function loadDetailedCamels() {
             tuneCamelMaterials(model, camel.index);
             camel.group.add(model);
             camel.modelRoot = model;
-            camel.fallback.visible = false;
+            camel.group.userData.assetLoaded = true;
             camel.walkRig = createCamelWalkRig(model);
             camel.detailedTailRig = createCamelTailRig(model);
             camel.feedingRig = createCamelFeedingRig(model);
@@ -4661,7 +4303,9 @@ function loadDetailedCamels() {
         });
     }, undefined, () => {
         camelHerd.forEach((camel) => {
-            camel.fallback.visible = true;
+            // Kein altes Ersatzkamel erzeugen. Beim nächsten Laden wird nur das
+            // detaillierte Herdenmodell erneut angefordert.
+            camel.group.userData.assetLoaded = false;
         });
     });
 }
