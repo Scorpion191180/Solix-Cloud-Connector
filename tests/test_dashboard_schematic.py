@@ -22,7 +22,7 @@ class DashboardSchematicTests(unittest.TestCase):
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
         self.assertIn("style.css?v=20260901-98", dashboard)
-        self.assertIn("house.js?v=20260901-99", dashboard)
+        self.assertIn("house.js?v=20260902-102", dashboard)
         self.assertIn("app.js?v=20260821-96", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
@@ -442,7 +442,7 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("camel.hayAppetite", script)
         self.assertIn("camel.waterAppetite", script)
         self.assertNotIn('createAnimalTrough([-10.72, 0, -3.92], "waterHorse")', script)
-        self.assertIn('resourceKey: "waterHorse", fill: troughFill', script)
+        self.assertIn('createTroughWater(trough, "waterHorse"', script)
         self.assertIn('horseState.navigation = "stable-water-entry"', script)
         self.assertIn('horse.navigation === "stable-water-inside"', script)
         self.assertIn("function updateAudiWheelRotation", script)
@@ -471,6 +471,8 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("const heightScale = 0.18 + level * 0.34", script)
         self.assertIn("random() < 0.94", script)
         self.assertIn('id="animalSoundToggle"', dashboard)
+        self.assertIn('addEventListener("touchend", unlockAnimalSounds', script)
+        self.assertIn('addEventListener("click", unlockAnimalSounds', script)
         self.assertIn('rel="apple-touch-icon"', dashboard)
         self.assertIn('rel="manifest"', dashboard)
         for filename in ("horse-neigh.ogg", "camel-call.ogg"):
@@ -491,16 +493,41 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("function playBirdSong", script)
         self.assertIn('activity: "drinking-pool"', script)
         self.assertIn('activity: "drinking-trough"', script)
-        self.assertIn('name: "Stadttaube"', script)
+        for species in (
+            "Haussperling", "Feldsperling", "Rotkehlchen", "Kohlmeise",
+            "Blaumeise", "Buchfink", "Grünfink", "Stieglitz", "Star",
+            "Amsel", "Singdrossel", "Bachstelze", "Hausrotschwanz",
+            "Zaunkönig", "Elster", "Rabenkrähe", "Eichelhäher",
+            "Buntspecht", "Ringeltaube", "Türkentaube", "Teichhuhn",
+            "Purpurhuhn",
+        ):
+            self.assertIn(f'name: "{species}"', script)
         self.assertIn('name: "Purpurhuhn"', script)
-        self.assertIn('name: "Junges Teichhuhn"', script)
         self.assertIn("function createBirdActions", script)
         self.assertIn('setBirdAnimation(bird, "landing"', script)
         self.assertIn('setBirdAnimation(bird, "walking"', script)
-        for filename in ("bird-pigeon-animated.glb", "bird-swamphen.glb", "bird-swamphen-nestling.glb"):
+        self.assertIn('setBirdAnimation(bird, flightAction', script)
+        self.assertIn("const MAX_ACTIVE_BIRD_VISITORS = 8", script)
+        self.assertIn("bird.singingUntil = seconds + duration", script)
+        self.assertIn('let flying = bird.state.startsWith("flying")', script)
+        self.assertIn("flying = true", script)
+        self.assertIn("seconds + 4 + bird.random() * 5", script)
+        self.assertIn("stage.dataset.birdSpeciesCount", script)
+        self.assertIn("stage.dataset.birdSinging", script)
+        self.assertIn("stage.dataset.birdMissingAnimations", script)
+        for filename in ("bird-pigeon-animated.glb", "bird-swamphen.glb"):
             bird_asset = ROOT / "static" / "models" / filename
             self.assertTrue(bird_asset.exists())
             self.assertLess(bird_asset.stat().st_size, 3_000_000)
+        self.assertNotIn('bird-swamphen-nestling.glb?v=', script)
+        self.assertIn("function createTroughWater", script)
+        self.assertIn("function animateTroughWater", script)
+        self.assertIn('ior: 1.333', script)
+        self.assertIn("function updateSeasonalScene", script)
+        self.assertIn('spring: "Frühling"', script)
+        self.assertIn('summer: "Sommer"', script)
+        self.assertIn('autumn: "Herbst"', script)
+        self.assertIn('winter: "Winter"', script)
         self.assertIn('id="automationHistory"', dashboard)
         self.assertIn("function createAudiBrakeLights", script)
         self.assertIn("function startAudiPresenceTransition", script)

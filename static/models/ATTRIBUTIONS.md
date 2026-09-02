@@ -31,12 +31,14 @@ original downloads.
   [“Animated Bird, Pigeon”](https://sketchfab.com/3d-models/animated-bird-pigeon-797d27b68af3453e865149435df6aa30)
   by [dudecon](https://sketchfab.com/dudecon), licensed under
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The asset contains
-  separate flapping, gliding, landing, standing-idle and take-off clips.
-- **Australasian swamphen and nestling** — based on
+  separate flapping, gliding, landing, standing-idle and take-off clips. Its
+  lightweight rig is recolored and proportionally tuned in the scene for 20
+  individually named Central European garden and field bird variants.
+- **Australasian swamphen** — based on
   [“Australasian Swamphen”](https://actg.itch.io/australasian-swamphen) by
   ACTG, dedicated to the public domain under
-  [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). Both assets
-  contain separate idle, walking and flying clips.
+  [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The active
+  adult asset contains separate idle, walking and flying clips.
 
 The optimized files use meshoptimizer compression. meshoptimizer/gltfpack is
 licensed under the [MIT License](https://github.com/zeux/meshoptimizer).

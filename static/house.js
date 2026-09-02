@@ -258,6 +258,12 @@ function playAnimalSound(kind, volume = 0.55) {
 }
 
 window.addEventListener("pointerdown", unlockAnimalSounds, { passive: true });
+// iOS/Safari akzeptiert das Freischalten je nach Version erst am Ende der
+// Beruehrung. Die zusaetzlichen echten Nutzerereignisse machen auch den
+// synthetisierten Vogelgesang nach der ersten Bedienung zuverlaessig hoerbar.
+window.addEventListener("pointerup", unlockAnimalSounds, { passive: true });
+window.addEventListener("touchend", unlockAnimalSounds, { passive: true });
+window.addEventListener("click", unlockAnimalSounds, { passive: true });
 window.addEventListener("keydown", unlockAnimalSounds, { passive: true });
 animalSoundToggle?.addEventListener("click", () => {
     animalSoundsEnabled = !animalSoundsEnabled;
@@ -275,6 +281,18 @@ const grassCells = [];
 const grassBladeFields = [];
 const gardenBirds = [];
 const animalResourceVisuals = [];
+const troughWaterSurfaces = [];
+const seasonalVisuals = {
+    current: null,
+    deciduous: [],
+    shrubs: [],
+    evergreens: [],
+    grassMaterials: [],
+    spring: new THREE.Group(),
+    autumn: new THREE.Group(),
+    winter: new THREE.Group()
+};
+world.add(seasonalVisuals.spring, seasonalVisuals.autumn, seasonalVisuals.winter);
 const animalResourceLabelAnchors = {};
 const animalResourceLabelElements = {};
 const ANIMAL_RESOURCE_API_KEYS = Object.freeze({
@@ -1744,9 +1762,12 @@ function createHorseStableDoor(parent, position) {
     // auf der Pferdeseite gibt es deshalb keine zweite Tränke mehr.
     const trough = addBox(stable, [0.66, 0.34, 0.54], metal,
         [0.36, -0.76, 1.74], { radius: 0.07 });
-    const troughFill = addBox(trough, [0.53, 0.035, 0.41], materials.water.clone(),
-        [0, 0.18, 0], { radius: 0.04, castShadow: false });
-    animalResourceVisuals.push({ kind: "water", resourceKey: "waterHorse", fill: troughFill });
+    const stableRecess = new THREE.MeshStandardMaterial({
+        color: 0x20272a, metalness: 0.48, roughness: 0.30
+    });
+    addBox(trough, [0.57, 0.035, 0.44], stableRecess,
+        [0, 0.175, 0], { radius: 0.04, castShadow: false });
+    createTroughWater(trough, "waterHorse", 0.53, 0.40, 0.196, 0.115);
     registerAnimalResourceLabel("horse-water", "💧", "PFERDETRÄNKE",
         "waterHorse", trough, 0.90);
     const stableLampMaterial = new THREE.MeshBasicMaterial({ color: 0xffc66d, toneMapped: false });
@@ -2575,6 +2596,7 @@ function createTree(x, z, scale = 1) {
     world.add(tree);
     const trunk = new THREE.MeshStandardMaterial({ color: 0x583728, roughness: 1 });
     const needles = new THREE.MeshStandardMaterial({ color: 0x1d4e33, roughness: 0.96 });
+    seasonalVisuals.evergreens.push({ tree, material: needles });
     addMesh(tree, new THREE.CylinderGeometry(0.20, 0.34, 3.6, 14), trunk, 0, 1.8, 0);
     const foliageGeometry = new THREE.IcosahedronGeometry(0.58, 1);
     const foliage = new THREE.InstancedMesh(foliageGeometry, needles, 46);
@@ -2706,14 +2728,18 @@ function createShrub(x, z, scale = 1, color = 0x315e34) {
     shrub.scale.setScalar(scale);
     world.add(shrub);
     const material = new THREE.MeshStandardMaterial({ color, roughness: 0.98 });
+    const clusters = [];
     [
         [-0.34, 0.48, 0.02, 0.58],
         [0.30, 0.44, -0.08, 0.54],
         [0.02, 0.66, 0.22, 0.64],
         [0.00, 0.52, -0.32, 0.56]
-    ].forEach(([offsetX, y, offsetZ, radius]) =>
-        addMesh(shrub, new THREE.IcosahedronGeometry(radius, 1), material,
-            offsetX, y, offsetZ, { castShadow: true }));
+    ].forEach(([offsetX, y, offsetZ, radius]) => {
+        const cluster = addMesh(shrub, new THREE.IcosahedronGeometry(radius, 1), material,
+            offsetX, y, offsetZ, { castShadow: true });
+        clusters.push(cluster);
+    });
+    seasonalVisuals.shrubs.push({ shrub, material, clusters });
 }
 
 function createDeciduousTree(x, z, scale = 1) {
@@ -2723,6 +2749,7 @@ function createDeciduousTree(x, z, scale = 1) {
     world.add(tree);
     const trunk = new THREE.MeshStandardMaterial({ color: 0x5c3c2b, roughness: 1 });
     const leaves = new THREE.MeshStandardMaterial({ color: 0x2f6336, roughness: 0.98 });
+    const clusters = [];
     addMesh(tree, new THREE.CylinderGeometry(0.18, 0.28, 2.65, 12), trunk, 0, 1.32, 0);
     [
         [-0.62, 2.75, 0.08, 1.00],
@@ -2730,9 +2757,12 @@ function createDeciduousTree(x, z, scale = 1) {
         [0.02, 3.35, 0.12, 1.18],
         [0.02, 2.72, 0.70, 0.88],
         [-0.06, 2.80, -0.72, 0.92]
-    ].forEach(([offsetX, y, offsetZ, radius]) =>
-        addMesh(tree, new THREE.IcosahedronGeometry(radius, 2), leaves,
-            offsetX, y, offsetZ, { castShadow: true }));
+    ].forEach(([offsetX, y, offsetZ, radius]) => {
+        const cluster = addMesh(tree, new THREE.IcosahedronGeometry(radius, 2), leaves,
+            offsetX, y, offsetZ, { castShadow: true });
+        clusters.push(cluster);
+    });
+    seasonalVisuals.deciduous.push({ tree, material: leaves, clusters });
 }
 
 function isGardenGrassSurface(x, z) {
@@ -2763,6 +2793,7 @@ function createGrassEcology() {
             roughness: 1,
             depthWrite: false
         });
+        seasonalVisuals.grassMaterials.push(patchMaterial);
         const patch = addMesh(world, new THREE.CircleGeometry(0.96, 24), patchMaterial,
             x, 0.028, z, { rotation: [-Math.PI / 2, 0, 0], castShadow: false });
         patch.scale.set(1.15, 0.82, 1);
@@ -2831,13 +2862,20 @@ function nearestGrassCell(x, z, pasture = null) {
 }
 
 function updateGrassEcologyVisuals() {
+    const season = seasonalVisuals.current || seasonForDate();
+    const palettes = {
+        spring: [0x7d7448, 0x6d803f, 0x598b43, 0x3f793e],
+        summer: [0x766b43, 0x5d6736, 0x477039, 0x315f35],
+        autumn: [0x806f46, 0x786b3c, 0x6f7339, 0x586a38],
+        winter: [0xa7a18a, 0x96977e, 0x88937b, 0x7b8d78]
+    };
     grassCells.forEach((cell) => {
         const stage = THREE.MathUtils.clamp(Math.round(cell.level), 0, 3);
-        const colorsByStage = [0x766b43, 0x5d6736, 0x477039, 0x315f35];
+        const colorsByStage = palettes[season];
         cell.patch.material.color.setHex(colorsByStage[stage]);
         cell.patch.material.opacity = stage === 3 ? 0.04 : 0.18 + (3 - stage) * 0.09;
         cell.patch.material.needsUpdate = true;
-        cell.herb.visible = cell.herbAmount > 0.18;
+        cell.herb.visible = season !== "winter" && cell.herbAmount > 0.18;
         cell.herb.scale.setScalar(0.55 + cell.herbAmount * 0.60);
     });
     grassBladeFields.forEach((field) => {
@@ -2880,6 +2918,7 @@ function createGrassDetail() {
     // Damit sind die vier Stufen (abgefressen bis hoch) auch am Handy sichtbar.
     const bladeGeometry = new THREE.ConeGeometry(0.022, 0.30, 3);
     const bladeMaterial = new THREE.MeshStandardMaterial({ color: 0x49763f, roughness: 1 });
+    seasonalVisuals.grassMaterials.push(bladeMaterial);
     const blades = new THREE.InstancedMesh(bladeGeometry, bladeMaterial, 760);
     blades.castShadow = false;
     blades.receiveShadow = false;
@@ -2926,6 +2965,187 @@ function createGrassDetail() {
         blades.instanceColor.needsUpdate = true;
     world.add(blades);
     grassBladeFields.push({ mesh: blades, records: blades.userData.records || [] });
+}
+
+const SEASON_LABELS = Object.freeze({
+    spring: "Frühling",
+    summer: "Sommer",
+    autumn: "Herbst",
+    winter: "Winter"
+});
+
+function seasonForDate(date = new Date()) {
+    const month = date.getMonth() + 1;
+    if (month >= 3 && month <= 5)
+        return "spring";
+    if (month >= 6 && month <= 8)
+        return "summer";
+    if (month >= 9 && month <= 11)
+        return "autumn";
+    return "winter";
+}
+
+function makeSeasonPointCloud(group, count, palette, heightRange, size, seed) {
+    const random = seededNoise(seed);
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    const color = new THREE.Color();
+    let written = 0;
+    let attempts = 0;
+    while (written < count && attempts < count * 80) {
+        attempts += 1;
+        const x = -19.1 + random() * 25.6;
+        const z = -11.4 + random() * 27.1;
+        const garden = isGardenGrassSurface(x, z);
+        const pasture = pointInPolygon(x, z, CAMEL_PASTURE_BOUNDARY);
+        if (!garden && !pasture)
+            continue;
+        positions[written * 3] = x;
+        positions[written * 3 + 1] = heightRange[0] + random() * (heightRange[1] - heightRange[0]);
+        positions[written * 3 + 2] = z;
+        color.setHex(palette[Math.floor(random() * palette.length)]);
+        colors[written * 3] = color.r;
+        colors[written * 3 + 1] = color.g;
+        colors[written * 3 + 2] = color.b;
+        written += 1;
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    const points = new THREE.Points(geometry, new THREE.PointsMaterial({
+        size,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.90,
+        depthWrite: false,
+        sizeAttenuation: true
+    }));
+    points.userData.basePositions = positions.slice();
+    group.add(points);
+    return points;
+}
+
+function createSeasonalAccents() {
+    seasonalVisuals.spring.userData.petals = makeSeasonPointCloud(
+        seasonalVisuals.spring, 150,
+        [0xffffff, 0xfff1a8, 0xf7a8c4, 0xa9d7ff, 0xd3b5ff],
+        [0.10, 0.23], 0.075, 3103
+    );
+    seasonalVisuals.autumn.userData.leaves = makeSeasonPointCloud(
+        seasonalVisuals.autumn, 210,
+        [0xe5a52f, 0xce6d28, 0x9f3f23, 0x7d5124, 0xf0c04a],
+        [0.08, 1.10], 0.105, 9109
+    );
+
+    const frostMaterial = new THREE.MeshPhysicalMaterial({
+        color: 0xeaf5f6,
+        roughness: 0.72,
+        metalness: 0,
+        transmission: 0.05,
+        transparent: true,
+        opacity: 0.58,
+        depthWrite: false,
+        side: THREE.DoubleSide
+    });
+    const frostGeometry = new THREE.CircleGeometry(0.86, 18);
+    const frost = new THREE.InstancedMesh(frostGeometry, frostMaterial, grassCells.length);
+    const transform = new THREE.Object3D();
+    grassCells.forEach((cell, index) => {
+        transform.position.set(cell.x, 0.056, cell.z);
+        transform.rotation.set(-Math.PI / 2, 0, (index * 1.73) % Math.PI);
+        transform.scale.set(1.08 + (index % 4) * 0.08, 0.72 + (index % 3) * 0.07, 1);
+        transform.updateMatrix();
+        frost.setMatrixAt(index, transform.matrix);
+    });
+    frost.instanceMatrix.needsUpdate = true;
+    frost.renderOrder = 2;
+    seasonalVisuals.winter.add(frost);
+
+    // Dünne Schnee-/Reifauflage auf beiden Dachflächen. Sie bleibt bewusst
+    // halbtransparent: Ob tatsächlich Schnee fällt, entscheidet weiterhin das
+    // Live-Wetter; im Winter wirkt das Dach aber auch an trockenen Tagen kalt.
+    const roofFrost = new THREE.MeshPhysicalMaterial({
+        color: 0xf4f8f8,
+        roughness: 0.84,
+        transparent: true,
+        opacity: 0.34,
+        depthWrite: false
+    });
+    const roofSlope = Math.atan2(2.15, 3.55);
+    const roofLength = Math.hypot(3.55, 2.15);
+    [-1, 1].forEach((side) =>
+        addBox(seasonalVisuals.winter,
+            [roofLength - 0.16, 0.035, HOUSE_LENGTH + 0.48], roofFrost,
+            [side * 1.76, 5.99, 0], {
+                rotation: [0, 0, side < 0 ? roofSlope : -roofSlope],
+                castShadow: false
+            }));
+}
+
+function updateSeasonalScene(force = false) {
+    const season = seasonForDate();
+    if (!force && seasonalVisuals.current === season)
+        return;
+    seasonalVisuals.current = season;
+    seasonalVisuals.spring.visible = season === "spring";
+    seasonalVisuals.autumn.visible = season === "autumn";
+    seasonalVisuals.winter.visible = season === "winter";
+
+    const grassTint = {
+        spring: 0xdff3c8,
+        summer: 0xffffff,
+        autumn: 0xc8b779,
+        winter: 0xcbd3cf
+    }[season];
+    materials.grass.color.setHex(grassTint);
+    const foliageColor = {
+        spring: 0x72a94b,
+        summer: 0x2f6336,
+        autumn: 0xc26a2d,
+        winter: 0x72543c
+    }[season];
+    const shrubColor = {
+        spring: 0x5e913e,
+        summer: 0x315e34,
+        autumn: 0x9a5c2d,
+        winter: 0x5e5545
+    }[season];
+    seasonalVisuals.deciduous.forEach(({ material, clusters }) => {
+        material.color.setHex(foliageColor);
+        clusters.forEach((cluster) => {
+            cluster.visible = season !== "winter";
+            const scale = season === "spring" ? 0.82 : season === "autumn" ? 0.90 : 1;
+            cluster.scale.setScalar(scale);
+        });
+    });
+    seasonalVisuals.shrubs.forEach(({ material, clusters }) => {
+        material.color.setHex(shrubColor);
+        clusters.forEach((cluster) => {
+            cluster.visible = true;
+            const scale = season === "winter" ? 0.72 : season === "spring" ? 0.88 : 1;
+            cluster.scale.setScalar(scale);
+        });
+    });
+    seasonalVisuals.evergreens.forEach(({ material }) =>
+        material.color.setHex(season === "winter" ? 0x244c3b :
+            season === "spring" ? 0x2b6842 : 0x1d4e33));
+    updateGrassEcologyVisuals();
+}
+
+function animateSeasonalAccents(seconds) {
+    if (seasonalVisuals.current !== "autumn" || reduceMotion)
+        return;
+    const leaves = seasonalVisuals.autumn.userData.leaves;
+    if (!leaves)
+        return;
+    const positions = leaves.geometry.attributes.position.array;
+    const base = leaves.userData.basePositions;
+    for (let index = 0; index < positions.length; index += 3) {
+        positions[index] = base[index] + Math.sin(seconds * 0.9 + index) * 0.025;
+        positions[index + 1] = Math.max(0.08,
+            base[index + 1] + Math.sin(seconds * 1.6 + index * 0.17) * 0.035);
+    }
+    leaves.geometry.attributes.position.needsUpdate = true;
 }
 
 function createGoldfishPond() {
@@ -3760,6 +3980,93 @@ function cleanHorseDroppings() {
     menuCleanStatus.textContent = "Grundstück ist sauber.";
 }
 
+function createTroughWater(parent, resourceKey, width, depth, topY, maxDepth = 0.14) {
+    const texture = textures.water.clone();
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(2.4, 1.5);
+    texture.needsUpdate = true;
+    const material = new THREE.MeshPhysicalMaterial({
+        color: 0x58d5ef,
+        map: texture,
+        bumpMap: texture,
+        bumpScale: 0.024,
+        roughness: 0.055,
+        metalness: 0.02,
+        transmission: 0.46,
+        transparent: true,
+        opacity: 0.82,
+        clearcoat: 1,
+        clearcoatRoughness: 0.035,
+        thickness: 0.12,
+        ior: 1.333,
+        envMapIntensity: 1.15,
+        depthWrite: false
+    });
+    const volumeMaterial = material.clone();
+    volumeMaterial.map = null;
+    volumeMaterial.bumpMap = null;
+    volumeMaterial.opacity = 0.38;
+    volumeMaterial.roughness = 0.16;
+    const volume = addBox(parent, [width, maxDepth, depth], volumeMaterial,
+        [0, topY - maxDepth / 2, 0], { radius: 0.035, castShadow: false });
+    const surface = addMesh(parent, new THREE.PlaneGeometry(width, depth, 18, 8), material,
+        0, topY + 0.006, 0, { rotation: [-Math.PI / 2, 0, 0], castShadow: false });
+    surface.renderOrder = 5;
+    const rippleMaterial = new THREE.MeshBasicMaterial({
+        color: 0xd5fbff,
+        transparent: true,
+        opacity: 0.34,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        toneMapped: false
+    });
+    const ripples = [0, 0.54].map((phase) => {
+        const ripple = addMesh(parent, new THREE.RingGeometry(0.035, 0.052, 24),
+            rippleMaterial.clone(), 0, topY + 0.014, 0,
+            { rotation: [-Math.PI / 2, 0, 0], castShadow: false });
+        ripple.userData.phase = phase;
+        ripple.renderOrder = 6;
+        return ripple;
+    });
+    const visual = {
+        kind: "water",
+        resourceKey,
+        surface,
+        volume,
+        material,
+        texture,
+        ripples,
+        topY,
+        maxDepth,
+        phase: troughWaterSurfaces.length * 0.37,
+        currentSurfaceY: topY
+    };
+    animalResourceVisuals.push(visual);
+    troughWaterSurfaces.push(visual);
+    return visual;
+}
+
+function animateTroughWater(seconds) {
+    troughWaterSurfaces.forEach((visual) => {
+        if (!visual.surface.visible)
+            return;
+        visual.texture.offset.set(
+            (seconds * 0.018 + visual.phase) % 1,
+            (seconds * -0.012 + visual.phase * 0.6) % 1
+        );
+        visual.surface.position.y = visual.currentSurfaceY +
+            Math.sin(seconds * 1.45 + visual.phase * 8) * 0.004;
+        visual.ripples.forEach((ripple, index) => {
+            const progress = (seconds * 0.20 + ripple.userData.phase + visual.phase) % 1;
+            const scale = 0.45 + progress * 4.8;
+            ripple.scale.set(scale, scale * 0.58, 1);
+            ripple.position.y = visual.surface.position.y + 0.008 + index * 0.001;
+            ripple.material.opacity = (1 - progress) * 0.32;
+        });
+    });
+}
+
 function createAnimalTrough(position, resourceKey, rotation = 0, stationId = "") {
     const group = new THREE.Group();
     group.position.set(...position);
@@ -3769,10 +4076,11 @@ function createAnimalTrough(position, resourceKey, rotation = 0, stationId = "")
     world.add(group);
     const metal = new THREE.MeshStandardMaterial({ color: 0x667078, metalness: 0.62, roughness: 0.40 });
     addBox(group, [1.18, 0.40, 0.58], metal, [0, 0.31, 0], { radius: 0.10 });
-    const fillMaterial = materials.water.clone();
-    const fill = addBox(group, [1.02, 0.10, 0.44], fillMaterial,
-        [0, 0.53, 0], { radius: 0.07, castShadow: false });
-    animalResourceVisuals.push({ kind: "water", resourceKey, fill });
+    const recess = new THREE.MeshStandardMaterial({ color: 0x242b2f, metalness: 0.42, roughness: 0.28 });
+    addBox(group, [1.06, 0.055, 0.47], recess, [0, 0.515, 0], {
+        radius: 0.075, castShadow: false
+    });
+    createTroughWater(group, resourceKey, 1.00, 0.415, 0.552, 0.15);
     const location = stationId.includes("pergola") ? "PERGOLA" :
         resourceKey === "waterHorse" ? "PFERD" : "POOL";
     registerAnimalResourceLabel(stationId || resourceKey, "💧", `${location} · TRÄNKE`,
@@ -3812,8 +4120,16 @@ function updateAnimalResourceVisuals() {
             visual.fill.position.y = 0.16 + 0.34 * level;
         }
         else {
-            visual.fill.scale.x = 0.20 + 0.80 * level;
-            visual.fill.material.opacity = 0.35 + level * 0.45;
+            const waterLevel = THREE.MathUtils.clamp((numberValue(animalResources[visual.resourceKey]) ?? 0) / 100, 0, 1);
+            visual.currentSurfaceY = visual.topY - (1 - waterLevel) * visual.maxDepth;
+            visual.surface.position.y = visual.currentSurfaceY;
+            visual.surface.visible = waterLevel > 0.015;
+            visual.volume.visible = waterLevel > 0.015;
+            visual.volume.scale.y = Math.max(0.02, waterLevel);
+            visual.volume.position.y = visual.topY - visual.maxDepth +
+                visual.maxDepth * Math.max(0.02, waterLevel) / 2;
+            visual.material.opacity = 0.60 + waterLevel * 0.24;
+            visual.ripples.forEach((ripple) => ripple.visible = waterLevel > 0.08);
         }
     });
     if (menuCareStatus) {
@@ -4441,32 +4757,84 @@ function createCamelPasture() {
     loadDetailedCamels();
 }
 
-// Die Vogelarten verwenden Modelle mit passenden Boden- UND Fluganimationen.
-// Damit fliegt kein langbeiniges Tier mehr im Sitzen über die Wiese und ein
-// gelandeter Vogel schlaegt nicht weiter mit den Fluegeln.
+// 22 klar unterscheidbare Arten, davon 20 heimische Garten-/Feldvögel. Das
+// sehr leichte Tauben-Rig ist vom Autor ausdrücklich zum Skalieren und
+// Neutexturieren für weitere Arten vorgesehen und besitzt Start, Schlagflug,
+// Gleitflug, Landung und Stand. Wasservögel nutzen ihr eigenes Lauf-/Flug-Rig.
+// So bleibt die Artenvielfalt auch auf dem iPhone performant, ohne gleitende
+// Bodenmodelle oder fliegende Standposen.
 const BIRD_VISITOR_CONFIGS = [
-    { name: "Stadttaube", model: "pigeon", height: 0.31, tint: 0x89939c,
-        feedBias: 0.84, poolBias: 0.18, pastureBias: 0.18, song: [620, 540, 590] },
-    { name: "Ringeltaube", model: "pigeon", height: 0.42, tint: 0x707982,
-        feedBias: 0.78, poolBias: 0.14, pastureBias: 0.46, song: [510, 440, 480] },
-    { name: "Tuerkentaube", model: "pigeon", height: 0.34, tint: 0xb4aa99,
-        feedBias: 0.80, poolBias: 0.20, pastureBias: 0.28, song: [580, 500, 550] },
-    { name: "Felsentaube", model: "pigeon", height: 0.33, tint: 0x667988,
-        feedBias: 0.86, poolBias: 0.16, pastureBias: 0.20, song: [650, 570, 610] },
-    { name: "Purpurhuhn", model: "swamphen", height: 0.49, tint: 0x547184,
-        feedBias: 0.68, poolBias: 0.82, pastureBias: 0.76, song: [820, 960, 740] },
-    { name: "Teichhuhn", model: "swamphen", height: 0.43, tint: 0x59666b,
-        feedBias: 0.72, poolBias: 0.74, pastureBias: 0.66, song: [1050, 880, 1180] },
-    { name: "Junges Purpurhuhn", model: "swamphenNestling", height: 0.24, tint: 0x7b7770,
-        feedBias: 0.90, poolBias: 0.44, pastureBias: 0.84, song: [1320, 1480, 1390] },
-    { name: "Junges Teichhuhn", model: "swamphenNestling", height: 0.21, tint: 0x68645f,
-        feedBias: 0.92, poolBias: 0.38, pastureBias: 0.82, song: [1450, 1610, 1510] }
+    { name: "Haussperling", model: "pigeon", height: 0.15, tint: 0x8b7259, tintStrength: 0.60,
+        morph: [0.84, 0.78], accent: 0x5d4536, feedBias: 0.94, poolBias: 0.12, pastureBias: 0.34,
+        voice: "chirp", song: [2650, 2920, 2520, 3150] },
+    { name: "Feldsperling", model: "pigeon", height: 0.14, tint: 0x9a7652, tintStrength: 0.62,
+        morph: [0.82, 0.77], accent: 0x5a3328, feedBias: 0.94, poolBias: 0.10, pastureBias: 0.62,
+        voice: "chirp", song: [2780, 3180, 2860, 3350] },
+    { name: "Rotkehlchen", model: "pigeon", height: 0.14, tint: 0x75685c, tintStrength: 0.55,
+        morph: [0.80, 0.75], accent: 0xd96835, feedBias: 0.90, poolBias: 0.14, pastureBias: 0.30,
+        voice: "warble", song: [2350, 3100, 3850, 2980, 4200] },
+    { name: "Kohlmeise", model: "pigeon", height: 0.14, tint: 0x85863f, tintStrength: 0.64,
+        morph: [0.78, 0.72], accent: 0xe0c94f, feedBias: 0.92, poolBias: 0.12, pastureBias: 0.22,
+        voice: "double", song: [3050, 2470, 3050, 2470] },
+    { name: "Blaumeise", model: "pigeon", height: 0.12, tint: 0x6f8ba0, tintStrength: 0.64,
+        morph: [0.76, 0.70], accent: 0xe6d16b, feedBias: 0.90, poolBias: 0.10, pastureBias: 0.18,
+        voice: "trill", song: [3600, 4100, 4550, 4300, 4700] },
+    { name: "Buchfink", model: "pigeon", height: 0.15, tint: 0xa36d59, tintStrength: 0.60,
+        morph: [0.82, 0.80], accent: 0x6d8796, feedBias: 0.92, poolBias: 0.12, pastureBias: 0.44,
+        voice: "cascade", song: [3100, 2950, 2700, 2450, 2200] },
+    { name: "Grünfink", model: "pigeon", height: 0.15, tint: 0x7d8b42, tintStrength: 0.68,
+        morph: [0.86, 0.82], accent: 0xc7b943, feedBias: 0.94, poolBias: 0.11, pastureBias: 0.48,
+        voice: "trill", song: [2750, 2920, 3100, 2800] },
+    { name: "Stieglitz", model: "pigeon", height: 0.13, tint: 0xc6ad5a, tintStrength: 0.62,
+        morph: [0.78, 0.75], accent: 0xb8322d, feedBias: 0.96, poolBias: 0.10, pastureBias: 0.58,
+        voice: "trill", song: [3500, 3900, 3700, 4300, 4100] },
+    { name: "Star", model: "pigeon", height: 0.22, tint: 0x273d3e, tintStrength: 0.78,
+        morph: [0.78, 0.92], accent: 0x577966, feedBias: 0.90, poolBias: 0.14, pastureBias: 0.56,
+        voice: "mimic", song: [1850, 2600, 3350, 2250, 3700], seasons: ["spring", "summer", "autumn"] },
+    { name: "Amsel", model: "pigeon", height: 0.25, tint: 0x202326, tintStrength: 0.82,
+        morph: [0.82, 1.04], accent: 0xe0a128, feedBias: 0.88, poolBias: 0.14, pastureBias: 0.28,
+        voice: "flute", song: [1650, 1950, 2300, 1820, 2500] },
+    { name: "Singdrossel", model: "pigeon", height: 0.23, tint: 0x806a54, tintStrength: 0.63,
+        morph: [0.82, 1.00], accent: 0xc6aa80, feedBias: 0.90, poolBias: 0.13, pastureBias: 0.36,
+        voice: "repeat", song: [1950, 2400, 1950, 2700, 2400] },
+    { name: "Bachstelze", model: "pigeon", height: 0.19, tint: 0x6d7478, tintStrength: 0.68,
+        morph: [0.70, 1.18], accent: 0xe4e5e1, feedBias: 0.86, poolBias: 0.28, pastureBias: 0.62,
+        voice: "chirp", song: [2800, 3300, 2920] },
+    { name: "Hausrotschwanz", model: "pigeon", height: 0.15, tint: 0x5b5654, tintStrength: 0.72,
+        morph: [0.76, 0.94], accent: 0xb85b35, feedBias: 0.84, poolBias: 0.11, pastureBias: 0.26,
+        voice: "scratch", song: [2300, 2850, 2050, 3100], seasons: ["spring", "summer", "autumn"] },
+    { name: "Zaunkönig", model: "pigeon", height: 0.10, tint: 0x765039, tintStrength: 0.76,
+        morph: [0.92, 0.62], accent: 0x9f724c, feedBias: 0.94, poolBias: 0.09, pastureBias: 0.18,
+        voice: "trill", song: [4100, 4550, 4300, 4800, 4450] },
+    { name: "Elster", model: "pigeon", height: 0.45, tint: 0x222f34, tintStrength: 0.80,
+        morph: [0.74, 1.42], accent: 0xe8e9e2, feedBias: 0.82, poolBias: 0.12, pastureBias: 0.52,
+        voice: "chatter", song: [1250, 1480, 1120, 1580] },
+    { name: "Rabenkrähe", model: "pigeon", height: 0.48, tint: 0x171b20, tintStrength: 0.88,
+        morph: [0.92, 1.24], accent: 0x2c333b, feedBias: 0.84, poolBias: 0.12, pastureBias: 0.58,
+        voice: "caw", song: [620, 560, 610] },
+    { name: "Eichelhäher", model: "pigeon", height: 0.34, tint: 0x9c765e, tintStrength: 0.62,
+        morph: [0.86, 1.08], accent: 0x4d87b4, feedBias: 0.86, poolBias: 0.10, pastureBias: 0.50,
+        voice: "rasp", song: [980, 1260, 920, 1180] },
+    { name: "Buntspecht", model: "pigeon", height: 0.23, tint: 0x33363a, tintStrength: 0.78,
+        morph: [0.72, 1.06], accent: 0xb92d2b, feedBias: 0.74, poolBias: 0.08, pastureBias: 0.18,
+        voice: "drum", song: [2050, 2250, 2450, 2700, 2920] },
+    { name: "Ringeltaube", model: "pigeon", height: 0.42, tint: 0x707982, tintStrength: 0.52,
+        morph: [1.04, 1.02], accent: 0xdadccf, feedBias: 0.82, poolBias: 0.14, pastureBias: 0.46,
+        voice: "coo", song: [510, 440, 480, 420] },
+    { name: "Türkentaube", model: "pigeon", height: 0.32, tint: 0xb4aa99, tintStrength: 0.56,
+        morph: [0.90, 0.96], accent: 0x524f4c, feedBias: 0.84, poolBias: 0.18, pastureBias: 0.28,
+        voice: "coo", song: [580, 500, 550] },
+    { name: "Teichhuhn", model: "swamphen", height: 0.35, tint: 0x414b4b, tintStrength: 0.38,
+        morph: [0.90, 0.92], accent: 0xb43b2e, feedBias: 0.74, poolBias: 0.82, pastureBias: 0.66,
+        voice: "rail", song: [1050, 880, 1180, 960] },
+    { name: "Purpurhuhn", model: "swamphen", height: 0.49, tint: 0x435f82, tintStrength: 0.34,
+        morph: [1.02, 1.02], accent: 0xc34731, feedBias: 0.68, poolBias: 0.86, pastureBias: 0.76,
+        voice: "rail", song: [820, 960, 740, 1080] }
 ];
 
 const BIRD_MODEL_FILES = Object.freeze({
-    pigeon: "/static/models/bird-pigeon-animated.glb?v=99",
-    swamphen: "/static/models/bird-swamphen.glb?v=99",
-    swamphenNestling: "/static/models/bird-swamphen-nestling.glb?v=99"
+    pigeon: "/static/models/bird-pigeon-animated.glb?v=100",
+    swamphen: "/static/models/bird-swamphen.glb?v=100"
 });
 
 function tuneBirdModel(model, config) {
@@ -4479,13 +4847,42 @@ function tuneBirdModel(model, config) {
         const sources = Array.isArray(object.material) ? object.material : [object.material];
         const materials = sources.map((source) => {
             const material = source.clone();
-            material.color.lerp(tint, config.model === "pigeon" ? 0.20 : 0.14);
+            material.color.lerp(tint, config.tintStrength ??
+                (config.model === "pigeon" ? 0.52 : 0.24));
             material.roughness = Math.max(0.62, material.roughness ?? 0.68);
             material.metalness = 0;
             material.needsUpdate = true;
             return material;
         });
         object.material = Array.isArray(object.material) ? materials : materials[0];
+    });
+}
+
+function createBirdPlumageDetails(group, config) {
+    if (config.accent == null)
+        return;
+    const height = config.height;
+    const accent = new THREE.MeshStandardMaterial({
+        color: config.accent,
+        roughness: 0.86,
+        transparent: true,
+        opacity: 0.92,
+        depthWrite: true
+    });
+    const chest = addMesh(group, new THREE.SphereGeometry(1, 12, 8), accent,
+        0, height * 0.55, height * 0.20, { castShadow: false });
+    chest.scale.set(height * 0.17, height * 0.19, height * 0.065);
+    if (config.model !== "pigeon")
+        return;
+    const cap = addMesh(group, new THREE.SphereGeometry(1, 10, 7), accent,
+        0, height * 0.77, height * 0.18, { castShadow: false });
+    cap.scale.set(height * 0.15, height * 0.085, height * 0.10);
+    [-1, 1].forEach((side) => {
+        const wingPatch = addMesh(group, new THREE.SphereGeometry(1, 10, 7), accent,
+            side * height * 0.19, height * 0.53, -height * 0.015,
+            { castShadow: false });
+        wingPatch.scale.set(height * 0.045, height * 0.105, height * 0.18);
+        wingPatch.rotation.z = side * 0.16;
     });
 }
 
@@ -4557,29 +4954,57 @@ function birdSkyPoint(bird, opposite = false) {
 
 function playBirdSong(bird) {
     if (!animalSoundsEnabled || !birdAudioContext || birdAudioContext.state !== "running")
-        return;
+        return 0;
     const now = birdAudioContext.currentTime;
     const notes = bird.config.song;
+    const voice = bird.config.voice || "chirp";
+    const profiles = {
+        coo: { type: "sine", spacing: 0.24, note: 0.28, volume: 0.014, glide: 0.92 },
+        caw: { type: "sawtooth", spacing: 0.28, note: 0.24, volume: 0.012, glide: 0.74 },
+        rasp: { type: "square", spacing: 0.19, note: 0.16, volume: 0.008, glide: 0.82 },
+        rail: { type: "square", spacing: 0.15, note: 0.13, volume: 0.008, glide: 1.16 },
+        drum: { type: "triangle", spacing: 0.055, note: 0.05, volume: 0.009, glide: 0.98 },
+        trill: { type: "sine", spacing: 0.075, note: 0.07, volume: 0.010, glide: 1.08 },
+        chatter: { type: "square", spacing: 0.09, note: 0.075, volume: 0.008, glide: 0.88 },
+        flute: { type: "sine", spacing: 0.22, note: 0.19, volume: 0.012, glide: 1.12 },
+        warble: { type: "sine", spacing: 0.13, note: 0.115, volume: 0.010, glide: 1.18 },
+        cascade: { type: "triangle", spacing: 0.10, note: 0.09, volume: 0.010, glide: 0.91 },
+        repeat: { type: "sine", spacing: 0.16, note: 0.14, volume: 0.010, glide: 1.06 },
+        mimic: { type: "triangle", spacing: 0.12, note: 0.10, volume: 0.009, glide: 1.20 },
+        scratch: { type: "sawtooth", spacing: 0.14, note: 0.11, volume: 0.007, glide: 0.80 },
+        double: { type: "sine", spacing: 0.18, note: 0.13, volume: 0.011, glide: 1.04 },
+        chirp: { type: "sine", spacing: 0.13, note: 0.11, volume: 0.010, glide: 1.12 }
+    };
+    const profile = profiles[voice] || profiles.chirp;
+    const repeats = ["drum", "trill", "chatter"].includes(voice) ? 2 : 1;
+    const eventCount = notes.length * repeats;
+    const totalDuration = Math.max(0.45, eventCount * profile.spacing + profile.note + 0.08);
     const master = birdAudioContext.createGain();
     master.gain.setValueAtTime(0.0001, now);
-    master.gain.exponentialRampToValueAtTime(
-        bird.config.model === "parrot" ? 0.020 : 0.014, now + 0.025);
-    master.gain.exponentialRampToValueAtTime(0.0001, now + 0.78);
-    master.connect(birdAudioContext.destination);
-    notes.forEach((frequency, index) => {
+    master.gain.exponentialRampToValueAtTime(profile.volume, now + 0.025);
+    master.gain.exponentialRampToValueAtTime(0.0001, now + totalDuration);
+    const filter = birdAudioContext.createBiquadFilter();
+    filter.type = voice === "caw" || voice === "coo" ? "lowpass" : "bandpass";
+    filter.frequency.value = voice === "caw" || voice === "coo" ? 2200 : 3400;
+    filter.Q.value = voice === "caw" ? 0.7 : 1.3;
+    master.connect(filter).connect(birdAudioContext.destination);
+    Array.from({ length: eventCount }).forEach((_, eventIndex) => {
+        const frequency = notes[eventIndex % notes.length];
         const oscillator = birdAudioContext.createOscillator();
         const gain = birdAudioContext.createGain();
-        const start = now + index * (bird.config.model === "stork" ? 0.105 : 0.16);
-        oscillator.type = bird.config.model === "stork" ? "square" : "sine";
+        const start = now + eventIndex * profile.spacing;
+        oscillator.type = profile.type;
         oscillator.frequency.setValueAtTime(frequency * (0.96 + bird.random() * 0.08), start);
-        oscillator.frequency.exponentialRampToValueAtTime(frequency * 1.10, start + 0.11);
+        oscillator.frequency.exponentialRampToValueAtTime(
+            Math.max(80, frequency * profile.glide), start + profile.note);
         gain.gain.setValueAtTime(0.0001, start);
-        gain.gain.exponentialRampToValueAtTime(0.52, start + 0.015);
-        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.15);
+        gain.gain.exponentialRampToValueAtTime(0.72, start + Math.min(0.018, profile.note * 0.28));
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + profile.note);
         oscillator.connect(gain).connect(master);
         oscillator.start(start);
-        oscillator.stop(start + 0.17);
+        oscillator.stop(start + profile.note + 0.01);
     });
+    return totalDuration;
 }
 
 function birdClipByWords(animations, words) {
@@ -4644,30 +5069,54 @@ function createGardenBird(config, index, gltf) {
     model.updateMatrixWorld(true);
     let bounds = new THREE.Box3().setFromObject(model);
     const size = bounds.getSize(new THREE.Vector3());
-    model.scale.setScalar(config.height / Math.max(size.y, 0.001));
+    const baseScale = config.height / Math.max(size.y, 0.001);
+    const morph = config.morph || [1, 1];
+    model.scale.set(baseScale * morph[0], baseScale, baseScale * morph[1]);
     model.updateMatrixWorld(true);
     bounds = new THREE.Box3().setFromObject(model);
     const center = bounds.getCenter(new THREE.Vector3());
     model.position.set(-center.x, -bounds.min.y, -center.z);
     group.add(model);
+    createBirdPlumageDetails(group, config);
     const mixer = new THREE.AnimationMixer(model);
     const actions = createBirdActions(mixer, gltf.animations);
+    const headRig = model.getObjectByName("DEF-head_08") ||
+        model.getObjectByName("head") || model.getObjectByName("Head");
+    const beakTop = model.getObjectByName("DEF-beak.001.T_0132") ||
+        model.getObjectByName("DEF-beak.002.T_0133");
+    const beakBottom = model.getObjectByName("DEF-beak_001.B_0134") ||
+        model.getObjectByName("DEF-beak.002.B_0135");
     const bird = {
         index, config, random, group, model, mixer, actions,
         state: "away", target: new THREE.Vector3(), activity: "feeding",
         pasture: false, resourceKey: null, stateUntil: 0,
         nextVisitAt: 3 + index * 7 + random() * 8,
-        nextSongAt: 12 + index * 4 + random() * 24,
+        // In der lokalen Animationsvorschau erklingt der erste Ruf frueher,
+        // damit Gesang und Schnabelbewegung ohne langes Warten pruefbar sind.
+        nextSongAt: animalDemoMode ? 8 + index * 0.9 : 12 + index * 4 + random() * 24,
         visitsRemaining: 0, travelled: 0,
         currentAction: null, currentActionName: "",
-        headRig: model.getObjectByName("DEF-head_08") ||
-            model.getObjectByName("head") || model.getObjectByName("Head"),
+        headRig,
+        baseHeadRotationX: headRig?.rotation.x || 0,
+        beakTop,
+        beakBottom,
+        manualHeadOffset: 0,
+        manualBeakTopOffset: 0,
+        manualBeakBottomOffset: 0,
+        singingUntil: 0,
         pendingFlightState: null,
         pendingTarget: new THREE.Vector3()
     };
     setBirdAnimation(bird, "idle", 0);
     gardenBirds.push(bird);
     return bird;
+}
+
+const MAX_ACTIVE_BIRD_VISITORS = 8;
+
+function birdVisitsThisSeason(bird) {
+    return !Array.isArray(bird.config.seasons) ||
+        bird.config.seasons.includes(seasonalVisuals.current || seasonForDate());
 }
 
 function startBirdVisit(bird, seconds) {
@@ -4734,29 +5183,57 @@ function startNextBirdActivity(bird, seconds) {
 function animateGardenBirds(seconds, delta) {
     if (reduceMotion)
         return;
+    let activeBirds = gardenBirds.filter((bird) => bird.state !== "away").length;
     gardenBirds.forEach((bird) => {
         if (bird.state === "away") {
-            if (seconds >= bird.nextVisitAt)
+            if (seconds >= bird.nextVisitAt && activeBirds < MAX_ACTIVE_BIRD_VISITORS &&
+                birdVisitsThisSeason(bird)) {
                 startBirdVisit(bird, seconds);
+                activeBirds += 1;
+            }
+            else if (seconds >= bird.nextVisitAt && !birdVisitsThisSeason(bird))
+                bird.nextVisitAt = seconds + 90 + bird.random() * 150;
             return;
         }
-        const flying = bird.state.startsWith("flying");
+        let flying = bird.state.startsWith("flying");
         bird.mixer.timeScale = 1;
+        if (bird.headRig)
+            bird.headRig.rotation.x -= bird.manualHeadOffset;
+        if (bird.beakTop)
+            bird.beakTop.rotation.x -= bird.manualBeakTopOffset;
+        if (bird.beakBottom)
+            bird.beakBottom.rotation.x -= bird.manualBeakBottomOffset;
+        bird.manualHeadOffset = 0;
+        bird.manualBeakTopOffset = 0;
+        bird.manualBeakBottomOffset = 0;
         bird.mixer.update(delta);
         if (bird.state === "taking-off" && seconds >= bird.stateUntil) {
             bird.state = bird.pendingFlightState;
             bird.target.copy(bird.pendingTarget);
             bird.stateUntil = seconds + 42;
             setBirdAnimation(bird, "fly", 0.12);
+            // Der neue Flugzustand muss noch in demselben Frame gelten. Sonst
+            // wuerde der Bodenpfad das Tier fuer einen Frame auf die Zielhoehe
+            // versetzen und ein sichtbarer Sprung entstuende.
+            flying = true;
         }
         if (bird.state === "landing" && seconds >= bird.stateUntil)
             finishBirdLanding(bird, seconds);
         if (seconds >= bird.nextSongAt && !flying &&
             !["taking-off", "landing"].includes(bird.state)) {
-            playBirdSong(bird);
-            bird.nextSongAt = seconds + 24 + bird.index * 5 + bird.random() * 75;
+            const duration = playBirdSong(bird);
+            bird.singingUntil = seconds + duration;
+            // Vor der ersten Beruehrung blockieren Browser Audio. Dann bereits
+            // nach wenigen Sekunden erneut versuchen, statt den Vogel fuer bis
+            // zu einer Minute stumm zu schalten.
+            bird.nextSongAt = duration > 0 ?
+                seconds + 18 + bird.index * 1.7 + bird.random() * 58 :
+                seconds + 4 + bird.random() * 5;
         }
         if (flying) {
+            const flightAction = bird.actions.glide &&
+                Math.sin(seconds * 0.72 + bird.index * 1.9) > 0.46 ? "glide" : "fly";
+            setBirdAnimation(bird, flightAction, 0.24);
             const direction = bird.target.clone().sub(bird.group.position);
             const distance = direction.length();
             if (distance < (bird.state === "flying-out" ? 0.75 : 0.20)) {
@@ -4813,10 +5290,19 @@ function animateGardenBirds(seconds, delta) {
             return;
         const pecking = bird.state === "feeding" || bird.state.startsWith("drinking");
         const peck = pecking ? Math.max(0, Math.sin(seconds * 4.8 + bird.index)) * 0.42 : 0;
+        const singing = seconds < bird.singingUntil;
         // Nur der Kopf senkt sich. Das ganze Tier bleibt korrekt auf seinen
         // Beinen stehen – besonders wichtig bei den langbeinigen Wasservoegeln.
-        if (bird.headRig && peck > 0)
-            bird.headRig.rotateX(peck);
+        bird.manualHeadOffset = peck +
+            (singing ? Math.sin(seconds * 14 + bird.index) * 0.055 : 0);
+        bird.manualBeakTopOffset = singing ? -Math.max(0, Math.sin(seconds * 24)) * 0.10 : 0;
+        bird.manualBeakBottomOffset = singing ? Math.max(0, Math.sin(seconds * 24)) * 0.11 : 0;
+        if (bird.headRig)
+            bird.headRig.rotation.x += bird.manualHeadOffset;
+        if (bird.beakTop)
+            bird.beakTop.rotation.x += bird.manualBeakTopOffset;
+        if (bird.beakBottom)
+            bird.beakBottom.rotation.x += bird.manualBeakBottomOffset;
         bird.group.position.y = bird.target.y;
         if (bird.state === "feeding")
             grazeAt(bird.group.position.x, bird.group.position.z, bird.pasture, delta * 0.008);
@@ -5636,6 +6122,8 @@ function createGarden() {
         [-6.55, 10.15, 0.82], [-7.65, 6.15, 0.72], [-8.90, 2.55, 0.76],
         [-10.10, 0.35, 0.72]
     ].forEach(([x, z, scale]) => createShrub(x, z, scale));
+    createSeasonalAccents();
+    updateSeasonalScene(true);
 
     // Der Holzzaun folgt jetzt der eingezeichneten Feld- und Gartengrenze,
     // statt das Grundstück als unzutreffendes Rechteck einzufassen.
@@ -6394,6 +6882,7 @@ function updateWeatherScene(weather) {
     weatherTemp.textContent = temperature == null ? "-- °C" :
         temperature.toLocaleString("de-DE", { maximumFractionDigits: 1 }) + " °C";
     weatherText.textContent = description.text +
+        " · " + SEASON_LABELS[seasonForDate()] +
         (wind == null ? "" : " · " + Math.round(wind) + " km/h") +
         (weather?.is_day === 0 && moonPhase ? " · " + moonPhase : "") +
         (weather?.stale === true ? " · letzter Stand" : "");
@@ -8255,6 +8744,7 @@ function animate(time) {
     if (routineMinute !== lastRoutineMinute) {
         lastRoutineMinute = routineMinute;
         updateInteriorElectricity(componentData().raw.interiorLoad, new Date());
+        updateSeasonalScene();
     }
 
     if (!reduceMotion) {
@@ -8271,6 +8761,7 @@ function animate(time) {
             });
         });
         materials.water.color.setHSL(0.53 + Math.sin(seconds * 0.7) * 0.008, 0.76, 0.48);
+        animateTroughWater(seconds);
     }
 
     animateSchematicBattery(solarBankBatteryVisual, seconds);
@@ -8289,9 +8780,26 @@ function animate(time) {
         stage.dataset.birdAnimations = gardenBirds
             .map((bird) => `${bird.config.name}:${bird.state}/${bird.currentActionName}`)
             .join("|");
+        stage.dataset.birdSpeciesCount = String(gardenBirds.length);
+        stage.dataset.birdActiveCount = String(gardenBirds.filter((bird) => bird.state !== "away").length);
+        stage.dataset.birdSinging = gardenBirds
+            .filter((bird) => seconds < bird.singingUntil)
+            .map((bird) => bird.config.name)
+            .join("|") || "none";
+        stage.dataset.birdAudio = birdAudioContext?.state || "locked";
+        stage.dataset.birdMissingAnimations = gardenBirds.map((bird) => {
+            const required = bird.config.model === "swamphen" ?
+                ["fly", "idle", "walking"] :
+                ["fly", "glide", "landing", "idle", "takeoff"];
+            const missing = required.filter((name) => !bird.actions[name]);
+            return missing.length ? `${bird.config.name}:${missing.join(",")}` : "";
+        }).filter(Boolean).join("|") || "none";
+        stage.dataset.season = seasonalVisuals.current || seasonForDate();
+        stage.dataset.troughWaterSurfaces = String(troughWaterSurfaces.length);
     }
     updateAnimalEcology(time, delta);
     animateWeather(seconds, delta);
+    animateSeasonalAccents(seconds);
     animateExteriorRoomLights(delta);
 
     updateLabelPositions();
