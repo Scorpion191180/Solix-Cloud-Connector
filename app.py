@@ -41,6 +41,29 @@ class AnimalDroppingCommand(BaseModel):
     z: float = Field(ge=-50, le=50)
 
 
+class AnimalMotionPose(BaseModel):
+    id: str = Field(min_length=1, max_length=64)
+    x: float = Field(ge=-80, le=80)
+    y: float = Field(ge=-10, le=40)
+    z: float = Field(ge=-80, le=80)
+    yaw: float = Field(ge=-20, le=20)
+    vx: float = Field(default=0, ge=-20, le=20)
+    vy: float = Field(default=0, ge=-20, le=20)
+    vz: float = Field(default=0, ge=-20, le=20)
+    visible: bool = True
+    state: str = Field(default="", max_length=48)
+    animation: str = Field(default="", max_length=64)
+    target_x: float = Field(default=0, ge=-80, le=80)
+    target_y: float = Field(default=0, ge=-10, le=40)
+    target_z: float = Field(default=0, ge=-80, le=80)
+    state_remaining: float = Field(default=0, ge=0, le=180)
+
+
+class AnimalMotionCommand(BaseModel):
+    client_id: str = Field(min_length=8, max_length=96)
+    animals: list[AnimalMotionPose] = Field(max_length=56)
+
+
 def _manual_control_configured() -> bool:
     enabled = os.getenv("SMARTPLUG_MANUAL_CONTROL", "false").strip().lower()
     token = os.getenv("SMARTPLUG_CONTROL_TOKEN", "").strip()
@@ -144,6 +167,16 @@ async def animal_action(command: AnimalActionCommand):
 async def animal_dropping(command: AnimalDroppingCommand):
     """Add one simulated dropping to the shared property state."""
     return animal_state.add_dropping(command.kind, command.x, command.z)
+
+
+@app.post("/api/animals/motion")
+async def animal_motion(command: AnimalMotionCommand):
+    """Synchronize one smooth animal motion timeline across all browsers."""
+    return animal_state.update_motion(
+        command.client_id,
+        [pose.model_dump() if hasattr(pose, "model_dump") else pose.dict()
+         for pose in command.animals],
+    )
 
 
 @app.get("/api/automation")

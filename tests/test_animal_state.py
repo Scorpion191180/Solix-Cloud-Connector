@@ -1,7 +1,9 @@
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 from animal.state import AnimalStateStore
 
@@ -69,6 +71,48 @@ class AnimalStateStoreTests(unittest.TestCase):
             store = AnimalStateStore(Path(directory) / "animals.json")
             with self.assertRaises(ValueError):
                 store.action("refill_resource", "water_unknown")
+
+    def test_dog_eats_twice_daily_and_barks_hungry_until_refilled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "animals.json"
+            berlin = ZoneInfo("Europe/Berlin")
+            before_breakfast = datetime(2026, 9, 2, 6, 59, tzinfo=berlin).timestamp()
+            after_breakfast = datetime(2026, 9, 2, 7, 5, tzinfo=berlin).timestamp()
+            after_dinner = datetime(2026, 9, 2, 18, 5, tzinfo=berlin).timestamp()
+            next_breakfast = datetime(2026, 9, 3, 7, 5, tzinfo=berlin).timestamp()
+            with patch("animal.state.time.time", return_value=before_breakfast):
+                store = AnimalStateStore(path)
+            with patch("animal.state.time.time", return_value=after_breakfast):
+                breakfast = store.get()
+                repeated = store.get()
+            self.assertEqual(breakfast["dog_food"], 55)
+            self.assertEqual(repeated["dog_food"], 55)
+            self.assertFalse(breakfast["dog_hungry"])
+            with patch("animal.state.time.time", return_value=after_dinner):
+                dinner = store.get()
+            self.assertEqual(dinner["dog_food"], 10)
+            with patch("animal.state.time.time", return_value=next_breakfast):
+                hungry = store.get()
+            self.assertTrue(hungry["dog_hungry"])
+            self.assertEqual(hungry["dog_food"], 10)
+            with patch("animal.state.time.time", return_value=next_breakfast):
+                refilled = store.action("refill_resource", "dog_food")
+            self.assertFalse(refilled["dog_hungry"])
+            self.assertEqual(refilled["dog_food"], 55)
+
+    def test_motion_has_one_leader_and_fails_over_after_lease(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = AnimalStateStore(Path(directory) / "animals.json")
+            pose = [{"id": "dog", "x": 1, "y": 0, "z": 2, "yaw": 0}]
+            with patch("animal.state.time.time", return_value=1_000_000):
+                leader = store.update_motion("browser-leader", pose)
+                follower = store.update_motion("browser-follower", [])
+            self.assertTrue(leader["motion_write_accepted"])
+            self.assertFalse(follower["motion_write_accepted"])
+            self.assertEqual(follower["motion"]["animals"][0]["id"], "dog")
+            with patch("animal.state.time.time", return_value=1_000_007):
+                takeover = store.update_motion("browser-follower", pose)
+            self.assertTrue(takeover["motion_write_accepted"])
 
 
 if __name__ == "__main__":

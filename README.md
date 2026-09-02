@@ -89,7 +89,7 @@ SOLIX_TELEMETRY_INTERVAL_SECONDS=60
 # Optional mit persistentem Render-Datenträger, damit Tageskurven auch
 # Deploys und Instanzwechsel überstehen:
 SOLIX_HISTORY_FILE=/var/data/solix-telemetry.json
-# Optional auf demselben Datenträger für Heu, Wasser und Hinterlassenschaften:
+# Optional auf demselben Datenträger für Futter, Wasser, Tierpflege und Positionen:
 ANIMAL_STATE_FILE=/var/data/solix-animal-state.json
 SOLIX_SOLARBANK_PN=AE103
 SOLIX_BATTERY_CAPACITY_WH=10400
@@ -121,8 +121,10 @@ Erhalt über Render-
 Deploys oder einen vollständigen Instanzwechsel hinweg wird ein persistenter
 Datenträger (zum Beispiel unter `/var/data`) benötigt.
 
-Heu, Wasser und Hinterlassenschaften werden serverseitig geteilt, sodass alle
-Browser denselben Stand sehen. `ANIMAL_STATE_FILE` speichert diesen Zustand
+Heu, Wasser, Hundefutter und Hinterlassenschaften werden serverseitig geteilt,
+sodass alle Browser denselben Stand sehen. Auch die Bewegungen von Pferd,
+Kamelen, Rottweiler, Vögeln und Fischen folgen auf allen geöffneten Geräten
+derselben laufenden Simulation. `ANIMAL_STATE_FILE` speichert die Pflegewerte
 optional ebenfalls auf dem persistenten Render-Datenträger.
 
 Sind mehrere Solix-Systeme im Konto, wählt `SOLIX_SOLARBANK_PN` das Modell für

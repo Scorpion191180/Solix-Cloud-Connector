@@ -155,6 +155,7 @@ let audiBatteryVisual = null;
 let audiModel = null;
 const pondFish = [];
 let horse = null;
+let dog = null;
 const horseDroppings = [];
 const camelHerd = [];
 const animalDroppings = [];
@@ -185,6 +186,8 @@ let animalSoundsUnlocked = false;
 let animalSoundUnlockPending = false;
 const animalSoundLastPlayed = { horse: -Infinity, camel: -Infinity };
 let birdAudioContext = null;
+let birdAudioWasRunning = false;
+let birdSongPlayCount = 0;
 
 Object.values(animalSoundSources).forEach((audio) => {
     audio.preload = "auto";
@@ -301,7 +304,9 @@ const ANIMAL_RESOURCE_API_KEYS = Object.freeze({
     hayCamelPergola: "hay_camel_pergola",
     waterHorse: "water_horse",
     waterCamelPool: "water_camel_pool",
-    waterCamelPergola: "water_camel_pergola"
+    waterCamelPergola: "water_camel_pergola",
+    dogFood: "dog_food",
+    dogWater: "dog_water"
 });
 
 function registerAnimalResourceLabel(id, icon, label, resourceKey, anchorObject, offsetY) {
@@ -340,6 +345,10 @@ function defaultAnimalResources() {
         waterHorse: 100,
         waterCamelPool: 100,
         waterCamelPergola: 100,
+        dogFood: 100,
+        dogWater: 100,
+        dogHungry: false,
+        dogLastMealKey: null,
         droppings: [],
         grassLevels: [],
         grassFertility: [],
@@ -351,6 +360,16 @@ const animalResources = defaultAnimalResources();
 let animalStateReady = false;
 let animalSyncBusy = false;
 let lastAnimalRevision = 0;
+const animalMotionClientId = globalThis.crypto?.randomUUID?.() ||
+    `scene-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+let animalMotionRole = "unknown";
+let animalMotionSyncBusy = false;
+let animalMotionServerOffset = 0;
+let animalMotionSampledAt = 0;
+let animalMotionReceivedAt = -Infinity;
+let lastAnimalMotionSync = -Infinity;
+const animalMotionTargets = new Map();
+const animalMotionPreviousSamples = new Map();
 let lastEcologyUpdate = performance.now();
 let lastEcologySave = performance.now();
 let lastGrassVisualUpdate = performance.now();
@@ -369,13 +388,223 @@ function applySharedAnimalState(shared, restoreDroppings = false) {
         numberValue(shared.water_camels) ?? animalResources.waterCamelPool;
     animalResources.waterCamelPergola = numberValue(shared.water_camel_pergola) ??
         numberValue(shared.water_camels) ?? animalResources.waterCamelPergola;
+    animalResources.dogFood = numberValue(shared.dog_food) ?? animalResources.dogFood;
+    animalResources.dogWater = numberValue(shared.dog_water) ?? animalResources.dogWater;
+    animalResources.dogHungry = shared.dog_hungry === true;
+    const previousDogMeal = animalResources.dogLastMealKey;
+    animalResources.dogLastMealKey = shared.dog_last_meal_key || previousDogMeal;
+    if (dog && animalResources.dogLastMealKey &&
+        animalResources.dogLastMealKey !== previousDogMeal)
+        dog.pendingMeal = true;
     animalResources.droppings = Array.isArray(shared.droppings) ? shared.droppings : [];
     const revision = numberValue(shared.revision) ?? lastAnimalRevision;
     if (restoreDroppings || revision !== lastAnimalRevision)
         restoreAnimalDroppings(true);
     lastAnimalRevision = revision;
     animalStateReady = true;
+    if (numberValue(shared.server_time) != null)
+        animalMotionServerOffset = Number(shared.server_time) - Date.now() / 1000;
+    if (shared.motion && animalMotionRole !== "leader") {
+        if (animalMotionRole === "unknown" && shared.motion.leader_active)
+            animalMotionRole = "follower";
+        applySharedAnimalMotion(shared.motion);
+    }
     updateAnimalResourceVisuals();
+}
+
+function safeMotionNumber(value, fallback = 0) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function animalMotionPose(id, group, stateName = "", animationName = "", target = null,
+    stateRemaining = 0, visible = true) {
+    const now = performance.now() / 1000;
+    const position = group.position;
+    const previous = animalMotionPreviousSamples.get(id);
+    const elapsed = previous ? Math.max(0.05, now - previous.time) : 0;
+    const velocity = previous ? {
+        x: THREE.MathUtils.clamp((position.x - previous.x) / elapsed, -12, 12),
+        y: THREE.MathUtils.clamp((position.y - previous.y) / elapsed, -12, 12),
+        z: THREE.MathUtils.clamp((position.z - previous.z) / elapsed, -12, 12)
+    } : { x: 0, y: 0, z: 0 };
+    animalMotionPreviousSamples.set(id, {
+        time: now, x: position.x, y: position.y, z: position.z
+    });
+    const destination = target?.isVector3 ? target : position;
+    return {
+        id,
+        x: safeMotionNumber(position.x),
+        y: safeMotionNumber(position.y),
+        z: safeMotionNumber(position.z),
+        yaw: Math.atan2(Math.sin(group.rotation.y), Math.cos(group.rotation.y)),
+        vx: velocity.x,
+        vy: velocity.y,
+        vz: velocity.z,
+        visible: Boolean(visible),
+        state: String(stateName || "").slice(0, 48),
+        animation: String(animationName || "").slice(0, 64),
+        target_x: safeMotionNumber(destination.x, position.x),
+        target_y: safeMotionNumber(destination.y, position.y),
+        target_z: safeMotionNumber(destination.z, position.z),
+        state_remaining: THREE.MathUtils.clamp(safeMotionNumber(stateRemaining), 0, 180)
+    };
+}
+
+function collectAnimalMotionSnapshot() {
+    const animals = [];
+    if (dog) {
+        animals.push(animalMotionPose("dog", dog.group, dog.mode,
+            dog.mode, dog.target,
+            safeMotionNumber(dog.modeUntil) - safeMotionNumber(dog.elapsedSeconds)));
+    }
+    if (horse) {
+        animals.push(animalMotionPose("horse", horse.group, horse.mode,
+            horse.currentActionName, horse.target,
+            safeMotionNumber(horse.modeUntil) - safeMotionNumber(horse.elapsedSeconds)));
+    }
+    camelHerd.forEach((camel, index) => {
+        animals.push(animalMotionPose(`camel-${index}`, camel.group, camel.mode,
+            camel.mode, camel.target,
+            safeMotionNumber(camel.modeUntil) - safeMotionNumber(camel.elapsedSeconds)));
+    });
+    gardenBirds.forEach((bird, index) => {
+        animals.push(animalMotionPose(`bird-${index}`, bird.group, bird.state,
+            bird.currentActionName, bird.target,
+            safeMotionNumber(bird.stateUntil) - performance.now() / 1000,
+            bird.group.visible));
+    });
+    pondFish.forEach((fish, index) => {
+        animals.push(animalMotionPose(`fish-${index}`, fish.group, "swimming",
+            "swimming", null, 0, fish.group.visible));
+    });
+    return animals.slice(0, 56);
+}
+
+function applySharedAnimalMotion(motion) {
+    if (!motion || !Array.isArray(motion.animals) || !motion.animals.length)
+        return;
+    animalMotionSampledAt = safeMotionNumber(motion.sampled_at);
+    animalMotionReceivedAt = performance.now();
+    const incomingIds = new Set();
+    motion.animals.forEach((pose) => {
+        if (!pose?.id)
+            return;
+        incomingIds.add(pose.id);
+        const previous = animalMotionTargets.get(pose.id);
+        animalMotionTargets.set(pose.id, {
+            ...pose,
+            snap: !previous
+        });
+    });
+    for (const id of animalMotionTargets.keys()) {
+        if (!incomingIds.has(id))
+            animalMotionTargets.delete(id);
+    }
+}
+
+function motionObjectForId(id) {
+    if (id === "dog")
+        return dog ? { kind: "dog", value: dog, group: dog.group } : null;
+    if (id === "horse")
+        return horse ? { kind: "horse", value: horse, group: horse.group } : null;
+    if (id.startsWith("camel-")) {
+        const camel = camelHerd[Number(id.slice(6))];
+        return camel ? { kind: "camel", value: camel, group: camel.group } : null;
+    }
+    if (id.startsWith("bird-")) {
+        const bird = gardenBirds[Number(id.slice(5))];
+        return bird ? { kind: "bird", value: bird, group: bird.group } : null;
+    }
+    if (id.startsWith("fish-")) {
+        const fish = pondFish[Number(id.slice(5))];
+        return fish ? { kind: "fish", value: fish, group: fish.group } : null;
+    }
+    return null;
+}
+
+function reconcileSharedAnimalMotion(delta) {
+    if (animalMotionRole !== "follower" ||
+        performance.now() - animalMotionReceivedAt > 7000)
+        return;
+    const serverNow = Date.now() / 1000 + animalMotionServerOffset;
+    const sampleAge = THREE.MathUtils.clamp(serverNow - animalMotionSampledAt, 0, 2.4);
+    animalMotionTargets.forEach((pose, id) => {
+        const animal = motionObjectForId(id);
+        if (!animal)
+            return;
+        const desiredX = safeMotionNumber(pose.x) + safeMotionNumber(pose.vx) * sampleAge;
+        const desiredY = safeMotionNumber(pose.y) + safeMotionNumber(pose.vy) * sampleAge;
+        const desiredZ = safeMotionNumber(pose.z) + safeMotionNumber(pose.vz) * sampleAge;
+        if (pose.snap) {
+            animal.group.position.set(desiredX, desiredY, desiredZ);
+            pose.snap = false;
+        }
+        else {
+            const blend = 1 - Math.exp(-delta * 9.5);
+            animal.group.position.x = THREE.MathUtils.lerp(animal.group.position.x, desiredX, blend);
+            animal.group.position.y = THREE.MathUtils.lerp(animal.group.position.y, desiredY, blend);
+            animal.group.position.z = THREE.MathUtils.lerp(animal.group.position.z, desiredZ, blend);
+        }
+        const targetYaw = safeMotionNumber(pose.yaw);
+        const yawDelta = Math.atan2(Math.sin(targetYaw - animal.group.rotation.y),
+            Math.cos(targetYaw - animal.group.rotation.y));
+        animal.group.rotation.y += yawDelta * Math.min(1, delta * 10);
+        if (animal.kind === "bird") {
+            animal.group.visible = Boolean(pose.visible);
+            if (pose.state)
+                animal.value.state = String(pose.state);
+            if (pose.target_x != null)
+                animal.value.target.set(
+                    safeMotionNumber(pose.target_x),
+                    safeMotionNumber(pose.target_y),
+                    safeMotionNumber(pose.target_z)
+                );
+            if (pose.animation)
+                setBirdAnimation(animal.value, pose.animation, 0.16);
+        }
+        else if (animal.kind === "dog" && pose.state) {
+            animal.value.mode = String(pose.state);
+            animal.value.modeUntil = performance.now() / 1000 +
+                Math.max(0, safeMotionNumber(pose.state_remaining));
+            if (pose.target_x != null)
+                animal.value.target.set(
+                    safeMotionNumber(pose.target_x), 0,
+                    safeMotionNumber(pose.target_z)
+                );
+        }
+    });
+}
+
+async function syncAnimalMotion() {
+    if (animalMotionSyncBusy || document.hidden)
+        return;
+    animalMotionSyncBusy = true;
+    try {
+        const response = await fetch("/api/animals/motion", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                client_id: animalMotionClientId,
+                animals: collectAnimalMotionSnapshot()
+            })
+        });
+        if (!response.ok)
+            throw new Error("Tierbewegung konnte nicht synchronisiert werden");
+        const shared = await response.json();
+        animalMotionRole = shared.motion_write_accepted === true ? "leader" : "follower";
+        if (animalMotionRole === "leader")
+            animalMotionTargets.clear();
+        applySharedAnimalState(shared);
+    }
+    catch (_error) {
+        // Bei einer kurzen Netzunterbrechung läuft die lokale Bewegung weiter.
+        // Nach der nächsten erfolgreichen Anfrage gleitet sie wieder auf die
+        // gemeinsame Position, ohne die 3D-Szene einzufrieren.
+    }
+    finally {
+        animalMotionSyncBusy = false;
+    }
 }
 
 async function syncAnimalState() {
@@ -3697,6 +3926,10 @@ function createHorse() {
 }
 
 async function rememberDropping(kind, position) {
+    // Nur der kurzlebige Bewegungs-Leader schreibt gemeinsame Zufallsereignisse.
+    // Sonst würde derselbe Haufen bei drei offenen Geräten dreimal entstehen.
+    if (animalMotionRole === "follower")
+        return;
     animalResources.droppings.push({
         kind,
         x: Number(position.x.toFixed(3)),
@@ -4112,12 +4345,64 @@ function createHayRack(position, resourceKey, rotation = 0, stationId = "") {
         resourceKey, group, 1.45);
 }
 
+const DOG_CARE_STATIONS = Object.freeze({
+    // Direkt neben der braunen Haustür auf der Pool-/Hofseite.
+    food: [-4.02, 0, 0.92],
+    water: [-4.02, 0, 2.74],
+    foodTarget: [-5.02, 0, 0.92],
+    waterTarget: [-5.02, 0, 2.74]
+});
+
+function createDogBowl(position, resourceKey, stationId, food = false) {
+    const bowl = new THREE.Group();
+    bowl.position.set(...position);
+    bowl.name = stationId;
+    bowl.userData.animalCareStation = stationId;
+    world.add(bowl);
+    const steel = new THREE.MeshStandardMaterial({
+        color: 0xb7bdc2, metalness: 0.84, roughness: 0.24
+    });
+    const darkSteel = new THREE.MeshStandardMaterial({
+        color: 0x343a3e, metalness: 0.58, roughness: 0.34
+    });
+    addMesh(bowl, new THREE.CylinderGeometry(0.34, 0.27, 0.15, 32), steel,
+        0, 0.085, 0, { castShadow: true });
+    addMesh(bowl, new THREE.CylinderGeometry(0.275, 0.245, 0.035, 32), darkSteel,
+        0, 0.17, 0, { castShadow: false });
+    if (food) {
+        const fill = new THREE.Group();
+        bowl.add(fill);
+        const kibble = new THREE.MeshStandardMaterial({ color: 0x5a321d, roughness: 0.96 });
+        for (let index = 0; index < 26; index += 1) {
+            const angle = index * 2.39996;
+            const radius = 0.03 + (index % 6) * 0.035;
+            addMesh(fill, new THREE.DodecahedronGeometry(0.033 + (index % 3) * 0.004, 0),
+                kibble, Math.cos(angle) * radius, 0.19 + (index % 4) * 0.013,
+                Math.sin(angle) * radius, { castShadow: false });
+        }
+        animalResourceVisuals.push({ kind: "dog-food", resourceKey, fill });
+        registerAnimalResourceLabel(stationId, "🐕", "HUND · FUTTER",
+            resourceKey, bowl, 0.78);
+    }
+    else {
+        createTroughWater(bowl, resourceKey, 0.47, 0.47, 0.188, 0.10);
+        registerAnimalResourceLabel(stationId, "💧", "HUND · WASSER",
+            resourceKey, bowl, 0.78);
+    }
+    return bowl;
+}
+
 function updateAnimalResourceVisuals() {
     animalResourceVisuals.forEach((visual) => {
         const level = THREE.MathUtils.clamp((numberValue(animalResources[visual.resourceKey]) ?? 0) / 100, 0.02, 1);
         if (visual.kind === "hay") {
             visual.fill.scale.y = level;
             visual.fill.position.y = 0.16 + 0.34 * level;
+        }
+        else if (visual.kind === "dog-food") {
+            visual.fill.visible = level > 0.025;
+            visual.fill.scale.setScalar(0.45 + level * 0.55);
+            visual.fill.position.y = -0.045 * (1 - level);
         }
         else {
             const waterLevel = THREE.MathUtils.clamp((numberValue(animalResources[visual.resourceKey]) ?? 0) / 100, 0, 1);
@@ -4137,7 +4422,8 @@ function updateAnimalResourceVisuals() {
             animalResources.hayCamelPergola) / 3);
         const water = Math.round((animalResources.waterHorse + animalResources.waterCamelPool +
             animalResources.waterCamelPergola) / 3);
-        menuCareStatus.textContent = `Heu ${hay} % · Wasser ${water} %`;
+        const dogStatus = animalResources.dogHungry ? " · Hund hungrig" : "";
+        menuCareStatus.textContent = `Heu ${hay} % · Wasser ${water} %${dogStatus}`;
         Object.entries(animalResourceLabelAnchors).forEach(([id, anchor]) => {
             const element = animalResourceLabelElements[id];
             const value = Math.round(numberValue(animalResources[anchor.resourceKey]) ?? 0);
@@ -4213,6 +4499,10 @@ function animalCareStationBlocksAnimal(x, z, clearance = 0, includeHorseStations
         .some((station) => pointInRotatedStation(x, z, station.model, station.rotation, clearance));
     if (camelStation)
         return true;
+    const dogStation = [DOG_CARE_STATIONS.food, DOG_CARE_STATIONS.water]
+        .some((station) => Math.hypot(x - station[0], z - station[2]) < 0.38 + clearance);
+    if (dogStation)
+        return true;
     if (!includeHorseStations)
         return false;
     // Pferderaufe im Garten und Tränke im Stall. Beide bleiben physische
@@ -4231,7 +4521,401 @@ function createAnimalCareStations() {
     createHayRack([-10.66, 0, -2.26], "hayHorse", Math.PI / 2, "horse-hay");
     CAMEL_CARE_STATIONS.hay.forEach((station) =>
         createHayRack(station.model, station.resourceKey, station.rotation, station.id));
+    createDogBowl(DOG_CARE_STATIONS.food, "dogFood", "dog-food", true);
+    createDogBowl(DOG_CARE_STATIONS.water, "dogWater", "dog-water");
     updateAnimalResourceVisuals();
+}
+
+const DOG_PATROL_POINTS = [
+    [-4.80, -3.25], [-5.10, 4.85], [-6.05, 6.25], [-6.55, 10.25],
+    [-9.20, 8.25], [-10.25, 2.10], [-9.55, -6.80], [-5.15, -8.10]
+];
+let dogBarkPlayCount = 0;
+
+function playDogBark(hungry = false) {
+    if (!animalSoundsEnabled || !birdAudioContext || birdAudioContext.state !== "running" || !dog)
+        return false;
+    const seconds = performance.now() / 1000;
+    const cooldown = hungry ? 4.6 : 20;
+    if (seconds - dog.lastAudibleBarkAt < cooldown)
+        return false;
+    dog.lastAudibleBarkAt = seconds;
+    const now = birdAudioContext.currentTime;
+    const master = birdAudioContext.createGain();
+    const filter = birdAudioContext.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = hungry ? 820 : 720;
+    filter.Q.value = 0.9;
+    master.gain.setValueAtTime(0.0001, now);
+    master.connect(filter).connect(birdAudioContext.destination);
+    const barks = hungry ? 3 : 2;
+    for (let index = 0; index < barks; index += 1) {
+        const start = now + index * 0.31;
+        const oscillator = birdAudioContext.createOscillator();
+        const gain = birdAudioContext.createGain();
+        oscillator.type = index % 2 ? "square" : "sawtooth";
+        oscillator.frequency.setValueAtTime(155 + index * 8, start);
+        oscillator.frequency.exponentialRampToValueAtTime(72, start + 0.18);
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(hungry ? 0.075 : 0.062, start + 0.018);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.22);
+        oscillator.connect(gain).connect(master);
+        oscillator.start(start);
+        oscillator.stop(start + 0.24);
+    }
+    dogBarkPlayCount += 1;
+    return true;
+}
+
+function createRottweilerLeg(parent, x, z, phase, black, tan) {
+    const rig = new THREE.Group();
+    rig.position.set(x, 0.49, z);
+    parent.add(rig);
+    const upper = addMesh(rig, new THREE.CylinderGeometry(0.085, 0.075, 0.28, 14),
+        black, 0, -0.14, 0);
+    const lowerRig = new THREE.Group();
+    lowerRig.position.set(0, -0.27, 0);
+    rig.add(lowerRig);
+    addMesh(lowerRig, new THREE.CylinderGeometry(0.064, 0.052, 0.24, 14),
+        tan, 0, -0.11, 0);
+    const paw = addMesh(lowerRig, new THREE.SphereGeometry(0.075, 14, 9), tan,
+        0, -0.23, 0.035);
+    paw.scale.set(0.90, 0.55, 1.34);
+    return { rig, lowerRig, upper, paw, phase };
+}
+
+function createRottweiler() {
+    const group = new THREE.Group();
+    group.name = "Animierter Rottweiler";
+    group.position.set(-5.25, 0, -3.25);
+    world.add(group);
+
+    const visualRoot = new THREE.Group();
+    group.add(visualRoot);
+    const bodyRig = new THREE.Group();
+    visualRoot.add(bodyRig);
+    const black = new THREE.MeshStandardMaterial({
+        color: 0x11100f, roughness: 0.72, metalness: 0.02
+    });
+    const blackGloss = new THREE.MeshStandardMaterial({
+        color: 0x090909, roughness: 0.48, metalness: 0.03
+    });
+    const tan = new THREE.MeshStandardMaterial({ color: 0x9a4f25, roughness: 0.80 });
+    const tanLight = new THREE.MeshStandardMaterial({ color: 0xb66834, roughness: 0.78 });
+    const nose = new THREE.MeshStandardMaterial({ color: 0x020202, roughness: 0.26 });
+    const eye = new THREE.MeshPhysicalMaterial({
+        color: 0x241006, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.04
+    });
+
+    const body = addMesh(bodyRig, new THREE.SphereGeometry(0.50, 28, 18), black,
+        0, 0.61, -0.05);
+    body.scale.set(0.72, 0.68, 1.24);
+    const chest = addMesh(bodyRig, new THREE.SphereGeometry(0.31, 24, 16), blackGloss,
+        0, 0.64, 0.35);
+    chest.scale.set(1.04, 1.08, 0.85);
+    const chestMark = addMesh(bodyRig, new THREE.SphereGeometry(0.18, 18, 12), tan,
+        0, 0.55, 0.53, { castShadow: false });
+    chestMark.scale.set(0.76, 0.92, 0.32);
+
+    const headRig = new THREE.Group();
+    headRig.position.set(0, 0.78, 0.48);
+    bodyRig.add(headRig);
+    const neck = addMesh(headRig, new THREE.SphereGeometry(0.29, 22, 15), black,
+        0, -0.08, 0.02);
+    neck.scale.set(1.00, 1.18, 0.86);
+    const skull = addMesh(headRig, new THREE.SphereGeometry(0.28, 24, 16), blackGloss,
+        0, 0.08, 0.25);
+    skull.scale.set(1.00, 0.92, 1.04);
+    const muzzle = addMesh(headRig, new THREE.SphereGeometry(0.20, 22, 14), tanLight,
+        0, -0.02, 0.48);
+    muzzle.scale.set(1.05, 0.70, 1.12);
+    const noseMesh = addMesh(headRig, new THREE.SphereGeometry(0.095, 18, 12), nose,
+        0, 0.01, 0.67);
+    noseMesh.scale.set(1.18, 0.78, 0.72);
+    [-1, 1].forEach((side) => {
+        const ear = addMesh(headRig, new THREE.ConeGeometry(0.105, 0.25, 4), black,
+            side * 0.19, 0.27, 0.18, { rotation: [0.16, 0, side * -0.22] });
+        ear.scale.z = 0.72;
+        addMesh(headRig, new THREE.SphereGeometry(0.033, 12, 8), eye,
+            side * 0.105, 0.13, 0.49, { castShadow: false });
+        const brow = addMesh(headRig, new THREE.SphereGeometry(0.047, 12, 8), tan,
+            side * 0.105, 0.20, 0.46, { castShadow: false });
+        brow.scale.set(1.35, 0.50, 0.42);
+    });
+    const jawRig = new THREE.Group();
+    jawRig.position.set(0, -0.10, 0.45);
+    headRig.add(jawRig);
+    const jaw = addMesh(jawRig, new THREE.SphereGeometry(0.16, 18, 10), tan,
+        0, 0, 0.05);
+    jaw.scale.set(0.96, 0.42, 1.06);
+    const tongue = addBox(jawRig, [0.08, 0.018, 0.15],
+        new THREE.MeshStandardMaterial({ color: 0xb23b45, roughness: 0.72 }),
+        [0, -0.04, 0.13], { radius: 0.015, castShadow: false });
+    tongue.visible = false;
+
+    const legs = [
+        createRottweilerLeg(bodyRig, -0.23, 0.34, 0, black, tan),
+        createRottweilerLeg(bodyRig, 0.23, 0.34, Math.PI, black, tan),
+        createRottweilerLeg(bodyRig, -0.23, -0.38, Math.PI, black, tan),
+        createRottweilerLeg(bodyRig, 0.23, -0.38, 0, black, tan)
+    ];
+    const tailRig = new THREE.Group();
+    tailRig.position.set(0, 0.72, -0.55);
+    bodyRig.add(tailRig);
+    const tail = addMesh(tailRig, new THREE.ConeGeometry(0.08, 0.52, 14), black,
+        0, 0, -0.22, { rotation: [Math.PI / 2, 0, 0] });
+    tail.scale.z = 0.82;
+    const collar = addMesh(headRig, new THREE.TorusGeometry(0.265, 0.026, 8, 28),
+        new THREE.MeshStandardMaterial({ color: 0x8d1010, roughness: 0.48 }),
+        0, -0.11, 0.03, { rotation: [Math.PI / 2, 0, 0] });
+    collar.scale.y = 0.88;
+
+    const random = seededNoise(20260902);
+    const dogState = {
+        group, visualRoot, bodyRig, body, chest, headRig, jawRig, tongue,
+        legs, tailRig, random,
+        target: new THREE.Vector3(-4.80, 0, -3.25),
+        path: [],
+        mode: "walking",
+        modeUntil: 0,
+        elapsedSeconds: 0,
+        navigation: "patrol",
+        travelled: 0,
+        pendingMeal: false,
+        nextDrinkAt: animalDemoMode ? 14 : 65 + random() * 80,
+        nextSleepAt: animalDemoMode ? 24 : 160 + random() * 220,
+        nextCasualBarkAt: animalDemoMode ? 7 : 55 + random() * 90,
+        nextChaseAt: animalDemoMode ? 12 : 32 + random() * 55,
+        lastHungryBarkAt: -Infinity,
+        lastAudibleBarkAt: -Infinity,
+        chaseBird: null,
+        patrolIndex: 0,
+        assetLoaded: true
+    };
+    setDogRoute(dogState, dogState.target, "patrol", false);
+    return dogState;
+}
+
+function dogCanStandAt(x, z, allowCareTarget = false) {
+    if (!horseCanStandAt(x, z))
+        return false;
+    if (!allowCareTarget && [DOG_CARE_STATIONS.food, DOG_CARE_STATIONS.water]
+        .some((station) => Math.hypot(x - station[0], z - station[2]) < 0.58))
+        return false;
+    return true;
+}
+
+function dogPathIsClear(start, destination) {
+    const distance = start.distanceTo(destination);
+    const steps = Math.max(1, Math.ceil(distance / 0.22));
+    for (let index = 1; index <= steps; index += 1) {
+        const point = start.clone().lerp(destination, index / steps);
+        if (!dogCanStandAt(point.x, point.z, true))
+            return false;
+    }
+    return true;
+}
+
+function setDogRoute(dogState, destination, navigation, running = false) {
+    let route = null;
+    if (dogPathIsClear(dogState.group.position, destination))
+        route = [destination.clone()];
+    else
+        route = findHorsePath(dogState.group.position, destination);
+    if (!route?.length)
+        return false;
+    dogState.path = route;
+    dogState.target = dogState.path.shift();
+    dogState.navigation = navigation;
+    dogState.mode = running ? "running" : "walking";
+    return true;
+}
+
+function chooseDogPatrolTarget(dogState) {
+    for (let attempt = 0; attempt < DOG_PATROL_POINTS.length; attempt += 1) {
+        dogState.patrolIndex = (dogState.patrolIndex + 1 +
+            Math.floor(dogState.random() * 3)) % DOG_PATROL_POINTS.length;
+        const point = DOG_PATROL_POINTS[dogState.patrolIndex];
+        if (dogCanStandAt(point[0], point[1], true))
+            return new THREE.Vector3(point[0], 0, point[1]);
+    }
+    return dogState.group.position.clone();
+}
+
+function groundedBirdForDog(dogState) {
+    const candidates = gardenBirds.filter((bird) => bird.group.visible &&
+        !bird.state.startsWith("flying") &&
+        !["taking-off", "landing", "away"].includes(bird.state) &&
+        dogCanStandAt(bird.group.position.x, bird.group.position.z, true) &&
+        dogState.group.position.distanceTo(bird.group.position) < 9.5);
+    candidates.sort((left, right) =>
+        dogState.group.position.distanceTo(left.group.position) -
+        dogState.group.position.distanceTo(right.group.position));
+    return candidates[0] || null;
+}
+
+function startNextDogActivity(dogState, seconds) {
+    dogState.chaseBird = null;
+    if (animalResources.dogHungry || dogState.pendingMeal) {
+        setDogRoute(dogState, new THREE.Vector3(...DOG_CARE_STATIONS.foodTarget),
+            "dog-food", false);
+        return;
+    }
+    if (seconds >= dogState.nextDrinkAt) {
+        dogState.nextDrinkAt = seconds + 95 + dogState.random() * 145;
+        setDogRoute(dogState, new THREE.Vector3(...DOG_CARE_STATIONS.waterTarget),
+            "dog-water", false);
+        return;
+    }
+    if (seconds >= dogState.nextChaseAt) {
+        dogState.nextChaseAt = seconds + 35 + dogState.random() * 75;
+        const bird = groundedBirdForDog(dogState);
+        if (bird && setDogRoute(dogState, bird.group.position.clone(), "chase", true)) {
+            dogState.chaseBird = bird;
+            return;
+        }
+    }
+    const hour = new Date().getHours();
+    if (seconds >= dogState.nextSleepAt && dogState.random() < (hour >= 22 || hour < 6 ? 0.76 : 0.34)) {
+        dogState.mode = "sleeping";
+        dogState.modeUntil = seconds + (hour >= 22 || hour < 6 ? 48 : 18) + dogState.random() * 35;
+        dogState.nextSleepAt = seconds + 210 + dogState.random() * 300;
+        dogState.navigation = null;
+        return;
+    }
+    setDogRoute(dogState, chooseDogPatrolTarget(dogState), "patrol",
+        dogState.random() < 0.16);
+}
+
+function animateRottweilerPose(dogState, seconds, delta, moving, running) {
+    const sleeping = dogState.mode === "sleeping";
+    const loweringHead = ["eating", "drinking", "waiting-food"].includes(dogState.mode);
+    const barking = dogState.mode === "barking" ||
+        (dogState.mode === "waiting-food" && seconds - dogState.lastHungryBarkAt < 1.15);
+    const bodyY = sleeping ? -0.27 : moving ? Math.abs(Math.sin(dogState.travelled * 8.2)) * 0.025 : 0;
+    dogState.visualRoot.position.y = THREE.MathUtils.damp(
+        dogState.visualRoot.position.y, bodyY, 7, delta);
+    dogState.bodyRig.rotation.z = THREE.MathUtils.damp(
+        dogState.bodyRig.rotation.z, sleeping ? 0.20 : 0, 7, delta);
+    dogState.headRig.rotation.x = THREE.MathUtils.damp(dogState.headRig.rotation.x,
+        loweringHead ? 0.98 : barking ? -0.22 : sleeping ? 0.16 : 0, 8, delta);
+    dogState.headRig.rotation.z = THREE.MathUtils.damp(dogState.headRig.rotation.z,
+        sleeping ? -0.28 : 0, 7, delta);
+    dogState.jawRig.rotation.x = THREE.MathUtils.damp(dogState.jawRig.rotation.x,
+        barking ? 0.34 + Math.max(0, Math.sin(seconds * 22)) * 0.18 :
+            loweringHead ? 0.10 + Math.max(0, Math.sin(seconds * 5.5)) * 0.08 : 0,
+        13, delta);
+    dogState.tongue.visible = dogState.mode === "drinking";
+    dogState.tailRig.rotation.z = sleeping ? 0.12 :
+        Math.sin(seconds * (running ? 10 : 7.2)) * (barking ? 0.56 : 0.34);
+    dogState.legs.forEach((leg, index) => {
+        const stride = moving ? Math.sin(dogState.travelled * (running ? 11.5 : 8.4) + leg.phase) *
+            (running ? 0.70 : 0.46) : 0;
+        const folded = sleeping ? (index < 2 ? 1.14 : -1.02) : 0;
+        leg.rig.rotation.x = THREE.MathUtils.damp(leg.rig.rotation.x,
+            sleeping ? folded : stride, 12, delta);
+        leg.lowerRig.rotation.x = THREE.MathUtils.damp(leg.lowerRig.rotation.x,
+            sleeping ? -0.82 : moving ? Math.max(0, -stride) * 0.55 : 0, 12, delta);
+    });
+}
+
+function animateDog(seconds, delta) {
+    if (!dog)
+        return;
+    dog.elapsedSeconds = seconds;
+    if (reduceMotion) {
+        animateRottweilerPose(dog, seconds, delta, false, false);
+        return;
+    }
+    if (animalResources.dogHungry && !["walking", "running", "waiting-food", "eating"]
+        .includes(dog.mode))
+        setDogRoute(dog, new THREE.Vector3(...DOG_CARE_STATIONS.foodTarget), "dog-food");
+    if (dog.mode === "waiting-food") {
+        if (!animalResources.dogHungry) {
+            dog.pendingMeal = false;
+            dog.mode = "eating";
+            dog.modeUntil = seconds + 8.5;
+        }
+        else if (seconds - dog.lastHungryBarkAt >= 5.2) {
+            dog.lastHungryBarkAt = seconds;
+            playDogBark(true);
+        }
+    }
+    if (dog.mode === "sleeping" || dog.mode === "eating" || dog.mode === "drinking" ||
+        dog.mode === "barking" || dog.mode === "idle" || dog.mode === "waiting-food") {
+        animateRottweilerPose(dog, seconds, delta, false, false);
+        if (!["waiting-food"].includes(dog.mode) && seconds >= dog.modeUntil)
+            startNextDogActivity(dog, seconds);
+        return;
+    }
+
+    const running = dog.mode === "running";
+    if (dog.navigation === "chase" && dog.chaseBird) {
+        const bird = dog.chaseBird;
+        if (!bird.group.visible || bird.state.startsWith("flying") || bird.state === "away") {
+            dog.mode = "barking";
+            dog.modeUntil = seconds + 1.4;
+            playDogBark(false);
+            animateRottweilerPose(dog, seconds, delta, false, false);
+            return;
+        }
+        const birdDistance = dog.group.position.distanceTo(bird.group.position);
+        if (birdDistance < 1.55) {
+            startBirdDeparture(bird, seconds);
+            dog.mode = "barking";
+            dog.modeUntil = seconds + 1.6;
+            playDogBark(false);
+            animateRottweilerPose(dog, seconds, delta, false, false);
+            return;
+        }
+    }
+    const dx = dog.target.x - dog.group.position.x;
+    const dz = dog.target.z - dog.group.position.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance < 0.18) {
+        if (dog.path.length) {
+            dog.target = dog.path.shift();
+        }
+        else if (dog.navigation === "dog-food") {
+            dog.group.rotation.y = Math.PI / 2;
+            dog.mode = animalResources.dogHungry ? "waiting-food" : "eating";
+            dog.modeUntil = seconds + 8.5;
+            dog.pendingMeal = false;
+        }
+        else if (dog.navigation === "dog-water") {
+            dog.group.rotation.y = Math.PI / 2;
+            dog.mode = "drinking";
+            dog.modeUntil = seconds + 7.5;
+        }
+        else {
+            dog.mode = "idle";
+            dog.modeUntil = seconds + 2.5 + dog.random() * 4.5;
+        }
+        animateRottweilerPose(dog, seconds, delta, false, false);
+        return;
+    }
+    const targetYaw = Math.atan2(dx, dz);
+    const yawDelta = Math.atan2(Math.sin(targetYaw - dog.group.rotation.y),
+        Math.cos(targetYaw - dog.group.rotation.y));
+    dog.group.rotation.y += yawDelta * Math.min(1, delta * (running ? 5.0 : 3.5));
+    const speed = running ? 2.05 : 0.82;
+    const nextX = dog.group.position.x + Math.sin(dog.group.rotation.y) * speed * delta;
+    const nextZ = dog.group.position.z + Math.cos(dog.group.rotation.y) * speed * delta;
+    if (dogCanStandAt(nextX, nextZ, true)) {
+        dog.group.position.x = nextX;
+        dog.group.position.z = nextZ;
+        dog.travelled += speed * delta;
+    }
+    else {
+        startNextDogActivity(dog, seconds);
+    }
+    if (seconds >= dog.nextCasualBarkAt && dog.navigation === "patrol") {
+        dog.nextCasualBarkAt = seconds + 70 + dog.random() * 120;
+        dog.mode = "barking";
+        dog.modeUntil = seconds + 1.6;
+        playDogBark(false);
+    }
+    animateRottweilerPose(dog, seconds, delta, true, running);
 }
 
 function distanceToPastureBoundary(x, z) {
@@ -4764,70 +5448,70 @@ function createCamelPasture() {
 // So bleibt die Artenvielfalt auch auf dem iPhone performant, ohne gleitende
 // Bodenmodelle oder fliegende Standposen.
 const BIRD_VISITOR_CONFIGS = [
-    { name: "Haussperling", model: "pigeon", height: 0.15, tint: 0x8b7259, tintStrength: 0.60,
+    { name: "Haussperling", model: "pigeon", length: 0.15, tint: 0x8b7259, tintStrength: 0.60,
         morph: [0.84, 0.78], accent: 0x5d4536, feedBias: 0.94, poolBias: 0.12, pastureBias: 0.34,
         voice: "chirp", song: [2650, 2920, 2520, 3150] },
-    { name: "Feldsperling", model: "pigeon", height: 0.14, tint: 0x9a7652, tintStrength: 0.62,
+    { name: "Feldsperling", model: "pigeon", length: 0.14, tint: 0x9a7652, tintStrength: 0.62,
         morph: [0.82, 0.77], accent: 0x5a3328, feedBias: 0.94, poolBias: 0.10, pastureBias: 0.62,
         voice: "chirp", song: [2780, 3180, 2860, 3350] },
-    { name: "Rotkehlchen", model: "pigeon", height: 0.14, tint: 0x75685c, tintStrength: 0.55,
+    { name: "Rotkehlchen", model: "pigeon", length: 0.14, tint: 0x75685c, tintStrength: 0.55,
         morph: [0.80, 0.75], accent: 0xd96835, feedBias: 0.90, poolBias: 0.14, pastureBias: 0.30,
         voice: "warble", song: [2350, 3100, 3850, 2980, 4200] },
-    { name: "Kohlmeise", model: "pigeon", height: 0.14, tint: 0x85863f, tintStrength: 0.64,
+    { name: "Kohlmeise", model: "pigeon", length: 0.14, tint: 0x85863f, tintStrength: 0.64,
         morph: [0.78, 0.72], accent: 0xe0c94f, feedBias: 0.92, poolBias: 0.12, pastureBias: 0.22,
         voice: "double", song: [3050, 2470, 3050, 2470] },
-    { name: "Blaumeise", model: "pigeon", height: 0.12, tint: 0x6f8ba0, tintStrength: 0.64,
+    { name: "Blaumeise", model: "pigeon", length: 0.12, tint: 0x6f8ba0, tintStrength: 0.64,
         morph: [0.76, 0.70], accent: 0xe6d16b, feedBias: 0.90, poolBias: 0.10, pastureBias: 0.18,
         voice: "trill", song: [3600, 4100, 4550, 4300, 4700] },
-    { name: "Buchfink", model: "pigeon", height: 0.15, tint: 0xa36d59, tintStrength: 0.60,
+    { name: "Buchfink", model: "pigeon", length: 0.15, tint: 0xa36d59, tintStrength: 0.60,
         morph: [0.82, 0.80], accent: 0x6d8796, feedBias: 0.92, poolBias: 0.12, pastureBias: 0.44,
         voice: "cascade", song: [3100, 2950, 2700, 2450, 2200] },
-    { name: "Grünfink", model: "pigeon", height: 0.15, tint: 0x7d8b42, tintStrength: 0.68,
+    { name: "Grünfink", model: "pigeon", length: 0.15, tint: 0x7d8b42, tintStrength: 0.68,
         morph: [0.86, 0.82], accent: 0xc7b943, feedBias: 0.94, poolBias: 0.11, pastureBias: 0.48,
         voice: "trill", song: [2750, 2920, 3100, 2800] },
-    { name: "Stieglitz", model: "pigeon", height: 0.13, tint: 0xc6ad5a, tintStrength: 0.62,
+    { name: "Stieglitz", model: "pigeon", length: 0.13, tint: 0xc6ad5a, tintStrength: 0.62,
         morph: [0.78, 0.75], accent: 0xb8322d, feedBias: 0.96, poolBias: 0.10, pastureBias: 0.58,
         voice: "trill", song: [3500, 3900, 3700, 4300, 4100] },
-    { name: "Star", model: "pigeon", height: 0.22, tint: 0x273d3e, tintStrength: 0.78,
+    { name: "Star", model: "pigeon", length: 0.22, tint: 0x273d3e, tintStrength: 0.78,
         morph: [0.78, 0.92], accent: 0x577966, feedBias: 0.90, poolBias: 0.14, pastureBias: 0.56,
         voice: "mimic", song: [1850, 2600, 3350, 2250, 3700], seasons: ["spring", "summer", "autumn"] },
-    { name: "Amsel", model: "pigeon", height: 0.25, tint: 0x202326, tintStrength: 0.82,
+    { name: "Amsel", model: "pigeon", length: 0.25, tint: 0x202326, tintStrength: 0.82,
         morph: [0.82, 1.04], accent: 0xe0a128, feedBias: 0.88, poolBias: 0.14, pastureBias: 0.28,
         voice: "flute", song: [1650, 1950, 2300, 1820, 2500] },
-    { name: "Singdrossel", model: "pigeon", height: 0.23, tint: 0x806a54, tintStrength: 0.63,
+    { name: "Singdrossel", model: "pigeon", length: 0.23, tint: 0x806a54, tintStrength: 0.63,
         morph: [0.82, 1.00], accent: 0xc6aa80, feedBias: 0.90, poolBias: 0.13, pastureBias: 0.36,
         voice: "repeat", song: [1950, 2400, 1950, 2700, 2400] },
-    { name: "Bachstelze", model: "pigeon", height: 0.19, tint: 0x6d7478, tintStrength: 0.68,
+    { name: "Bachstelze", model: "pigeon", length: 0.19, tint: 0x6d7478, tintStrength: 0.68,
         morph: [0.70, 1.18], accent: 0xe4e5e1, feedBias: 0.86, poolBias: 0.28, pastureBias: 0.62,
         voice: "chirp", song: [2800, 3300, 2920] },
-    { name: "Hausrotschwanz", model: "pigeon", height: 0.15, tint: 0x5b5654, tintStrength: 0.72,
+    { name: "Hausrotschwanz", model: "pigeon", length: 0.15, tint: 0x5b5654, tintStrength: 0.72,
         morph: [0.76, 0.94], accent: 0xb85b35, feedBias: 0.84, poolBias: 0.11, pastureBias: 0.26,
         voice: "scratch", song: [2300, 2850, 2050, 3100], seasons: ["spring", "summer", "autumn"] },
-    { name: "Zaunkönig", model: "pigeon", height: 0.10, tint: 0x765039, tintStrength: 0.76,
+    { name: "Zaunkönig", model: "pigeon", length: 0.10, tint: 0x765039, tintStrength: 0.76,
         morph: [0.92, 0.62], accent: 0x9f724c, feedBias: 0.94, poolBias: 0.09, pastureBias: 0.18,
         voice: "trill", song: [4100, 4550, 4300, 4800, 4450] },
-    { name: "Elster", model: "pigeon", height: 0.45, tint: 0x222f34, tintStrength: 0.80,
+    { name: "Elster", model: "pigeon", length: 0.45, tint: 0x222f34, tintStrength: 0.80,
         morph: [0.74, 1.42], accent: 0xe8e9e2, feedBias: 0.82, poolBias: 0.12, pastureBias: 0.52,
         voice: "chatter", song: [1250, 1480, 1120, 1580] },
-    { name: "Rabenkrähe", model: "pigeon", height: 0.48, tint: 0x171b20, tintStrength: 0.88,
+    { name: "Rabenkrähe", model: "pigeon", length: 0.48, tint: 0x171b20, tintStrength: 0.88,
         morph: [0.92, 1.24], accent: 0x2c333b, feedBias: 0.84, poolBias: 0.12, pastureBias: 0.58,
         voice: "caw", song: [620, 560, 610] },
-    { name: "Eichelhäher", model: "pigeon", height: 0.34, tint: 0x9c765e, tintStrength: 0.62,
+    { name: "Eichelhäher", model: "pigeon", length: 0.34, tint: 0x9c765e, tintStrength: 0.62,
         morph: [0.86, 1.08], accent: 0x4d87b4, feedBias: 0.86, poolBias: 0.10, pastureBias: 0.50,
         voice: "rasp", song: [980, 1260, 920, 1180] },
-    { name: "Buntspecht", model: "pigeon", height: 0.23, tint: 0x33363a, tintStrength: 0.78,
+    { name: "Buntspecht", model: "pigeon", length: 0.23, tint: 0x33363a, tintStrength: 0.78,
         morph: [0.72, 1.06], accent: 0xb92d2b, feedBias: 0.74, poolBias: 0.08, pastureBias: 0.18,
         voice: "drum", song: [2050, 2250, 2450, 2700, 2920] },
-    { name: "Ringeltaube", model: "pigeon", height: 0.42, tint: 0x707982, tintStrength: 0.52,
+    { name: "Ringeltaube", model: "pigeon", length: 0.42, tint: 0x707982, tintStrength: 0.52,
         morph: [1.04, 1.02], accent: 0xdadccf, feedBias: 0.82, poolBias: 0.14, pastureBias: 0.46,
         voice: "coo", song: [510, 440, 480, 420] },
-    { name: "Türkentaube", model: "pigeon", height: 0.32, tint: 0xb4aa99, tintStrength: 0.56,
+    { name: "Türkentaube", model: "pigeon", length: 0.32, tint: 0xb4aa99, tintStrength: 0.56,
         morph: [0.90, 0.96], accent: 0x524f4c, feedBias: 0.84, poolBias: 0.18, pastureBias: 0.28,
         voice: "coo", song: [580, 500, 550] },
-    { name: "Teichhuhn", model: "swamphen", height: 0.35, tint: 0x414b4b, tintStrength: 0.38,
+    { name: "Teichhuhn", model: "swamphen", length: 0.35, tint: 0x414b4b, tintStrength: 0.38,
         morph: [0.90, 0.92], accent: 0xb43b2e, feedBias: 0.74, poolBias: 0.82, pastureBias: 0.66,
         voice: "rail", song: [1050, 880, 1180, 960] },
-    { name: "Purpurhuhn", model: "swamphen", height: 0.49, tint: 0x435f82, tintStrength: 0.34,
+    { name: "Purpurhuhn", model: "swamphen", length: 0.49, tint: 0x435f82, tintStrength: 0.34,
         morph: [1.02, 1.02], accent: 0xc34731, feedBias: 0.68, poolBias: 0.86, pastureBias: 0.76,
         voice: "rail", song: [820, 960, 740, 1080] }
 ];
@@ -4858,10 +5542,11 @@ function tuneBirdModel(model, config) {
     });
 }
 
-function createBirdPlumageDetails(group, config) {
+function createBirdPlumageDetails(group, config, renderedSize) {
     if (config.accent == null)
         return;
-    const height = config.height;
+    const length = config.length;
+    const height = Math.max(length * 0.62, renderedSize?.y || 0);
     const accent = new THREE.MeshStandardMaterial({
         color: config.accent,
         roughness: 0.86,
@@ -4870,18 +5555,18 @@ function createBirdPlumageDetails(group, config) {
         depthWrite: true
     });
     const chest = addMesh(group, new THREE.SphereGeometry(1, 12, 8), accent,
-        0, height * 0.55, height * 0.20, { castShadow: false });
-    chest.scale.set(height * 0.17, height * 0.19, height * 0.065);
+        0, height * 0.55, length * 0.20, { castShadow: false });
+    chest.scale.set(length * 0.17, height * 0.19, length * 0.065);
     if (config.model !== "pigeon")
         return;
     const cap = addMesh(group, new THREE.SphereGeometry(1, 10, 7), accent,
-        0, height * 0.77, height * 0.18, { castShadow: false });
-    cap.scale.set(height * 0.15, height * 0.085, height * 0.10);
+        0, height * 0.77, length * 0.18, { castShadow: false });
+    cap.scale.set(length * 0.15, height * 0.085, length * 0.10);
     [-1, 1].forEach((side) => {
         const wingPatch = addMesh(group, new THREE.SphereGeometry(1, 10, 7), accent,
-            side * height * 0.19, height * 0.53, -height * 0.015,
+            side * length * 0.19, height * 0.53, -length * 0.015,
             { castShadow: false });
-        wingPatch.scale.set(height * 0.045, height * 0.105, height * 0.18);
+        wingPatch.scale.set(length * 0.045, height * 0.105, length * 0.18);
         wingPatch.rotation.z = side * 0.16;
     });
 }
@@ -4959,21 +5644,21 @@ function playBirdSong(bird) {
     const notes = bird.config.song;
     const voice = bird.config.voice || "chirp";
     const profiles = {
-        coo: { type: "sine", spacing: 0.24, note: 0.28, volume: 0.014, glide: 0.92 },
-        caw: { type: "sawtooth", spacing: 0.28, note: 0.24, volume: 0.012, glide: 0.74 },
-        rasp: { type: "square", spacing: 0.19, note: 0.16, volume: 0.008, glide: 0.82 },
-        rail: { type: "square", spacing: 0.15, note: 0.13, volume: 0.008, glide: 1.16 },
-        drum: { type: "triangle", spacing: 0.055, note: 0.05, volume: 0.009, glide: 0.98 },
-        trill: { type: "sine", spacing: 0.075, note: 0.07, volume: 0.010, glide: 1.08 },
-        chatter: { type: "square", spacing: 0.09, note: 0.075, volume: 0.008, glide: 0.88 },
-        flute: { type: "sine", spacing: 0.22, note: 0.19, volume: 0.012, glide: 1.12 },
-        warble: { type: "sine", spacing: 0.13, note: 0.115, volume: 0.010, glide: 1.18 },
-        cascade: { type: "triangle", spacing: 0.10, note: 0.09, volume: 0.010, glide: 0.91 },
-        repeat: { type: "sine", spacing: 0.16, note: 0.14, volume: 0.010, glide: 1.06 },
-        mimic: { type: "triangle", spacing: 0.12, note: 0.10, volume: 0.009, glide: 1.20 },
-        scratch: { type: "sawtooth", spacing: 0.14, note: 0.11, volume: 0.007, glide: 0.80 },
-        double: { type: "sine", spacing: 0.18, note: 0.13, volume: 0.011, glide: 1.04 },
-        chirp: { type: "sine", spacing: 0.13, note: 0.11, volume: 0.010, glide: 1.12 }
+        coo: { type: "sine", spacing: 0.24, note: 0.28, volume: 0.034, glide: 0.92 },
+        caw: { type: "sawtooth", spacing: 0.28, note: 0.24, volume: 0.030, glide: 0.74 },
+        rasp: { type: "square", spacing: 0.19, note: 0.16, volume: 0.021, glide: 0.82 },
+        rail: { type: "square", spacing: 0.15, note: 0.13, volume: 0.021, glide: 1.16 },
+        drum: { type: "triangle", spacing: 0.055, note: 0.05, volume: 0.024, glide: 0.98 },
+        trill: { type: "sine", spacing: 0.075, note: 0.07, volume: 0.026, glide: 1.08 },
+        chatter: { type: "square", spacing: 0.09, note: 0.075, volume: 0.021, glide: 0.88 },
+        flute: { type: "sine", spacing: 0.22, note: 0.19, volume: 0.030, glide: 1.12 },
+        warble: { type: "sine", spacing: 0.13, note: 0.115, volume: 0.027, glide: 1.18 },
+        cascade: { type: "triangle", spacing: 0.10, note: 0.09, volume: 0.026, glide: 0.91 },
+        repeat: { type: "sine", spacing: 0.16, note: 0.14, volume: 0.026, glide: 1.06 },
+        mimic: { type: "triangle", spacing: 0.12, note: 0.10, volume: 0.024, glide: 1.20 },
+        scratch: { type: "sawtooth", spacing: 0.14, note: 0.11, volume: 0.020, glide: 0.80 },
+        double: { type: "sine", spacing: 0.18, note: 0.13, volume: 0.028, glide: 1.04 },
+        chirp: { type: "sine", spacing: 0.13, note: 0.11, volume: 0.027, glide: 1.12 }
     };
     const profile = profiles[voice] || profiles.chirp;
     const repeats = ["drum", "trill", "chatter"].includes(voice) ? 2 : 1;
@@ -5004,6 +5689,7 @@ function playBirdSong(bird) {
         oscillator.start(start);
         oscillator.stop(start + profile.note + 0.01);
     });
+    birdSongPlayCount += 1;
     return totalDuration;
 }
 
@@ -5066,18 +5752,28 @@ function createGardenBird(config, index, gltf) {
     world.add(group);
     const model = cloneSkeleton(gltf.scene);
     tuneBirdModel(model, config);
+    // Beide eingesetzten GLB-Rigs blicken im Ursprungsmodell entlang -Z. Die
+    // Bewegungslogik richtet +Z zum Ziel aus; ohne diese Korrektur flogen vor
+    // allem die dunklen Arten sichtbar mit dem Schwanz voraus.
+    model.rotation.y = Math.PI;
     model.updateMatrixWorld(true);
     let bounds = new THREE.Box3().setFromObject(model);
     const size = bounds.getSize(new THREE.Vector3());
-    const baseScale = config.height / Math.max(size.y, 0.001);
     const morph = config.morph || [1, 1];
+    // Die Artenwerte sind reale Koerperlaengen (10 cm Zaunkoenig bis 49 cm
+    // Purpurhuhn). An der laengsten waagerechten Modellachse zu skalieren ist
+    // wesentlich stabiler als an der Hoehe und haelt Auto, Pferd und Kamele im
+    // richtigen Groessenverhaeltnis.
+    const modelLength = Math.max(size.x * morph[0], size.z * morph[1], 0.001);
+    const baseScale = config.length / modelLength;
     model.scale.set(baseScale * morph[0], baseScale, baseScale * morph[1]);
     model.updateMatrixWorld(true);
     bounds = new THREE.Box3().setFromObject(model);
     const center = bounds.getCenter(new THREE.Vector3());
     model.position.set(-center.x, -bounds.min.y, -center.z);
     group.add(model);
-    createBirdPlumageDetails(group, config);
+    const renderedSize = bounds.getSize(new THREE.Vector3());
+    createBirdPlumageDetails(group, config, renderedSize);
     const mixer = new THREE.AnimationMixer(model);
     const actions = createBirdActions(mixer, gltf.animations);
     const headRig = model.getObjectByName("DEF-head_08") ||
@@ -5105,7 +5801,12 @@ function createGardenBird(config, index, gltf) {
         manualBeakBottomOffset: 0,
         singingUntil: 0,
         pendingFlightState: null,
-        pendingTarget: new THREE.Vector3()
+        pendingTarget: new THREE.Vector3(),
+        renderedLength: Math.max(renderedSize.x, renderedSize.z),
+        renderedHeight: renderedSize.y,
+        forwardVector: new THREE.Vector3(),
+        worldQuaternion: new THREE.Quaternion(),
+        flightAlignment: null
     };
     setBirdAnimation(bird, "idle", 0);
     gardenBirds.push(bird);
@@ -5183,6 +5884,16 @@ function startNextBirdActivity(bird, seconds) {
 function animateGardenBirds(seconds, delta) {
     if (reduceMotion)
         return;
+    const birdAudioRunning = Boolean(animalSoundsEnabled && birdAudioContext?.state === "running");
+    if (birdAudioRunning && !birdAudioWasRunning) {
+        // Direkt nach der ersten Beruehrung zeitversetzt erste Stimmen planen.
+        // So bestaetigt die Szene auf iPhone/Safari hoerbar, dass Audio aktiv ist,
+        // ohne dass alle Tiere gleichzeitig einsetzen.
+        gardenBirds.filter((bird) => bird.state !== "away").forEach((bird, index) => {
+            bird.nextSongAt = Math.min(bird.nextSongAt, seconds + 0.7 + index * 0.55);
+        });
+    }
+    birdAudioWasRunning = birdAudioRunning;
     let activeBirds = gardenBirds.filter((bird) => bird.state !== "away").length;
     gardenBirds.forEach((bird) => {
         if (bird.state === "away") {
@@ -5227,7 +5938,7 @@ function animateGardenBirds(seconds, delta) {
             // nach wenigen Sekunden erneut versuchen, statt den Vogel fuer bis
             // zu einer Minute stumm zu schalten.
             bird.nextSongAt = duration > 0 ?
-                seconds + 18 + bird.index * 1.7 + bird.random() * 58 :
+                seconds + 14 + bird.index * 1.1 + bird.random() * 38 :
                 seconds + 4 + bird.random() * 5;
         }
         if (flying) {
@@ -5259,6 +5970,9 @@ function animateGardenBirds(seconds, delta) {
             const yawDelta = Math.atan2(Math.sin(targetYaw - bird.group.rotation.y),
                 Math.cos(targetYaw - bird.group.rotation.y));
             bird.group.rotation.y += yawDelta * Math.min(1, delta * 5.2);
+            bird.model.getWorldQuaternion(bird.worldQuaternion);
+            bird.forwardVector.set(0, 0, -1).applyQuaternion(bird.worldQuaternion).normalize();
+            bird.flightAlignment = bird.forwardVector.dot(direction);
             const speed = (bird.config.model === "pigeon" ? 4.2 : 3.25) * delta;
             bird.group.position.addScaledVector(direction, Math.min(speed, distance));
             bird.group.position.y += Math.sin(seconds * 7 + bird.index) * delta * 0.035;
@@ -5659,6 +6373,10 @@ function updateAnimalEcology(time, delta) {
     if (time - lastAnimalResourceVisualUpdate > 1000) {
         updateAnimalResourceVisuals();
         lastAnimalResourceVisualUpdate = time;
+    }
+    if (time - lastAnimalMotionSync > 1800) {
+        lastAnimalMotionSync = time;
+        syncAnimalMotion();
     }
     if (time - lastEcologySave > 15000) {
         updateAnimalResourceVisuals();
@@ -6144,6 +6862,7 @@ function createGarden() {
     createCamelPasture();
     createGardenBirds();
     horse = createHorse();
+    dog = createRottweiler();
     restoreAnimalDroppings();
 }
 
@@ -6270,7 +6989,8 @@ const gridBoxModel = createGridBox();
 const chargingConnection = createAudiChargeConnection();
 
 if (animalDemoMode) {
-    const focusAnimal = animalFocusMode === "camel" ? camelHerd[0] : animalFocusMode === "horse" ? horse : null;
+    const focusAnimal = animalFocusMode === "camel" ? camelHerd[0] :
+        animalFocusMode === "horse" ? horse : animalFocusMode === "dog" ? dog : null;
     if (focusAnimal) {
         state.yaw = state.targetYaw = 0;
         state.pitch = state.targetPitch = -0.04;
@@ -6284,7 +7004,7 @@ if (animalDemoMode) {
             horse.mode = "stable-rest";
             horse.modeUntil = Number.POSITIVE_INFINITY;
         }
-        else {
+        else if (animalFocusMode === "camel") {
             focusAnimal.mode = "resting";
             focusAnimal.modeUntil = Number.POSITIVE_INFINITY;
         }
@@ -6303,10 +7023,22 @@ if (animalDemoMode) {
             restBlend: Number((camel.restBlend || 0).toFixed(3)),
             calling: camel.elapsedSeconds < camel.callingUntil
         })),
+        dog: dog ? {
+            mode: dog.mode,
+            hungry: animalResources.dogHungry,
+            food: animalResources.dogFood,
+            water: animalResources.dogWater,
+            barkCount: dogBarkPlayCount,
+            position: dog.group.position.toArray().map((value) => Number(value.toFixed(3)))
+        } : null,
         birds: gardenBirds.map((bird) => ({
             name: bird.config.name,
             state: bird.state,
-            animation: bird.currentActionName
+            animation: bird.currentActionName,
+            lengthCm: Math.round(bird.renderedLength * 100),
+            targetLengthCm: Math.round(bird.config.length * 100),
+            flightAlignment: bird.flightAlignment == null ? null :
+                Number(bird.flightAlignment.toFixed(3))
         }))
     });
 }
@@ -8431,7 +9163,7 @@ function resize() {
         compactView ? 12.0 : 9.1,
         compactView ? 21.4 : 16.0
     );
-    if (animalDemoMode && ["horse", "camel"].includes(animalFocusMode))
+    if (animalDemoMode && ["horse", "camel", "dog"].includes(animalFocusMode))
         basePosition.copy(cameraTarget).add(new THREE.Vector3(-3.2, 1.85, -4.3));
     cameraBaseOffset.copy(basePosition).sub(cameraTarget);
     updateCameraTransform();
@@ -8771,6 +9503,8 @@ function animate(time) {
     animateGardenBirds(seconds, delta);
     animateHorse(seconds, delta);
     animateCamels(seconds, delta);
+    animateDog(seconds, delta);
+    reconcileSharedAnimalMotion(delta);
     if (animalDemoMode) {
         stage.dataset.animalSounds = animalSoundsUnlocked ? "unlocked" : "locked";
         stage.dataset.horseMode = horse?.mode || "missing";
@@ -8787,6 +9521,24 @@ function animate(time) {
             .map((bird) => bird.config.name)
             .join("|") || "none";
         stage.dataset.birdAudio = birdAudioContext?.state || "locked";
+        stage.dataset.birdSongCount = String(birdSongPlayCount);
+        stage.dataset.dogMode = dog?.mode || "missing";
+        stage.dataset.dogHungry = String(animalResources.dogHungry);
+        stage.dataset.dogBarkCount = String(dogBarkPlayCount);
+        stage.dataset.animalMotionRole = animalMotionRole;
+        stage.dataset.animalPositionAudit = [
+            dog ? `dog:${dog.group.position.x.toFixed(2)},${dog.group.position.y.toFixed(2)},${dog.group.position.z.toFixed(2)}` : "",
+            horse ? `horse:${horse.group.position.x.toFixed(2)},${horse.group.position.y.toFixed(2)},${horse.group.position.z.toFixed(2)}` : "",
+            ...camelHerd.map((camel, index) =>
+                `camel-${index}:${camel.group.position.x.toFixed(2)},${camel.group.position.y.toFixed(2)},${camel.group.position.z.toFixed(2)}`)
+        ].filter(Boolean).join("|");
+        stage.dataset.birdScaleAudit = gardenBirds.map((bird) =>
+            `${bird.config.name}:${Math.round(bird.renderedLength * 100)}/${Math.round(bird.config.length * 100)}cm`)
+            .join("|");
+        stage.dataset.birdFlightAlignment = gardenBirds
+            .filter((bird) => bird.state.startsWith("flying") && bird.flightAlignment != null)
+            .map((bird) => `${bird.config.name}:${bird.flightAlignment.toFixed(2)}`)
+            .join("|") || "none";
         stage.dataset.birdMissingAnimations = gardenBirds.map((bird) => {
             const required = bird.config.model === "swamphen" ?
                 ["fly", "idle", "walking"] :
