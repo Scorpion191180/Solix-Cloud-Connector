@@ -175,8 +175,8 @@ if (iconCaptureMode)
 const animalSoundSources = {
     horse: new Audio("/static/sounds/horse-neigh.ogg?v=94"),
     camel: new Audio("/static/sounds/camel-call.ogg?v=94"),
-    dog: new Audio("/static/sounds/rottweiler-barking.ogg?v=107"),
-    bird: new Audio("/static/sounds/garden-birds.ogg?v=107")
+    dog: new Audio("/static/sounds/rottweiler-barking.ogg?v=108"),
+    bird: new Audio("/static/sounds/bird-singing-clear.ogg?v=108")
 };
 let animalSoundsEnabled = true;
 try {
@@ -253,7 +253,7 @@ function playAnimalSound(kind, volume = 0.55) {
         return false;
     const now = performance.now() * 0.001;
     const cooldown = kind === "camel" ? 34 : kind === "horse" ? 22 :
-        kind === "dog" ? 4.1 : 7.5;
+        kind === "dog" ? 4.1 : 6.5;
     if (now - animalSoundLastPlayed[kind] < cooldown)
         return false;
     animalSoundLastPlayed[kind] = now;
@@ -263,11 +263,11 @@ function playAnimalSound(kind, volume = 0.55) {
     if (animalSoundStopTimers[kind])
         window.clearTimeout(animalSoundStopTimers[kind]);
     audio.pause();
-    // Die Originalaufnahmen enthalten längere natürliche Umgebungsphasen.
-    // Kurze, wechselnde Ausschnitte halten die Szene lebendig, ohne dass ein
-    // Vogelkonzert oder das Rottweiler-Bellen minutenlang durchläuft.
+    // Der klare Vogelruf beginnt direkt am Anfang der Aufnahme. Zufällige
+    // Sprünge in die frühere lange Gartenaufnahme landeten auf Mobilgeräten
+    // häufig in leisen Pausen und wirkten deshalb wie stumm.
     if (kind === "bird" && Number.isFinite(audio.duration) && audio.duration > 12)
-        audio.currentTime = Math.min(audio.duration - 7, 2 + Math.random() * 24);
+        audio.currentTime = Math.min(audio.duration - 7, Math.random() * 1.8);
     else
         audio.currentTime = 0;
     audio.volume = THREE.MathUtils.clamp(volume, 0, 1);
@@ -275,7 +275,7 @@ function playAnimalSound(kind, volume = 0.55) {
         kind === "bird" ? 0.98 + Math.random() * 0.04 : 0.97 + Math.random() * 0.06;
     const playback = audio.play();
     playback?.then(() => {
-        const audibleMilliseconds = kind === "bird" ? 6200 : kind === "dog" ? 3600 : 0;
+        const audibleMilliseconds = kind === "bird" ? 6800 : kind === "dog" ? 3600 : 0;
         if (audibleMilliseconds > 0)
             animalSoundStopTimers[kind] = window.setTimeout(() => {
                 audio.pause();
@@ -336,16 +336,20 @@ const ANIMAL_RESOURCE_API_KEYS = Object.freeze({
     dogWater: "dog_water"
 });
 
-function registerAnimalResourceLabel(id, icon, label, resourceKey, anchorObject, offsetY) {
+function registerAnimalResourceLabel(id, icon, label, resourceKey, anchorObject, offsetY,
+    buttonLabel = "Auffüllen") {
     if (animalResourceLabelElements[id])
         return;
     const element = document.createElement("div");
     element.className = "animal-resource-label healthy";
     element.dataset.resource = resourceKey;
+    if (resourceKey === "dogFood" || resourceKey === "dogWater")
+        element.classList.add("dog-care");
     element.innerHTML = `<span>${icon} ${label}</span><strong>100 %</strong>` +
         '<i><b style="width:100%"></b></i>' +
         `<button type="button" data-animal-action="refill_resource" ` +
-        `data-animal-resource="${ANIMAL_RESOURCE_API_KEYS[resourceKey]}">Auffüllen</button>`;
+        `data-animal-resource="${ANIMAL_RESOURCE_API_KEYS[resourceKey]}" ` +
+        `aria-label="${buttonLabel}: ${label}">${buttonLabel}</button>`;
     stage.appendChild(element);
     animalResourceLabelElements[id] = element;
     animalResourceLabelAnchors[id] = {
@@ -663,22 +667,43 @@ async function runAnimalAction(action, resource = null) {
             throw new Error("Aktion konnte nicht gespeichert werden");
         applySharedAnimalState(await response.json(), true);
         menuCleanStatus.textContent = action === "clean" ? "Grundstück ist sauber." :
+            resource === "dog_food" ? "Der Rottweiler wurde gefüttert." :
+                resource === "dog_water" ? "Der Wassernapf ist wieder voll." :
             action === "refill_resource" ? "Diese Futter- oder Wasserstelle ist wieder voll." :
                 action === "refill_hay" ? "Alle Heuraufen sind wieder voll." :
                     "Alle Wassertränken sind wieder voll.";
+        return true;
     }
     catch (error) {
         menuCleanStatus.textContent = error.message;
+        return false;
     }
 }
 
-stage.addEventListener("click", (event) => {
+stage.addEventListener("pointerdown", (event) => {
+    if (event.target.closest("[data-animal-action]"))
+        event.stopPropagation();
+});
+
+stage.addEventListener("click", async (event) => {
     const actionButton = event.target.closest("[data-animal-action]");
     if (!actionButton)
         return;
     event.stopPropagation();
-    runAnimalAction(actionButton.dataset.animalAction,
+    if (actionButton.disabled)
+        return;
+    const originalLabel = actionButton.textContent;
+    actionButton.disabled = true;
+    actionButton.setAttribute("aria-busy", "true");
+    actionButton.textContent = "Bitte warten …";
+    const success = await runAnimalAction(actionButton.dataset.animalAction,
         actionButton.dataset.animalResource || null);
+    actionButton.textContent = success ? "Erledigt ✓" : "Erneut versuchen";
+    window.setTimeout(() => {
+        actionButton.textContent = originalLabel;
+        actionButton.disabled = false;
+        actionButton.removeAttribute("aria-busy");
+    }, success ? 1300 : 2200);
 });
 
 function numberValue(value) {
@@ -4409,12 +4434,12 @@ function createDogBowl(position, resourceKey, stationId, food = false) {
         }
         animalResourceVisuals.push({ kind: "dog-food", resourceKey, fill });
         registerAnimalResourceLabel(stationId, "🐕", "HUND · FUTTER",
-            resourceKey, bowl, 0.78);
+            resourceKey, bowl, 0.90, "Jetzt füttern");
     }
     else {
         createTroughWater(bowl, resourceKey, 0.47, 0.47, 0.188, 0.10);
         registerAnimalResourceLabel(stationId, "💧", "HUND · WASSER",
-            resourceKey, bowl, 0.78);
+            resourceKey, bowl, 0.90, "Wasser auffüllen");
     }
     return bowl;
 }
@@ -4451,16 +4476,22 @@ function updateAnimalResourceVisuals() {
             animalResources.waterCamelPergola) / 3);
         const dogStatus = animalResources.dogHungry ? " · Hund hungrig" : "";
         menuCareStatus.textContent = `Heu ${hay} % · Wasser ${water} %${dogStatus}`;
-        Object.entries(animalResourceLabelAnchors).forEach(([id, anchor]) => {
-            const element = animalResourceLabelElements[id];
-            const value = Math.round(numberValue(animalResources[anchor.resourceKey]) ?? 0);
-            element.querySelector("strong").textContent = `${value} %`;
-            element.querySelector("b").style.width = `${value}%`;
-            element.classList.toggle("healthy", value > 50);
-            element.classList.toggle("warning", value <= 20 && value > 10);
-            element.classList.toggle("critical", value <= 10);
-        });
     }
+    // Die Bedienung der Näpfe und Raufen darf nicht davon abhängen, ob das
+    // optionale Menü gerade im DOM sichtbar ist. Jede Station wird direkt aus
+    // dem gemeinsamen Serverzustand aktualisiert.
+    Object.entries(animalResourceLabelAnchors).forEach(([id, anchor]) => {
+        const element = animalResourceLabelElements[id];
+        const value = Math.round(numberValue(animalResources[anchor.resourceKey]) ?? 0);
+        const hungryDog = anchor.resourceKey === "dogFood" && animalResources.dogHungry;
+        element.querySelector("strong").textContent = hungryDog ? `${value} % · HUNGRIG` : `${value} %`;
+        element.querySelector("b").style.width = `${value}%`;
+        element.dataset.hungry = hungryDog ? "true" : "false";
+        element.classList.toggle("healthy", value > 50 && !hungryDog);
+        element.classList.toggle("refill", value <= 50 && value > 20 && !hungryDog);
+        element.classList.toggle("warning", (value <= 20 && value > 10) || hungryDog);
+        element.classList.toggle("critical", value <= 10);
+    });
 }
 
 // Je eine Kamelstation liegt hinter dem Pool und an der Pergola. Jede physische
@@ -4622,6 +4653,11 @@ function createRottweilerLeg(parent, x, z, phase, black, tan) {
 
 function tuneRottweilerMaterials(model) {
     const palette = {
+        "material": 0x171312,
+        "dark": 0x050505,
+        "nose": 0x020202,
+        "pads": 0x24130f,
+        "light": 0xa95227,
         "material.001": 0x171515,
         "material.002": 0x9d4d24,
         "material.003": 0x030303,
@@ -4652,37 +4688,98 @@ function tuneRottweilerMaterials(model) {
     });
 }
 
-function loadDetailedRottweiler(dogState) {
-    vehicleLoader.load("/static/models/rottweiler/scene.gltf?v=107", (gltf) => {
-        const model = gltf.scene;
-        model.name = "Rottweiler-Detailmodell";
-        model.updateMatrixWorld(true);
-        let bounds = new THREE.Box3().setFromObject(model);
-        const size = bounds.getSize(new THREE.Vector3());
-        const horizontalLength = Math.max(size.x, size.z, 0.001);
-        // Etwa 1,22 m von Rute bis Schnauze: kräftig, aber weiterhin im
-        // korrekten Verhältnis zu Audi, Pferd und Futterstation.
-        model.scale.setScalar(1.22 / horizontalLength);
-        model.updateMatrixWorld(true);
-        bounds = new THREE.Box3().setFromObject(model);
-        const center = bounds.getCenter(new THREE.Vector3());
-        const scaledSize = bounds.getSize(new THREE.Vector3());
-        const bodyPivotY = scaledSize.y * 0.43;
-        model.position.x -= center.x;
-        model.position.y -= bounds.min.y + bodyPivotY;
-        model.position.z -= center.z;
-        tuneRottweilerMaterials(model);
-        dogState.detailedRig.position.y = bodyPivotY;
-        dogState.detailedRig.userData.standY = bodyPivotY;
-        dogState.detailedRig.add(model);
-        dogState.bodyRig.visible = false;
-        dogState.detailedModel = model;
-        dogState.assetLoaded = true;
+function dogClipByWords(animations, words) {
+    const loweredWords = words.map((word) => word.toLowerCase());
+    return animations.find((clip) => {
+        const name = (clip.name || "").toLowerCase();
+        return loweredWords.some((word) => name === word || name.includes(word));
+    }) || null;
+}
+
+function createDogActions(mixer, animations) {
+    if (!mixer || !animations?.length)
+        return {};
+    const clips = {
+        idle: dogClipByWords(animations, ["idle1", "idle ear", "idle"]),
+        walk: dogClipByWords(animations, ["walkcycle", "walk"]),
+        run: dogClipByWords(animations, ["runcycle", "run"]),
+        sleep: dogClipByWords(animations, ["idle liedown", "laydown", "lie"])
+    };
+    return Object.fromEntries(Object.entries(clips)
+        .filter(([, clip]) => clip)
+        .map(([name, clip]) => [name, mixer.clipAction(clip)]));
+}
+
+function setDogAnimation(dogState, name, fadeSeconds = 0.22) {
+    const next = dogState.actions?.[name] || dogState.actions?.idle;
+    if (!next || dogState.currentAction === next)
+        return;
+    if (dogState.currentAction)
+        dogState.currentAction.fadeOut(fadeSeconds);
+    next.reset().setEffectiveTimeScale(1).setEffectiveWeight(1)
+        .fadeIn(fadeSeconds).play();
+    dogState.currentAction = next;
+    dogState.currentActionName = name;
+}
+
+function installDetailedRottweiler(dogState, gltf, assetKind) {
+    const model = gltf.scene;
+    model.name = "Rottweiler-Detailmodell";
+    model.updateMatrixWorld(true);
+    let bounds = new THREE.Box3().setFromObject(model);
+    const size = bounds.getSize(new THREE.Vector3());
+    const horizontalLength = Math.max(size.x, size.z, 0.001);
+    // Etwa 1,24 m von Rute bis Schnauze: kräftig, aber weiterhin im
+    // korrekten Verhältnis zu Audi, Pferd und Futterstation.
+    model.scale.setScalar(1.24 / horizontalLength);
+    model.updateMatrixWorld(true);
+    bounds = new THREE.Box3().setFromObject(model);
+    const center = bounds.getCenter(new THREE.Vector3());
+    const scaledSize = bounds.getSize(new THREE.Vector3());
+    const bodyPivotY = scaledSize.y * 0.43;
+    model.position.x -= center.x;
+    model.position.y -= bounds.min.y + bodyPivotY;
+    model.position.z -= center.z;
+    tuneRottweilerMaterials(model);
+    // Das riggbare Ausgangsmodell ist ein Schäferhund. Die etwas breitere
+    // Brust, der kompaktere Körper und kleinere Ohren bringen die Silhouette
+    // näher an einen Rottweiler, ohne das Skelett zu beschädigen.
+    model.scale.x *= 1.10;
+    model.scale.z *= 0.92;
+    model.traverse((object) => {
+        const name = object.name?.toLowerCase() || "";
+        if (name.includes("ear") && object.isBone)
+            object.scale.multiplyScalar(0.68);
+    });
+    dogState.detailedRig.position.y = bodyPivotY;
+    dogState.detailedRig.userData.standY = bodyPivotY;
+    dogState.detailedRig.add(model);
+    dogState.bodyRig.visible = false;
+    dogState.detailedModel = model;
+    dogState.assetKind = assetKind;
+    dogState.mixer = gltf.animations?.length ? new THREE.AnimationMixer(model) : null;
+    dogState.actions = createDogActions(dogState.mixer, gltf.animations || []);
+    dogState.assetLoaded = true;
+    setDogAnimation(dogState, "idle", 0);
+}
+
+function loadDetailedRottweilerFallback(dogState) {
+    vehicleLoader.load("/static/models/rottweiler/scene.gltf?v=108", (gltf) => {
+        installDetailedRottweiler(dogState, gltf, "static-fallback");
     }, undefined, () => {
-        // Das vorhandene animierte Ersatzmodell bleibt bei einem Netz- oder
-        // Codecfehler sichtbar. Beim nächsten Seitenaufruf wird erneut geladen.
+        // Das geometrische Laufzeitmodell bleibt bei einem weiteren Ladefehler
+        // vollständig animiert sichtbar.
         dogState.assetLoaded = false;
     });
+}
+
+function loadDetailedRottweiler(dogState) {
+    vehicleLoader.load(
+        "/static/models/rottweiler-animated/rottweiler-rigged.glb?v=108",
+        (gltf) => installDetailedRottweiler(dogState, gltf, "rigged-gltf"),
+        undefined,
+        () => loadDetailedRottweilerFallback(dogState)
+    );
 }
 
 function createRottweiler() {
@@ -4794,7 +4891,13 @@ function createRottweiler() {
         lastAudibleBarkAt: -Infinity,
         chaseBird: null,
         patrolIndex: 0,
-        assetLoaded: false
+        assetLoaded: false,
+        assetKind: "procedural-fallback",
+        mixer: null,
+        actions: {},
+        currentAction: null,
+        currentActionName: "loading",
+        detailedBones: {}
     };
     setDogRoute(dogState, dogState.target, "patrol", false);
     loadDetailedRottweiler(dogState);
@@ -4905,19 +5008,22 @@ function animateRottweilerPose(dogState, seconds, delta, moving, running) {
     if (dogState.detailedModel) {
         const standY = dogState.detailedRig.userData.standY || 0.30;
         const gait = moving ? Math.sin(dogState.travelled * (running ? 12.2 : 8.6)) : 0;
-        // Das frei verfügbare Rottweiler-Modell ist nicht skelettiert. Durch
-        // Gewichtsverlagerung, Körperschwung, Atmung und die tiefe Fresshaltung
-        // wirkt es trotzdem lebendig; das alte geometrische Hundemodell wird
-        // nach erfolgreichem Laden vollständig ausgeblendet.
+        const rigged = dogState.assetKind === "rigged-gltf" && dogState.mixer;
+        if (rigged) {
+            setDogAnimation(dogState, sleeping ? "sleep" :
+                moving ? (running ? "run" : "walk") : "idle");
+            dogState.mixer.update(delta);
+        }
         dogState.detailedRig.position.y = THREE.MathUtils.damp(
             dogState.detailedRig.position.y,
             standY + (sleeping ? -0.035 : loweringHead ? -0.020 : 0), 8, delta);
         dogState.detailedRig.rotation.z = THREE.MathUtils.damp(
             dogState.detailedRig.rotation.z,
-            sleeping ? -1.32 : gait * (running ? 0.052 : 0.032), 8, delta);
+            rigged ? 0 : sleeping ? -1.32 : gait * (running ? 0.052 : 0.032), 8, delta);
         dogState.detailedRig.rotation.x = THREE.MathUtils.damp(
             dogState.detailedRig.rotation.x,
-            sleeping ? 0.06 : loweringHead ? 0.22 : barking ? -0.08 :
+            rigged ? (loweringHead ? 0.08 : barking ? -0.035 : 0) :
+                sleeping ? 0.06 : loweringHead ? 0.22 : barking ? -0.08 :
                 moving ? gait * 0.018 : 0, 9, delta);
         const breathing = sleeping ? Math.sin(seconds * 2.1) * 0.012 :
             barking ? Math.max(0, Math.sin(seconds * 16)) * 0.018 : 0;
@@ -9682,7 +9788,8 @@ function animate(time) {
         stage.dataset.birdAudio = birdAudioContext?.state || "locked";
         stage.dataset.birdSongCount = String(birdSongPlayCount);
         stage.dataset.dogMode = dog?.mode || "missing";
-        stage.dataset.dogAsset = dog?.assetLoaded ? "rottweiler-gltf" : "fallback";
+        stage.dataset.dogAsset = dog?.assetKind || "fallback";
+        stage.dataset.dogAnimation = dog?.currentActionName || "loading";
         stage.dataset.dogHungry = String(animalResources.dogHungry);
         stage.dataset.dogBarkCount = String(dogBarkPlayCount);
         stage.dataset.animalMotionRole = animalMotionRole;

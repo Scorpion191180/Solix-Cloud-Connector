@@ -22,7 +22,7 @@ class DashboardSchematicTests(unittest.TestCase):
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
         self.assertIn("style.css?v=20260901-98", dashboard)
-        self.assertIn("house.js?v=20260903-107", dashboard)
+        self.assertIn("house.js?v=20260903-108", dashboard)
         self.assertIn("app.js?v=20260821-96", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
@@ -481,7 +481,7 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertLess(asset.stat().st_size, 100_000)
         for filename, maximum_size in (
             ("rottweiler-barking.ogg", 400_000),
-            ("garden-birds.ogg", 750_000),
+            ("bird-singing-clear.ogg", 850_000),
         ):
             asset = ROOT / "static" / "sounds" / filename
             self.assertTrue(asset.exists())
@@ -489,10 +489,12 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertNotIn('id="houseFeedAnimals"', dashboard)
         self.assertNotIn('id="houseWaterAnimals"', dashboard)
         self.assertIn('data-animal-action="refill_resource"', script)
-        self.assertIn('element.classList.toggle("healthy", value > 50)', script)
-        self.assertIn('element.classList.toggle("warning", value <= 20 && value > 10)', script)
+        self.assertIn('element.classList.toggle("healthy", value > 50 && !hungryDog)', script)
+        self.assertIn('element.classList.toggle("refill", value <= 50 && value > 20 && !hungryDog)', script)
+        self.assertIn('element.classList.toggle("warning", (value <= 20 && value > 10) || hungryDog)', script)
         self.assertIn('element.classList.toggle("critical", value <= 10)', script)
         self.assertIn(".animal-resource-label.healthy", stylesheet)
+        self.assertIn(".animal-resource-label.refill", stylesheet)
         self.assertIn(".animal-resource-label.warning", stylesheet)
         self.assertIn(".animal-resource-label.critical", stylesheet)
         self.assertIn("function createGardenBirds", script)
@@ -540,10 +542,15 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("function animateDog", script)
         self.assertIn("function playDogBark", script)
         self.assertIn("function loadDetailedRottweiler", script)
-        self.assertIn('rottweiler/scene.gltf?v=107', script)
-        self.assertIn('new Audio("/static/sounds/rottweiler-barking.ogg?v=107")', script)
-        self.assertIn('new Audio("/static/sounds/garden-birds.ogg?v=107")', script)
+        self.assertIn('rottweiler-animated/rottweiler-rigged.glb?v=108', script)
+        self.assertIn('rottweiler/scene.gltf?v=108', script)
+        self.assertIn('new Audio("/static/sounds/rottweiler-barking.ogg?v=108")', script)
+        self.assertIn('new Audio("/static/sounds/bird-singing-clear.ogg?v=108")', script)
+        self.assertIn("new THREE.AnimationMixer(model)", script)
+        self.assertIn("function createDogActions", script)
+        self.assertIn('setDogAnimation(dogState, sleeping ? "sleep"', script)
         self.assertIn("stage.dataset.dogAsset", script)
+        self.assertIn("stage.dataset.dogAnimation", script)
         self.assertIn('group.name = "Animierter Rottweiler"', script)
         self.assertIn('"dog-food"', script)
         self.assertIn('"dog-water"', script)
@@ -564,6 +571,10 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertTrue(rottweiler_model.exists())
         self.assertTrue(rottweiler_binary.exists())
         self.assertLess(rottweiler_model.stat().st_size + rottweiler_binary.stat().st_size, 250_000)
+        animated_rottweiler = (ROOT / "static" / "models" /
+                               "rottweiler-animated" / "rottweiler-rigged.glb")
+        self.assertTrue(animated_rottweiler.exists())
+        self.assertLess(animated_rottweiler.stat().st_size, 650_000)
         self.assertNotIn('bird-swamphen-nestling.glb?v=', script)
         self.assertIn("function createTroughWater", script)
         self.assertIn("function animateTroughWater", script)

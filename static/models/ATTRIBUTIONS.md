@@ -39,12 +39,16 @@ original downloads.
   ACTG, dedicated to the public domain under
   [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The active
   adult asset contains separate idle, walking and flying clips.
-- **Rottweiler** — based on
+- **Animated Rottweiler** — the active rigged model is based on
+  [“Stylized Low Poly German Shepherd”](https://sketchfab.com/3d-models/stylized-low-poly-german-shepherd-18d8fbe184c5448283762893b6ea9752)
+  by [DreamNoms](https://sketchfab.com/DreamNoms), licensed under
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The app retains
+  the original idle, walk, run and lying-down animation clips and adjusts the
+  proportions and material palette toward a compact black-and-tan Rottweiler.
+  The lightweight loading fallback is based on
   [“Rottweiler Low Poly”](https://sketchfab.com/3d-models/rottweiler-low-poly-d541f1198f1241d6a466dc49eca084a3)
   by [toofball](https://sketchfab.com/picklecobra), licensed under
-  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The app adjusts
-  its material palette to the breed's black coat and rust-brown markings and
-  adds procedural movement, posture and breathing at runtime.
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 The optimized files use meshoptimizer compression. meshoptimizer/gltfpack is
 licensed under the [MIT License](https://github.com/zeux/meshoptimizer).

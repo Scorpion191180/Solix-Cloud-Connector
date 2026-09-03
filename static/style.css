@@ -313,11 +313,11 @@ header p{
 
 .animal-resource-label{
     position:absolute;
-    z-index:5;
+    z-index:16;
     display:grid;
-    width:92px;
-    gap:3px;
-    padding:6px 8px;
+    width:108px;
+    gap:4px;
+    padding:7px 9px;
     border:1px solid rgba(226,232,240,.30);
     border-radius:10px;
     background:linear-gradient(135deg,rgba(7,15,27,.70),rgba(15,23,42,.52));
@@ -331,13 +331,13 @@ header p{
 
 .animal-resource-label span{
     color:#e2e8f0;
-    font-size:8px;
+    font-size:9px;
     font-weight:900;
     letter-spacing:.08em;
 }
 
 .animal-resource-label strong{
-    font-size:13px;
+    font-size:14px;
     line-height:1;
 }
 
@@ -358,6 +358,10 @@ header p{
 }
 
 .animal-resource-label.healthy{opacity:0;pointer-events:none;}
+.animal-resource-label.refill{
+    border-color:rgba(34,197,94,.78);
+    box-shadow:0 5px 15px rgba(2,6,23,.38),0 0 13px rgba(34,197,94,.42);
+}
 .animal-resource-label.warning{
     border-color:#facc15;
     animation:animal-resource-warning 1.15s ease-in-out infinite;
@@ -380,20 +384,37 @@ header p{
 .animal-resource-label.healthy.behind,
 .animal-resource-label.outside{opacity:0;pointer-events:none;}
 
+.animal-resource-label.dog-care{
+    z-index:22;
+    width:136px;
+    padding:9px 10px;
+}
+
+.animal-resource-label.dog-care.behind:not(.healthy){
+    opacity:.78;
+}
+
 .animal-resource-label button,
 .animal-clean-label button{
-    min-height:21px;
-    margin-top:2px;
-    padding:3px 7px;
+    min-height:32px;
+    margin-top:3px;
+    padding:6px 9px;
     border:1px solid rgba(94,234,212,.68);
     border-radius:999px;
     background:rgba(13,148,136,.30);
     color:#f0fdfa;
-    font:900 7px/1 system-ui,sans-serif;
+    font:900 9px/1.05 system-ui,sans-serif;
     letter-spacing:.07em;
     text-transform:uppercase;
     cursor:pointer;
+    touch-action:manipulation;
     box-shadow:0 0 9px rgba(45,212,191,.26);
+}
+
+.animal-resource-label button:disabled,
+.animal-clean-label button:disabled{
+    cursor:wait;
+    opacity:.72;
 }
 
 .animal-clean-label{
@@ -2230,6 +2251,28 @@ body{
     border-radius:0;
     overscroll-behavior:none;
     touch-action:none;
+}
+
+.animal-resource-label{
+    width:116px;
+}
+
+.animal-resource-label.dog-care{
+    width:146px;
+}
+
+.animal-resource-label span{
+    font-size:9.5px;
+}
+
+.animal-resource-label strong{
+    font-size:15px;
+}
+
+.animal-resource-label button,
+.animal-clean-label button{
+    min-height:36px;
+    font-size:10px;
 }
 
 .house-scene-label{

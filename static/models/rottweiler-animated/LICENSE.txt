@@ -1,0 +1,8 @@
+Source: https://sketchfab.com/3d-models/stylized-low-poly-german-shepherd-18d8fbe184c5448283762893b6ea9752
+Title: Stylized Low Poly German Shepherd
+Creator: DreamNoms
+License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+License URL: https://creativecommons.org/licenses/by/4.0/
+
+The application recolors and proportionally adjusts the model to resemble a
+black-and-tan Rottweiler. The original rig and animation clips are preserved.
