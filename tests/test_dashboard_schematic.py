@@ -22,7 +22,7 @@ class DashboardSchematicTests(unittest.TestCase):
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
         self.assertIn("style.css?v=20260901-98", dashboard)
-        self.assertIn("house.js?v=20260903-106", dashboard)
+        self.assertIn("house.js?v=20260903-107", dashboard)
         self.assertIn("app.js?v=20260821-96", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
@@ -479,6 +479,13 @@ class DashboardSchematicTests(unittest.TestCase):
             asset = ROOT / "static" / "sounds" / filename
             self.assertTrue(asset.exists())
             self.assertLess(asset.stat().st_size, 100_000)
+        for filename, maximum_size in (
+            ("rottweiler-barking.ogg", 400_000),
+            ("garden-birds.ogg", 750_000),
+        ):
+            asset = ROOT / "static" / "sounds" / filename
+            self.assertTrue(asset.exists())
+            self.assertLess(asset.stat().st_size, maximum_size)
         self.assertNotIn('id="houseFeedAnimals"', dashboard)
         self.assertNotIn('id="houseWaterAnimals"', dashboard)
         self.assertIn('data-animal-action="refill_resource"', script)
@@ -532,6 +539,11 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("function createRottweiler", script)
         self.assertIn("function animateDog", script)
         self.assertIn("function playDogBark", script)
+        self.assertIn("function loadDetailedRottweiler", script)
+        self.assertIn('rottweiler/scene.gltf?v=107', script)
+        self.assertIn('new Audio("/static/sounds/rottweiler-barking.ogg?v=107")', script)
+        self.assertIn('new Audio("/static/sounds/garden-birds.ogg?v=107")', script)
+        self.assertIn("stage.dataset.dogAsset", script)
         self.assertIn('group.name = "Animierter Rottweiler"', script)
         self.assertIn('"dog-food"', script)
         self.assertIn('"dog-water"', script)
@@ -547,6 +559,11 @@ class DashboardSchematicTests(unittest.TestCase):
             bird_asset = ROOT / "static" / "models" / filename
             self.assertTrue(bird_asset.exists())
             self.assertLess(bird_asset.stat().st_size, 3_000_000)
+        rottweiler_model = ROOT / "static" / "models" / "rottweiler" / "scene.gltf"
+        rottweiler_binary = ROOT / "static" / "models" / "rottweiler" / "scene.bin"
+        self.assertTrue(rottweiler_model.exists())
+        self.assertTrue(rottweiler_binary.exists())
+        self.assertLess(rottweiler_model.stat().st_size + rottweiler_binary.stat().st_size, 250_000)
         self.assertNotIn('bird-swamphen-nestling.glb?v=', script)
         self.assertIn("function createTroughWater", script)
         self.assertIn("function animateTroughWater", script)

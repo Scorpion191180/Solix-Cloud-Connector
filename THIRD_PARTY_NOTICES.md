@@ -32,6 +32,16 @@ for the sparrow-sized garden visitors:
 - License: Creative Commons Attribution 4.0 (CC BY 4.0)
 - License text: https://creativecommons.org/licenses/by/4.0/
 
+## Rottweiler Low Poly
+
+The Rottweiler model in `static/models/rottweiler/` is used for the courtyard
+dog and is recolored and procedurally animated by the web application:
+
+- Author: toofball
+- Source: https://sketchfab.com/3d-models/rottweiler-low-poly-d541f1198f1241d6a466dc49eca084a3
+- License: Creative Commons Attribution 4.0 (CC BY 4.0)
+- License text: https://creativecommons.org/licenses/by/4.0/
+
 ## audi_connect_ha device authorization
 
 The RFC 8628 device-authorization flow in

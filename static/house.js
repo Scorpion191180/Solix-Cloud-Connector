@@ -174,7 +174,9 @@ if (iconCaptureMode)
     stage.classList.add("icon-capture");
 const animalSoundSources = {
     horse: new Audio("/static/sounds/horse-neigh.ogg?v=94"),
-    camel: new Audio("/static/sounds/camel-call.ogg?v=94")
+    camel: new Audio("/static/sounds/camel-call.ogg?v=94"),
+    dog: new Audio("/static/sounds/rottweiler-barking.ogg?v=107"),
+    bird: new Audio("/static/sounds/garden-birds.ogg?v=107")
 };
 let animalSoundsEnabled = true;
 try {
@@ -184,7 +186,13 @@ try {
 }
 let animalSoundsUnlocked = false;
 let animalSoundUnlockPending = false;
-const animalSoundLastPlayed = { horse: -Infinity, camel: -Infinity };
+const animalSoundLastPlayed = {
+    horse: -Infinity,
+    camel: -Infinity,
+    dog: -Infinity,
+    bird: -Infinity
+};
+const animalSoundStopTimers = {};
 let birdAudioContext = null;
 let birdAudioWasRunning = false;
 let birdSongPlayCount = 0;
@@ -242,22 +250,41 @@ function unlockAnimalSounds() {
 
 function playAnimalSound(kind, volume = 0.55) {
     if (!animalSoundsEnabled || !animalSoundsUnlocked || !animalSoundSources[kind])
-        return;
+        return false;
     const now = performance.now() * 0.001;
-    const cooldown = kind === "camel" ? 34 : 22;
+    const cooldown = kind === "camel" ? 34 : kind === "horse" ? 22 :
+        kind === "dog" ? 4.1 : 7.5;
     if (now - animalSoundLastPlayed[kind] < cooldown)
-        return;
+        return false;
     animalSoundLastPlayed[kind] = now;
     // Das bereits per Nutzerberuehrung entsperrte Element wiederverwenden. Das
     // ist auf iOS zuverlaessiger als ein erst spaeter erzeugter Audio-Klon.
     const audio = animalSoundSources[kind];
+    if (animalSoundStopTimers[kind])
+        window.clearTimeout(animalSoundStopTimers[kind]);
     audio.pause();
-    audio.currentTime = 0;
+    // Die Originalaufnahmen enthalten längere natürliche Umgebungsphasen.
+    // Kurze, wechselnde Ausschnitte halten die Szene lebendig, ohne dass ein
+    // Vogelkonzert oder das Rottweiler-Bellen minutenlang durchläuft.
+    if (kind === "bird" && Number.isFinite(audio.duration) && audio.duration > 12)
+        audio.currentTime = Math.min(audio.duration - 7, 2 + Math.random() * 24);
+    else
+        audio.currentTime = 0;
     audio.volume = THREE.MathUtils.clamp(volume, 0, 1);
-    audio.playbackRate = kind === "camel" ? 0.94 + Math.random() * 0.10 : 0.97 + Math.random() * 0.06;
-    audio.play().catch(() => {
+    audio.playbackRate = kind === "camel" ? 0.94 + Math.random() * 0.10 :
+        kind === "bird" ? 0.98 + Math.random() * 0.04 : 0.97 + Math.random() * 0.06;
+    const playback = audio.play();
+    playback?.then(() => {
+        const audibleMilliseconds = kind === "bird" ? 6200 : kind === "dog" ? 3600 : 0;
+        if (audibleMilliseconds > 0)
+            animalSoundStopTimers[kind] = window.setTimeout(() => {
+                audio.pause();
+                animalSoundStopTimers[kind] = null;
+            }, audibleMilliseconds);
+    }).catch(() => {
         animalSoundsUnlocked = false;
     });
+    return true;
 }
 
 window.addEventListener("pointerdown", unlockAnimalSounds, { passive: true });
@@ -4533,13 +4560,22 @@ const DOG_PATROL_POINTS = [
 let dogBarkPlayCount = 0;
 
 function playDogBark(hungry = false) {
-    if (!animalSoundsEnabled || !birdAudioContext || birdAudioContext.state !== "running" || !dog)
+    if (!animalSoundsEnabled || !dog)
         return false;
     const seconds = performance.now() / 1000;
     const cooldown = hungry ? 4.6 : 20;
     if (seconds - dog.lastAudibleBarkAt < cooldown)
         return false;
     dog.lastAudibleBarkAt = seconds;
+    // Eine echte Rottweiler-Aufnahme ist auf Telefonlautsprechern erheblich
+    // klarer als der bisherige tiefe Oszillator. Der synthetische Ton bleibt
+    // nur als Offline-/Codec-Fallback erhalten.
+    if (playAnimalSound("dog", hungry ? 0.94 : 0.84)) {
+        dogBarkPlayCount += 1;
+        return true;
+    }
+    if (!birdAudioContext || birdAudioContext.state !== "running")
+        return false;
     const now = birdAudioContext.currentTime;
     const master = birdAudioContext.createGain();
     const filter = birdAudioContext.createBiquadFilter();
@@ -4584,6 +4620,71 @@ function createRottweilerLeg(parent, x, z, phase, black, tan) {
     return { rig, lowerRig, upper, paw, phase };
 }
 
+function tuneRottweilerMaterials(model) {
+    const palette = {
+        "material.001": 0x171515,
+        "material.002": 0x9d4d24,
+        "material.003": 0x030303,
+        "material.004": 0xeee8dc,
+        "material.005": 0xb33b42
+    };
+    model.traverse((object) => {
+        if (!object.isMesh)
+            return;
+        object.castShadow = true;
+        object.receiveShadow = true;
+        const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
+        const tuned = sourceMaterials.map((source) => {
+            const material = source.clone();
+            const name = (material.name || "").toLowerCase();
+            if (palette[name] != null)
+                material.color.setHex(palette[name]);
+            material.metalness = 0;
+            material.roughness = name === "material.003" ? 0.28 :
+                name === "material.005" ? 0.64 : 0.76;
+            material.transparent = false;
+            material.opacity = 1;
+            material.depthWrite = true;
+            material.needsUpdate = true;
+            return material;
+        });
+        object.material = Array.isArray(object.material) ? tuned : tuned[0];
+    });
+}
+
+function loadDetailedRottweiler(dogState) {
+    vehicleLoader.load("/static/models/rottweiler/scene.gltf?v=107", (gltf) => {
+        const model = gltf.scene;
+        model.name = "Rottweiler-Detailmodell";
+        model.updateMatrixWorld(true);
+        let bounds = new THREE.Box3().setFromObject(model);
+        const size = bounds.getSize(new THREE.Vector3());
+        const horizontalLength = Math.max(size.x, size.z, 0.001);
+        // Etwa 1,22 m von Rute bis Schnauze: kräftig, aber weiterhin im
+        // korrekten Verhältnis zu Audi, Pferd und Futterstation.
+        model.scale.setScalar(1.22 / horizontalLength);
+        model.updateMatrixWorld(true);
+        bounds = new THREE.Box3().setFromObject(model);
+        const center = bounds.getCenter(new THREE.Vector3());
+        const scaledSize = bounds.getSize(new THREE.Vector3());
+        const bodyPivotY = scaledSize.y * 0.43;
+        model.position.x -= center.x;
+        model.position.y -= bounds.min.y + bodyPivotY;
+        model.position.z -= center.z;
+        tuneRottweilerMaterials(model);
+        dogState.detailedRig.position.y = bodyPivotY;
+        dogState.detailedRig.userData.standY = bodyPivotY;
+        dogState.detailedRig.add(model);
+        dogState.bodyRig.visible = false;
+        dogState.detailedModel = model;
+        dogState.assetLoaded = true;
+    }, undefined, () => {
+        // Das vorhandene animierte Ersatzmodell bleibt bei einem Netz- oder
+        // Codecfehler sichtbar. Beim nächsten Seitenaufruf wird erneut geladen.
+        dogState.assetLoaded = false;
+    });
+}
+
 function createRottweiler() {
     const group = new THREE.Group();
     group.name = "Animierter Rottweiler";
@@ -4592,6 +4693,8 @@ function createRottweiler() {
 
     const visualRoot = new THREE.Group();
     group.add(visualRoot);
+    const detailedRig = new THREE.Group();
+    visualRoot.add(detailedRig);
     const bodyRig = new THREE.Group();
     visualRoot.add(bodyRig);
     const black = new THREE.MeshStandardMaterial({
@@ -4672,7 +4775,8 @@ function createRottweiler() {
 
     const random = seededNoise(20260902);
     const dogState = {
-        group, visualRoot, bodyRig, body, chest, headRig, jawRig, tongue,
+        group, visualRoot, detailedRig, detailedModel: null,
+        bodyRig, body, chest, headRig, jawRig, tongue,
         legs, tailRig, random,
         target: new THREE.Vector3(-4.80, 0, -3.25),
         path: [],
@@ -4684,15 +4788,16 @@ function createRottweiler() {
         pendingMeal: false,
         nextDrinkAt: animalDemoMode ? 14 : 65 + random() * 80,
         nextSleepAt: animalDemoMode ? 24 : 160 + random() * 220,
-        nextCasualBarkAt: animalDemoMode ? 7 : 55 + random() * 90,
+        nextCasualBarkAt: animalDemoMode ? 7 : 14 + random() * 20,
         nextChaseAt: animalDemoMode ? 12 : 32 + random() * 55,
         lastHungryBarkAt: -Infinity,
         lastAudibleBarkAt: -Infinity,
         chaseBird: null,
         patrolIndex: 0,
-        assetLoaded: true
+        assetLoaded: false
     };
     setDogRoute(dogState, dogState.target, "patrol", false);
+    loadDetailedRottweiler(dogState);
     return dogState;
 }
 
@@ -4792,9 +4897,37 @@ function animateRottweilerPose(dogState, seconds, delta, moving, running) {
     const loweringHead = ["eating", "drinking", "waiting-food"].includes(dogState.mode);
     const barking = dogState.mode === "barking" ||
         (dogState.mode === "waiting-food" && seconds - dogState.lastHungryBarkAt < 1.15);
-    const bodyY = sleeping ? -0.27 : moving ? Math.abs(Math.sin(dogState.travelled * 8.2)) * 0.025 : 0;
+    const bodyY = sleeping ? (dogState.detailedModel ? 0.015 : -0.27) :
+        moving ? Math.abs(Math.sin(dogState.travelled * 8.2)) * (running ? 0.034 : 0.022) : 0;
     dogState.visualRoot.position.y = THREE.MathUtils.damp(
         dogState.visualRoot.position.y, bodyY, 7, delta);
+
+    if (dogState.detailedModel) {
+        const standY = dogState.detailedRig.userData.standY || 0.30;
+        const gait = moving ? Math.sin(dogState.travelled * (running ? 12.2 : 8.6)) : 0;
+        // Das frei verfügbare Rottweiler-Modell ist nicht skelettiert. Durch
+        // Gewichtsverlagerung, Körperschwung, Atmung und die tiefe Fresshaltung
+        // wirkt es trotzdem lebendig; das alte geometrische Hundemodell wird
+        // nach erfolgreichem Laden vollständig ausgeblendet.
+        dogState.detailedRig.position.y = THREE.MathUtils.damp(
+            dogState.detailedRig.position.y,
+            standY + (sleeping ? -0.035 : loweringHead ? -0.020 : 0), 8, delta);
+        dogState.detailedRig.rotation.z = THREE.MathUtils.damp(
+            dogState.detailedRig.rotation.z,
+            sleeping ? -1.32 : gait * (running ? 0.052 : 0.032), 8, delta);
+        dogState.detailedRig.rotation.x = THREE.MathUtils.damp(
+            dogState.detailedRig.rotation.x,
+            sleeping ? 0.06 : loweringHead ? 0.22 : barking ? -0.08 :
+                moving ? gait * 0.018 : 0, 9, delta);
+        const breathing = sleeping ? Math.sin(seconds * 2.1) * 0.012 :
+            barking ? Math.max(0, Math.sin(seconds * 16)) * 0.018 : 0;
+        dogState.detailedRig.scale.y = THREE.MathUtils.damp(
+            dogState.detailedRig.scale.y, 1 + breathing, 10, delta);
+        dogState.detailedRig.scale.x = THREE.MathUtils.damp(
+            dogState.detailedRig.scale.x, 1 - breathing * 0.35, 10, delta);
+        dogState.detailedRig.scale.z = THREE.MathUtils.damp(
+            dogState.detailedRig.scale.z, 1 + breathing * 0.20, 10, delta);
+    }
     dogState.bodyRig.rotation.z = THREE.MathUtils.damp(
         dogState.bodyRig.rotation.z, sleeping ? 0.20 : 0, 7, delta);
     dogState.headRig.rotation.x = THREE.MathUtils.damp(dogState.headRig.rotation.x,
@@ -4910,7 +5043,7 @@ function animateDog(seconds, delta) {
         startNextDogActivity(dog, seconds);
     }
     if (seconds >= dog.nextCasualBarkAt && dog.navigation === "patrol") {
-        dog.nextCasualBarkAt = seconds + 70 + dog.random() * 120;
+        dog.nextCasualBarkAt = seconds + 42 + dog.random() * 34;
         dog.mode = "barking";
         dog.modeUntil = seconds + 1.6;
         playDogBark(false);
@@ -5642,7 +5775,20 @@ function birdSkyPoint(bird, opposite = false) {
 }
 
 function playBirdSong(bird) {
-    if (!animalSoundsEnabled || !birdAudioContext || birdAudioContext.state !== "running")
+    if (!animalSoundsEnabled)
+        return 0;
+    // Kurze Ausschnitte einer echten Gartenaufnahme sind auf iOS gut hörbar
+    // und klingen natürlicher als reine Sinus-/Rechteck-Oszillatoren.
+    if (playAnimalSound("bird", 0.72)) {
+        birdSongPlayCount += 1;
+        return 6.2;
+    }
+    // Während der echte Ausschnitt läuft, keinen zweiten synthetischen Vogel
+    // darüberlegen. Nach Ablauf darf der bisherige Generator als Fallback
+    // weiterhin die unterschiedlichen Artenstimmen andeuten.
+    if (animalSoundsUnlocked && performance.now() * 0.001 - animalSoundLastPlayed.bird < 7.4)
+        return 0;
+    if (!birdAudioContext || birdAudioContext.state !== "running")
         return 0;
     const now = birdAudioContext.currentTime;
     const notes = bird.config.song;
@@ -7036,6 +7182,7 @@ if (animalDemoMode) {
         })),
         dog: dog ? {
             mode: dog.mode,
+            asset: dog.assetLoaded ? "rottweiler-gltf" : "fallback",
             hungry: animalResources.dogHungry,
             food: animalResources.dogFood,
             water: animalResources.dogWater,
@@ -9535,6 +9682,7 @@ function animate(time) {
         stage.dataset.birdAudio = birdAudioContext?.state || "locked";
         stage.dataset.birdSongCount = String(birdSongPlayCount);
         stage.dataset.dogMode = dog?.mode || "missing";
+        stage.dataset.dogAsset = dog?.assetLoaded ? "rottweiler-gltf" : "fallback";
         stage.dataset.dogHungry = String(animalResources.dogHungry);
         stage.dataset.dogBarkCount = String(dogBarkPlayCount);
         stage.dataset.animalMotionRole = animalMotionRole;

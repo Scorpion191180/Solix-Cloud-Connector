@@ -1,0 +1,8 @@
+Model: Rottweiler Low Poly
+Source: https://sketchfab.com/3d-models/rottweiler-low-poly-d541f1198f1241d6a466dc49eca084a3
+Author: toofball (https://sketchfab.com/picklecobra)
+License: Creative Commons Attribution 4.0
+License URL: https://creativecommons.org/licenses/by/4.0/
+
+The web application adjusts material colors and adds procedural movement,
+posture and breathing at runtime.
