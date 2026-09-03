@@ -14,7 +14,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/solix-home-32.png?v=94">
 <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/solix-home-180.png?v=94">
 <link rel="manifest" href="/static/site.webmanifest?v=94">
-<link rel="stylesheet" href="/static/style.css?v=20260901-98">
+<link rel="stylesheet" href="/static/style.css?v=20260903-109">
 
 <script type="importmap">
 {
@@ -221,9 +221,54 @@ Signalstärke
 </div>
 <button class="house-menu-action" id="houseMenuCollapse" type="button">Detailkarten schließen</button>
 <button class="house-menu-action" id="animalSoundToggle" type="button" aria-pressed="true">🔊 Tierlaute: an</button>
+<div class="house-menu-quality">
+<label for="renderQualitySelect">Darstellungsqualität</label>
+<select id="renderQualitySelect">
+<option value="auto">Automatisch (empfohlen)</option>
+<option value="eco">Flüssig / Sparmodus</option>
+<option value="full">Volle Qualität</option>
+</select>
+<small id="renderQualityStatus">Geräteprofil wird ermittelt …</small>
+</div>
+<button class="house-menu-action house-builder-launch" id="houseBuilderOpen" type="button">🏗️ Eigenes Haus bauen</button>
 <p class="house-menu-clean-status" id="houseCareStatus">Heu und Wasser werden geladen …</p>
 <p class="house-menu-clean-status" id="houseCleanStatus" aria-live="polite">Grundstück ist sauber.</p>
 </aside>
+<section class="house-builder-panel" id="houseBuilderPanel" aria-label="Haus-Baumodus" hidden>
+<div class="house-builder-head">
+<div><small>20 × 20 M GRUNDSTÜCK</small><strong>Haus-Baumodus</strong></div>
+<button id="houseBuilderClose" type="button" aria-label="Baumodus schließen">×</button>
+</div>
+<div class="house-builder-grid">
+<label>Bauteil
+<select id="builderPartType">
+<option value="wall">Wand</option>
+<option value="window">Fenster</option>
+<option value="door">Tür</option>
+</select>
+</label>
+<label>Modell
+<select id="builderVariant"></select>
+</label>
+</div>
+<div class="house-builder-color-row">
+<label for="builderColor">Farbe</label>
+<input id="builderColor" type="color" value="#f1eee5" aria-label="Eigene Bauteilfarbe">
+<div class="house-builder-swatches" id="builderSwatches" aria-label="Farbauswahl"></div>
+</div>
+<div class="house-builder-rotation" aria-label="Ausrichtung">
+<span>Ausrichtung</span>
+<button id="builderRotateLeft" type="button" aria-label="Nach links drehen">↶</button>
+<output id="builderRotation">0°</output>
+<button id="builderRotateRight" type="button" aria-label="Nach rechts drehen">↷</button>
+</div>
+<p class="house-builder-help">Tippe auf ein Feld, um das ausgewählte Bauteil zu setzen. Ziehen dreht die Ansicht.</p>
+<div class="house-builder-actions">
+<button id="builderUndo" type="button">↶ Letztes zurück</button>
+<button id="builderClear" type="button">Grundstück leeren</button>
+</div>
+<p class="house-builder-status" id="builderStatus" aria-live="polite">Noch keine Bauteile gesetzt.</p>
+</section>
 <canvas
     id="houseCanvas"
     role="img"
@@ -668,7 +713,7 @@ Einstellungen
 
 </div>
 
-<script type="module" src="/static/house.js?v=20260903-108"></script>
+<script type="module" src="/static/house.js?v=20260903-109"></script>
 <script src="/static/app.js?v=20260821-96"></script>
 
 </body>

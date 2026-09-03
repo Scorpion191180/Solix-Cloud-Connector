@@ -22,6 +22,21 @@ const menuPanel = document.getElementById("houseMenuPanel");
 const menuClose = document.getElementById("houseMenuClose");
 const menuCollapse = document.getElementById("houseMenuCollapse");
 const animalSoundToggle = document.getElementById("animalSoundToggle");
+const renderQualitySelect = document.getElementById("renderQualitySelect");
+const renderQualityStatus = document.getElementById("renderQualityStatus");
+const builderOpenButton = document.getElementById("houseBuilderOpen");
+const builderPanel = document.getElementById("houseBuilderPanel");
+const builderCloseButton = document.getElementById("houseBuilderClose");
+const builderPartType = document.getElementById("builderPartType");
+const builderVariant = document.getElementById("builderVariant");
+const builderColor = document.getElementById("builderColor");
+const builderSwatches = document.getElementById("builderSwatches");
+const builderRotateLeft = document.getElementById("builderRotateLeft");
+const builderRotateRight = document.getElementById("builderRotateRight");
+const builderRotation = document.getElementById("builderRotation");
+const builderUndo = document.getElementById("builderUndo");
+const builderClear = document.getElementById("builderClear");
+const builderStatus = document.getElementById("builderStatus");
 const menuCleanStatus = document.getElementById("houseCleanStatus");
 const menuCareStatus = document.getElementById("houseCareStatus");
 const menuPvToday = document.getElementById("menuPvToday");
@@ -36,6 +51,61 @@ const weatherTemp = document.getElementById("houseWeatherTemp");
 const weatherText = document.getElementById("houseWeatherText");
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const INTERIOR_VIEW_ENABLED = false;
+
+function storedRenderQuality() {
+    try {
+        const stored = localStorage.getItem("solix-render-quality");
+        return ["auto", "eco", "full"].includes(stored) ? stored : "auto";
+    }
+    catch (_error) {
+        return "auto";
+    }
+}
+
+const renderQualityPreference = storedRenderQuality();
+const mobilePointer = window.matchMedia("(pointer: coarse)").matches;
+const mobileUserAgent = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || "") ||
+    navigator.userAgentData?.mobile === true;
+const compactGpuDevice = mobileUserAgent || (mobilePointer && Math.min(
+    window.screen?.width || window.innerWidth,
+    window.screen?.height || window.innerHeight
+) <= 900);
+const renderProfileName = renderQualityPreference === "eco" ? "eco" :
+    renderQualityPreference === "full" ? "full" : compactGpuDevice ? "mobile" : "desktop";
+const RENDER_PROFILES = Object.freeze({
+    eco: {
+        targetFps: 24, pixelRatio: 1, antialias: false,
+        sunShadowSize: 512, moonShadows: false, shadowInterval: 8,
+        labelInterval: 3, weatherInterval: 3, ecologyInterval: 4,
+        activeBirds: 5, cloudCount: 4, rainCount: 130, snowCount: 90,
+        minorShadows: false
+    },
+    mobile: {
+        targetFps: 30, pixelRatio: 1.15, antialias: false,
+        sunShadowSize: 1024, moonShadows: false, shadowInterval: 6,
+        labelInterval: 2, weatherInterval: 2, ecologyInterval: 3,
+        activeBirds: 8, cloudCount: 6, rainCount: 190, snowCount: 130,
+        minorShadows: false
+    },
+    desktop: {
+        targetFps: 60, pixelRatio: 1.75, antialias: true,
+        sunShadowSize: 2048, moonShadows: true, shadowInterval: 1,
+        labelInterval: 1, weatherInterval: 1, ecologyInterval: 1,
+        activeBirds: 20, cloudCount: 9, rainCount: 320, snowCount: 230,
+        minorShadows: true
+    },
+    full: {
+        targetFps: 60, pixelRatio: 2, antialias: true,
+        sunShadowSize: 2048, moonShadows: true, shadowInterval: 1,
+        labelInterval: 1, weatherInterval: 1, ecologyInterval: 1,
+        activeBirds: 20, cloudCount: 9, rainCount: 320, snowCount: 230,
+        minorShadows: true
+    }
+});
+const renderProfile = RENDER_PROFILES[renderProfileName];
+stage.dataset.renderProfile = renderProfileName;
+stage.dataset.targetFps = String(renderProfile.targetFps);
+stage.dataset.pixelRatioCap = String(renderProfile.pixelRatio);
 
 // Diese Perspektive entspricht der am 08.08.2026 festgelegten Übersicht mit
 // Garagen, Audi-Seite, Zufahrt und Pergola. Sie ist sowohl Startposition als
@@ -117,8 +187,8 @@ try {
     renderer = new THREE.WebGLRenderer({
         canvas,
         alpha: true,
-        antialias: true,
-        stencil: true,
+        antialias: renderProfile.antialias,
+        stencil: false,
         powerPreference: "high-performance"
     });
 }
@@ -133,7 +203,8 @@ renderer.toneMappingExposure = 1.06;
 renderer.shadowMap.enabled = true;
 // PCF keeps the soft solar shadows visibly darker than VSM, which tended to
 // wash them out on the bright house surfaces, especially on mobile displays.
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.shadowMap.autoUpdate = renderProfile.shadowInterval === 1;
 
 const environmentGenerator = new THREE.PMREMGenerator(renderer);
 scene.environment = environmentGenerator.fromScene(new RoomEnvironment(), 0.035).texture;
@@ -3790,7 +3861,7 @@ function loadAnimatedHorse(horseState) {
         model.traverse((object) => {
             if (!object.isMesh)
                 return;
-            object.castShadow = true;
+            object.castShadow = renderProfile.minorShadows;
             object.receiveShadow = true;
             const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
             const tuned = sourceMaterials.map((source) => {
@@ -4667,7 +4738,7 @@ function tuneRottweilerMaterials(model) {
     model.traverse((object) => {
         if (!object.isMesh)
             return;
-        object.castShadow = true;
+        object.castShadow = renderProfile.minorShadows;
         object.receiveShadow = true;
         const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
         const tuned = sourceMaterials.map((source) => {
@@ -5374,7 +5445,7 @@ function tuneCamelMaterials(model, camelIndex) {
     model.traverse((object) => {
         if (!object.isMesh)
             return;
-        object.castShadow = true;
+        object.castShadow = renderProfile.minorShadows;
         object.receiveShadow = true;
         const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
         const tuned = sourceMaterials.map((source) => {
@@ -5769,8 +5840,8 @@ function tuneBirdModel(model, config) {
     model.traverse((object) => {
         if (!object.isMesh)
             return;
-        object.castShadow = true;
-        object.receiveShadow = true;
+        object.castShadow = renderProfile.minorShadows;
+        object.receiveShadow = renderProfile.minorShadows;
         const sources = Array.isArray(object.material) ? object.material : [object.material];
         const materials = sources.map((source) => {
             const material = source.clone();
@@ -6077,6 +6148,7 @@ function createGardenBird(config, index, gltf) {
 // Szene definiert 22 Arten; zwei bleiben als wechselnde Besucher in Reserve,
 // sodass es trotz des hoeheren Limits weiterhin An- und Abfluege gibt.
 const MAX_ACTIVE_BIRD_VISITORS = 20;
+const activeBirdVisitorLimit = Math.min(MAX_ACTIVE_BIRD_VISITORS, renderProfile.activeBirds);
 
 function birdVisitsThisSeason(bird) {
     return !Array.isArray(bird.config.seasons) ||
@@ -6160,7 +6232,7 @@ function animateGardenBirds(seconds, delta) {
     let activeBirds = gardenBirds.filter((bird) => bird.state !== "away").length;
     gardenBirds.forEach((bird) => {
         if (bird.state === "away") {
-            if (seconds >= bird.nextVisitAt && activeBirds < MAX_ACTIVE_BIRD_VISITORS &&
+            if (seconds >= bird.nextVisitAt && activeBirds < activeBirdVisitorLimit &&
                 birdVisitsThisSeason(bird)) {
                 startBirdVisit(bird, seconds);
                 activeBirds += 1;
@@ -7231,6 +7303,342 @@ function createAudiChargeConnection() {
     return { port, station, attached, loose, attachedCable, dockedCable, statusMaterial };
 }
 
+const BUILDER_STORAGE_KEY = "solix-house-builder-v1";
+const BUILDER_VARIANTS = Object.freeze({
+    wall: [
+        { id: "wall-4m", label: "Gerade Wand · 4 m", length: 4.0, height: 2.75 },
+        { id: "wall-2m", label: "Kurze Wand · 2 m", length: 2.0, height: 2.75 },
+        { id: "wall-corner", label: "Eckwand · 3 × 3 m", length: 3.0, height: 2.75 }
+    ],
+    window: [
+        { id: "window-single", label: "Modern · einflügelig", width: 1.05, height: 1.35 },
+        { id: "window-double", label: "Doppelfenster", width: 1.85, height: 1.35 },
+        { id: "window-panoramic", label: "Panoramafenster", width: 2.55, height: 1.15 }
+    ],
+    door: [
+        { id: "door-wood", label: "Holztür", width: 1.02, height: 2.12, style: "wood" },
+        { id: "door-glass", label: "Glastür", width: 1.02, height: 2.12, style: "glass" },
+        { id: "door-modern", label: "Moderne Haustür", width: 1.22, height: 2.18, style: "modern" }
+    ]
+});
+const BUILDER_COLOR_SWATCHES = Object.freeze([
+    "#f1eee5", "#d8c8ad", "#bfc5c8", "#9fb5a2", "#9db5ce", "#8e5a43"
+]);
+
+function safeBuilderItems() {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(BUILDER_STORAGE_KEY) || "[]");
+        if (!Array.isArray(parsed))
+            return [];
+        return parsed.slice(0, 400).filter((item) =>
+            item && BUILDER_VARIANTS[item.type]?.some((variant) => variant.id === item.variant) &&
+            Number.isFinite(item.x) && Number.isFinite(item.z) && Number.isFinite(item.rotation));
+    }
+    catch (_error) {
+        return [];
+    }
+}
+
+function createBuilderPart(item) {
+    const part = new THREE.Group();
+    part.name = `Bauteil ${item.type} ${item.variant}`;
+    part.position.set(item.x, 0, item.z);
+    part.rotation.y = THREE.MathUtils.degToRad(item.rotation);
+    part.userData.builderItemId = item.id;
+    const color = new THREE.Color(item.color || "#f1eee5");
+    const wallMaterial = new THREE.MeshStandardMaterial({
+        color, roughness: 0.88, metalness: 0, envMapIntensity: 0.25
+    });
+    const frameMaterial = new THREE.MeshStandardMaterial({
+        color: color.clone().multiplyScalar(0.54), roughness: 0.58
+    });
+    const variant = BUILDER_VARIANTS[item.type].find((entry) => entry.id === item.variant) ||
+        BUILDER_VARIANTS[item.type][0];
+
+    if (item.type === "wall") {
+        addBox(part, [variant.length, variant.height, 0.20], wallMaterial,
+            [0, variant.height / 2, 0], { radius: 0.025 });
+        if (item.variant === "wall-corner")
+            addBox(part, [0.20, variant.height, variant.length], wallMaterial,
+                [-variant.length / 2 + 0.10, variant.height / 2, variant.length / 2 - 0.10],
+                { radius: 0.025 });
+    }
+    else if (item.type === "window") {
+        const glassMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0x83b8d4, roughness: 0.08, metalness: 0.08,
+            transparent: true, opacity: 0.74, transmission: renderProfileName === "mobile" ? 0 : 0.18,
+            clearcoat: 0.78, depthWrite: true
+        });
+        const y = 1.48;
+        addBox(part, [variant.width, variant.height, 0.07], glassMaterial, [0, y, 0],
+            { castShadow: false });
+        const border = 0.075;
+        [-1, 1].forEach((side) => {
+            addBox(part, [border, variant.height + border * 2, 0.11], frameMaterial,
+                [side * variant.width / 2, y, 0]);
+            addBox(part, [variant.width + border * 2, border, 0.11], frameMaterial,
+                [0, y + side * variant.height / 2, 0]);
+        });
+        if (item.variant === "window-double")
+            addBox(part, [border, variant.height, 0.115], frameMaterial, [0, y, 0]);
+        addBox(part, [variant.width + 0.18, 0.08, 0.28], frameMaterial,
+            [0, y - variant.height / 2 - 0.05, 0.06]);
+    }
+    else {
+        const doorMaterial = variant.style === "glass" ? new THREE.MeshPhysicalMaterial({
+            color: 0x789fb2, roughness: 0.10, transparent: true, opacity: 0.80,
+            transmission: renderProfileName === "mobile" ? 0 : 0.16, clearcoat: 0.72
+        }) : new THREE.MeshStandardMaterial({
+            color: variant.style === "wood" ? color.clone().multiplyScalar(0.72) : color,
+            roughness: variant.style === "wood" ? 0.70 : 0.40,
+            metalness: variant.style === "modern" ? 0.16 : 0
+        });
+        addBox(part, [variant.width, variant.height, 0.13], doorMaterial,
+            [0, variant.height / 2, 0], { radius: 0.025 });
+        const frame = 0.075;
+        [-1, 1].forEach((side) =>
+            addBox(part, [frame, variant.height + frame, 0.18], frameMaterial,
+                [side * (variant.width / 2 + frame / 2), variant.height / 2, 0]));
+        addBox(part, [variant.width + frame * 2, frame, 0.18], frameMaterial,
+            [0, variant.height + frame / 2, 0]);
+        if (variant.style === "wood") {
+            for (let panel = -0.32; panel <= 0.32; panel += 0.32)
+                addBox(part, [variant.width * 0.72, 0.035, 0.018], frameMaterial,
+                    [0, variant.height * (0.52 + panel * 0.32), 0.078], { castShadow: false });
+        }
+        const handle = new THREE.MeshStandardMaterial({ color: 0xd7dde0, metalness: 0.82, roughness: 0.20 });
+        addMesh(part, new THREE.SphereGeometry(0.055, 12, 8), handle,
+            variant.width * 0.30, variant.height * 0.52, 0.10, { castShadow: false });
+    }
+    return part;
+}
+
+function createHouseBuilder() {
+    const root = new THREE.Group();
+    root.name = "Interaktiver Haus-Baumodus";
+    root.visible = false;
+    scene.add(root);
+    const foundationMaterial = new THREE.MeshStandardMaterial({
+        color: 0xcbd5c0, roughness: 0.98, metalness: 0
+    });
+    const foundation = addBox(root, [20, 0.16, 20], foundationMaterial,
+        [0, -0.09, 0], { castShadow: false });
+    foundation.receiveShadow = true;
+    const grid = new THREE.GridHelper(20, 20, 0x0f766e, 0x64748b);
+    grid.position.y = 0.012;
+    const gridMaterials = Array.isArray(grid.material) ? grid.material : [grid.material];
+    gridMaterials.forEach((material, index) => {
+        material.transparent = true;
+        material.opacity = index === 0 ? 0.72 : 0.38;
+    });
+    root.add(grid);
+    const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(20, 20),
+        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, side: THREE.DoubleSide })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = 0.025;
+    ground.userData.builderGround = true;
+    root.add(ground);
+    const perimeter = new THREE.LineSegments(
+        new THREE.EdgesGeometry(new THREE.BoxGeometry(20, 0.12, 20)),
+        new THREE.LineBasicMaterial({ color: 0xfacc15, transparent: true, opacity: 0.86 })
+    );
+    perimeter.position.y = -0.04;
+    root.add(perimeter);
+    const builderLight = new THREE.DirectionalLight(0xfff1d7, 3.1);
+    builderLight.position.set(-8, 14, 10);
+    builderLight.castShadow = true;
+    builderLight.shadow.mapSize.set(renderProfile.sunShadowSize, renderProfile.sunShadowSize);
+    builderLight.shadow.camera.left = -12;
+    builderLight.shadow.camera.right = 12;
+    builderLight.shadow.camera.top = 12;
+    builderLight.shadow.camera.bottom = -12;
+    root.add(builderLight);
+    root.add(builderLight.target);
+
+    const builder = {
+        root, ground, active: false, rotation: 0,
+        items: safeBuilderItems(), objects: new Map(), previousView: null
+    };
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+
+    function save() {
+        try {
+            localStorage.setItem(BUILDER_STORAGE_KEY, JSON.stringify(builder.items));
+        }
+        catch (_error) {
+            builderStatus.textContent = "Entwurf bleibt nur bis zum Schließen dieser Seite erhalten.";
+        }
+    }
+
+    function updateStatus(message = "") {
+        const count = builder.items.length;
+        builderUndo.disabled = count === 0;
+        builderClear.disabled = count === 0;
+        builderStatus.textContent = message || (count === 0 ?
+            "Noch keine Bauteile gesetzt." :
+            `${count} ${count === 1 ? "Bauteil" : "Bauteile"} gespeichert.`);
+        stage.dataset.builderItemCount = String(count);
+    }
+
+    function addItemObject(item) {
+        const object = createBuilderPart(item);
+        builder.root.add(object);
+        builder.objects.set(item.id, object);
+    }
+
+    function rebuild() {
+        builder.objects.forEach((object) => builder.root.remove(object));
+        builder.objects.clear();
+        builder.items.forEach(addItemObject);
+        updateStatus();
+    }
+
+    function selectedVariant() {
+        const variants = BUILDER_VARIANTS[builderPartType.value] || BUILDER_VARIANTS.wall;
+        return variants.find((variant) => variant.id === builderVariant.value) || variants[0];
+    }
+
+    function refreshVariants() {
+        const variants = BUILDER_VARIANTS[builderPartType.value] || BUILDER_VARIANTS.wall;
+        builderVariant.replaceChildren(...variants.map((variant) => {
+            const option = document.createElement("option");
+            option.value = variant.id;
+            option.textContent = variant.label;
+            return option;
+        }));
+    }
+
+    function setRotation(value) {
+        builder.rotation = ((value % 360) + 360) % 360;
+        builderRotation.value = `${builder.rotation}°`;
+        builderRotation.textContent = `${builder.rotation}°`;
+    }
+
+    function placeAtPointer(event) {
+        if (!builder.active)
+            return false;
+        const rect = canvas.getBoundingClientRect();
+        pointer.set(
+            (event.clientX - rect.left) / rect.width * 2 - 1,
+            -(event.clientY - rect.top) / rect.height * 2 + 1
+        );
+        raycaster.setFromCamera(pointer, camera);
+        const hit = raycaster.intersectObject(builder.ground, false)[0];
+        if (!hit)
+            return false;
+        const point = builder.root.worldToLocal(hit.point.clone());
+        const x = THREE.MathUtils.clamp(Math.round(point.x * 2) / 2, -9.5, 9.5);
+        const z = THREE.MathUtils.clamp(Math.round(point.z * 2) / 2, -9.5, 9.5);
+        const variant = selectedVariant();
+        const item = {
+            id: globalThis.crypto?.randomUUID?.() || `part-${Date.now()}-${builder.items.length}`,
+            type: builderPartType.value,
+            variant: variant.id,
+            color: builderColor.value,
+            rotation: builder.rotation,
+            x, z
+        };
+        builder.items.push(item);
+        addItemObject(item);
+        save();
+        updateStatus(`${variant.label} bei ${x.toLocaleString("de-DE")} / ${z.toLocaleString("de-DE")} m gesetzt.`);
+        renderer.shadowMap.needsUpdate = true;
+        return true;
+    }
+
+    function setActive(active) {
+        if (builder.active === active)
+            return;
+        builder.active = active;
+        builderPanel.hidden = !active;
+        stage.classList.toggle("is-building", active);
+        stage.dataset.builderActive = String(active);
+        world.visible = !active;
+        builder.root.visible = active;
+        if (active) {
+            builder.previousView = {
+                yaw: state.targetYaw, pitch: state.targetPitch,
+                panX: state.targetPanX, panY: state.targetPanY, zoom: state.targetZoom
+            };
+            cameraTarget.set(0, 1.10, 0);
+            state.targetYaw = -0.58;
+            state.targetPitch = -0.25;
+            state.targetPanX = 0;
+            state.targetPanY = 0;
+            state.targetZoom = 0.92;
+            setMenuOpen(false);
+            updateStatus("Bauteil wählen und anschließend auf das Raster tippen.");
+        }
+        else {
+            cameraTarget.set(0, 2.1, 0);
+            const view = builder.previousView || DEFAULT_VIEW;
+            state.targetYaw = view.yaw;
+            state.targetPitch = view.pitch;
+            state.targetPanX = view.panX;
+            state.targetPanY = view.panY;
+            state.targetZoom = view.zoom;
+            updateLiveUi();
+        }
+        renderer.shadowMap.needsUpdate = true;
+    }
+
+    refreshVariants();
+    setRotation(0);
+    BUILDER_COLOR_SWATCHES.forEach((color, index) => {
+        const swatch = document.createElement("button");
+        swatch.type = "button";
+        swatch.className = "house-builder-swatch" + (index === 0 ? " selected" : "");
+        swatch.style.setProperty("--builder-swatch", color);
+        swatch.setAttribute("aria-label", `Farbe ${color}`);
+        swatch.addEventListener("click", () => {
+            builderColor.value = color;
+            builderSwatches.querySelectorAll("button").forEach((button) =>
+                button.classList.toggle("selected", button === swatch));
+        });
+        builderSwatches.appendChild(swatch);
+    });
+    builderPartType.addEventListener("change", refreshVariants);
+    builderColor.addEventListener("input", () =>
+        builderSwatches.querySelectorAll("button").forEach((button) => button.classList.remove("selected")));
+    builderRotateLeft.addEventListener("click", () => setRotation(builder.rotation - 90));
+    builderRotateRight.addEventListener("click", () => setRotation(builder.rotation + 90));
+    builderUndo.addEventListener("click", () => {
+        const item = builder.items.pop();
+        if (item) {
+            const object = builder.objects.get(item.id);
+            if (object)
+                builder.root.remove(object);
+            builder.objects.delete(item.id);
+            save();
+            updateStatus("Letztes Bauteil entfernt.");
+        }
+    });
+    builderClear.addEventListener("click", () => {
+        if (!builder.items.length || !window.confirm("Den gespeicherten Hausentwurf wirklich leeren?"))
+            return;
+        builder.items = [];
+        save();
+        rebuild();
+        updateStatus("Grundstück geleert.");
+    });
+    builderOpenButton.addEventListener("click", () => setActive(true));
+    builderCloseButton.addEventListener("click", () => setActive(false));
+    rebuild();
+    builder.root.visible = false;
+
+    builder.placeAtPointer = placeAtPointer;
+    builder.setActive = setActive;
+    window.solixHouseBuilder = {
+        open: () => setActive(true),
+        close: () => setActive(false),
+        getState: () => ({ active: builder.active, items: builder.items.map((item) => ({ ...item })) })
+    };
+    return builder;
+}
+
 createGarden();
 exteriorHouse = createHouse();
 pergolaModel = createPergolaPanels();
@@ -7250,6 +7658,7 @@ audiBatteryVisual = vehicleModels.audi.battery;
 loadDetailedVehicles(vehicleModels);
 const gridBoxModel = createGridBox();
 const chargingConnection = createAudiChargeConnection();
+const houseBuilder = createHouseBuilder();
 
 if (animalDemoMode) {
     const focusAnimal = animalFocusMode === "camel" ? camelHerd[0] :
@@ -7619,7 +8028,7 @@ scene.add(hemisphere);
 const sun = new THREE.DirectionalLight(0xffedcf, 3.65);
 sun.position.set(-10, 15, 10);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.set(renderProfile.sunShadowSize, renderProfile.sunShadowSize);
 sun.shadow.camera.left = -16;
 sun.shadow.camera.right = 16;
 sun.shadow.camera.top = 16;
@@ -7632,8 +8041,11 @@ sun.target.position.set(0, 2.1, 0);
 world.add(sun);
 world.add(sun.target);
 const moonLight = new THREE.DirectionalLight(0x9fc6ff, 0);
-moonLight.castShadow = true;
-moonLight.shadow.mapSize.set(1024, 1024);
+moonLight.castShadow = renderProfile.moonShadows;
+moonLight.shadow.mapSize.set(
+    Math.min(1024, renderProfile.sunShadowSize),
+    Math.min(1024, renderProfile.sunShadowSize)
+);
 moonLight.shadow.camera.left = -16;
 moonLight.shadow.camera.right = 16;
 moonLight.shadow.camera.top = 16;
@@ -7781,7 +8193,7 @@ function createCelestialVisuals() {
 
     const cloudTexture = makeCloudTexture();
     const random = seededNoise(157508);
-    for (let index = 0; index < 9; index += 1) {
+    for (let index = 0; index < renderProfile.cloudCount; index += 1) {
         const cloud = new THREE.Sprite(new THREE.SpriteMaterial({
             map: cloudTexture,
             color: index % 3 === 0 ? 0xd9e3eb : 0xf2f6fa,
@@ -7821,8 +8233,8 @@ function createWeatherParticles() {
         world.add(points);
         return points;
     };
-    weatherVisual.rain = makePoints(320, 0xbfe7ff, 0.055);
-    weatherVisual.snow = makePoints(230, 0xffffff, 0.105);
+    weatherVisual.rain = makePoints(renderProfile.rainCount, 0xbfe7ff, 0.055);
+    weatherVisual.snow = makePoints(renderProfile.snowCount, 0xffffff, 0.105);
 
     const starPositions = new Float32Array(180 * 3);
     for (let index = 0; index < 180; index += 1) {
@@ -7988,7 +8400,7 @@ function animateWeather(seconds, delta) {
         (numberValue(weather.celestial?.moon?.illumination_percent) ?? 50) / 100, 0, 1
     );
     const moonVisibility = moonAbove * Math.pow(1 - daylight, 0.72) * (1 - cloud * 0.82);
-    moonLight.castShadow = moonVisibility > 0.025;
+    moonLight.castShadow = renderProfile.moonShadows && moonVisibility > 0.025;
     moonLight.intensity = moonVisibility * moonIllumination * 0.82;
     weatherVisual.moonDisk.material.opacity = moonVisibility * (0.46 + moonIllumination * 0.54);
     updateMoonPhaseTexture(numberValue(weather.celestial?.moon?.phase_fraction) ?? 0.5);
@@ -9417,7 +9829,7 @@ function resize() {
     const rect = canvas.getBoundingClientRect();
     const width = Math.max(1, rect.width);
     const height = Math.max(1, rect.height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, renderProfile.pixelRatio));
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
     const compactView = width < 700;
@@ -9591,6 +10003,8 @@ canvas.addEventListener("pointermove", (event) => {
 function finishPointer(event) {
     if (!state.pointers.has(event.pointerId))
         return;
+    const placeBuilderPart = houseBuilder.active && state.pointers.size === 1 &&
+        !state.pointerMoved && event.button === 0;
     if (canvas.hasPointerCapture(event.pointerId))
         canvas.releasePointerCapture(event.pointerId);
     state.pointers.delete(event.pointerId);
@@ -9609,6 +10023,8 @@ function finishPointer(event) {
         state.pinchLastCenterY = 0;
         finishSceneInteractionSoon();
     }
+    if (placeBuilderPart)
+        houseBuilder.placeAtPointer(event);
 }
 
 canvas.addEventListener("pointerup", finishPointer);
@@ -9686,6 +10102,27 @@ menuCollapse.addEventListener("click", () => {
     setMenuOpen(false);
 });
 
+if (renderQualitySelect) {
+    renderQualitySelect.value = renderQualityPreference;
+    const profileDescriptions = {
+        eco: "24 Bilder/s · reduzierte Effekte",
+        mobile: "iPhone-Profil · 30 Bilder/s · optimierte Schatten",
+        desktop: "Desktop-Profil · 60 Bilder/s",
+        full: "60 Bilder/s · höchste Auflösung"
+    };
+    renderQualityStatus.textContent = profileDescriptions[renderProfileName];
+    renderQualitySelect.addEventListener("change", () => {
+        try {
+            localStorage.setItem("solix-render-quality", renderQualitySelect.value);
+        }
+        catch (_error) {
+            // Safari-Privatmodus kann lokalen Speicher sperren.
+        }
+        renderQualityStatus.textContent = "Wird neu geladen …";
+        window.setTimeout(() => window.location.reload(), 120);
+    });
+}
+
 syncAnimalState();
 
 window.addEventListener("solix-dashboard-data", (event) => {
@@ -9720,7 +10157,23 @@ else {
     window.addEventListener("resize", resize);
 }
 
+let renderedFrame = 0;
+let lastRenderedAt = 0;
+let accumulatedWeatherDelta = 0;
+let accumulatedEcologyDelta = 0;
+
 function animate(time) {
+    window.requestAnimationFrame(animate);
+    if (document.hidden) {
+        state.lastTime = time;
+        lastRenderedAt = time;
+        return;
+    }
+    const frameInterval = 1000 / renderProfile.targetFps;
+    if (lastRenderedAt && time - lastRenderedAt < frameInterval - 1)
+        return;
+    lastRenderedAt = time;
+    renderedFrame += 1;
     const seconds = time * 0.001;
     const delta = Math.min(0.05, (time - state.lastTime) * 0.001 || 0.016);
     state.lastTime = time;
@@ -9729,7 +10182,10 @@ function animate(time) {
     state.panX = THREE.MathUtils.damp(state.panX, state.targetPanX, 10, delta);
     state.panY = THREE.MathUtils.damp(state.panY, state.targetPanY, 10, delta);
     state.zoom = THREE.MathUtils.damp(state.zoom, state.targetZoom, 10, delta);
-    world.rotation.y = state.yaw;
+    if (houseBuilder.active)
+        houseBuilder.root.rotation.y = state.yaw;
+    else
+        world.rotation.y = state.yaw;
     updateCameraTransform();
     updateCutawayMode(delta);
     updateAudiPresenceMotion(time);
@@ -9760,15 +10216,17 @@ function animate(time) {
         animateTroughWater(seconds);
     }
 
-    animateSchematicBattery(solarBankBatteryVisual, seconds);
-    animateSchematicBattery(secondarySolarBankBatteryVisual, seconds);
-    animateSchematicBattery(audiBatteryVisual, seconds);
-    animatePondFish(seconds);
-    animateGardenBirds(seconds, delta);
-    animateHorse(seconds, delta);
-    animateCamels(seconds, delta);
-    animateDog(seconds, delta);
-    reconcileSharedAnimalMotion(delta);
+    if (!houseBuilder.active) {
+        animateSchematicBattery(solarBankBatteryVisual, seconds);
+        animateSchematicBattery(secondarySolarBankBatteryVisual, seconds);
+        animateSchematicBattery(audiBatteryVisual, seconds);
+        animatePondFish(seconds);
+        animateGardenBirds(seconds, delta);
+        animateHorse(seconds, delta);
+        animateCamels(seconds, delta);
+        animateDog(seconds, delta);
+        reconcileSharedAnimalMotion(delta);
+    }
     if (animalDemoMode) {
         stage.dataset.animalSounds = animalSoundsUnlocked ? "unlocked" : "locked";
         stage.dataset.horseMode = horse?.mode || "missing";
@@ -9780,7 +10238,7 @@ function animate(time) {
             .join("|");
         stage.dataset.birdSpeciesCount = String(gardenBirds.length);
         stage.dataset.birdActiveCount = String(gardenBirds.filter((bird) => bird.state !== "away").length);
-        stage.dataset.birdVisitorLimit = String(MAX_ACTIVE_BIRD_VISITORS);
+        stage.dataset.birdVisitorLimit = String(activeBirdVisitorLimit);
         stage.dataset.birdSinging = gardenBirds
             .filter((bird) => seconds < bird.singingUntil)
             .map((bird) => bird.config.name)
@@ -9817,14 +10275,27 @@ function animate(time) {
         stage.dataset.season = seasonalVisuals.current || seasonForDate();
         stage.dataset.troughWaterSurfaces = String(troughWaterSurfaces.length);
     }
-    updateAnimalEcology(time, delta);
-    animateWeather(seconds, delta);
-    animateSeasonalAccents(seconds);
-    animateExteriorRoomLights(delta);
-
-    updateLabelPositions();
+    if (houseBuilder.active)
+        accumulatedEcologyDelta = 0;
+    else {
+        accumulatedEcologyDelta += delta;
+        if (renderedFrame % renderProfile.ecologyInterval === 0) {
+            updateAnimalEcology(time, accumulatedEcologyDelta);
+            accumulatedEcologyDelta = 0;
+        }
+    }
+    accumulatedWeatherDelta += delta;
+    if (renderedFrame % renderProfile.weatherInterval === 0) {
+        animateWeather(seconds, accumulatedWeatherDelta);
+        animateSeasonalAccents(seconds);
+        animateExteriorRoomLights(accumulatedWeatherDelta);
+        accumulatedWeatherDelta = 0;
+    }
+    if (!renderer.shadowMap.autoUpdate && renderedFrame % renderProfile.shadowInterval === 0)
+        renderer.shadowMap.needsUpdate = true;
+    if (!houseBuilder.active && renderedFrame % renderProfile.labelInterval === 0)
+        updateLabelPositions();
     renderer.render(scene, camera);
-    window.requestAnimationFrame(animate);
 }
 
 resize();

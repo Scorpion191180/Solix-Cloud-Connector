@@ -71,6 +71,20 @@ Testbetrieb. Dabei werden Audi, Solix und Smart Plug vollständig geprüft und
 die beabsichtigte Schaltaktion angezeigt, aber es wird kein MQTT-Schaltbefehl
 gesendet.
 
+## Mobile Darstellung und Haus-Baumodus
+
+Die 3D-Ansicht wählt auf iPhone und anderen mobilen Geräten automatisch ein
+leichteres Renderprofil. Auflösung, Schatten, Wetterpartikel und die Zahl der
+gleichzeitig animierten Vögel werden reduziert, ohne Energie- oder
+Automatikdaten zu verändern. Im Menü kann zusätzlich **Flüssig / Sparmodus**
+gewählt werden; **Automatisch** ist die empfohlene Einstellung.
+
+Über **Eigenes Haus bauen** öffnet sich der erste 20 × 20-m-Baumodus. Wände,
+Fenster und Türen lassen sich in mehreren Modellen und Farben auf einem
+Meter-Raster setzen, drehen und rückgängig machen. Der Entwurf wird vorerst
+lokal im jeweiligen Browser gespeichert. Diese erste Ausbaustufe greift nicht
+in die bestehende Live-Grundstücksansicht oder die Ladeautomatik ein.
+
 ## Render-Konfiguration
 
 Unter **Environment** des Render-Web-Service setzen:

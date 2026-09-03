@@ -21,8 +21,8 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260901-98", dashboard)
-        self.assertIn("house.js?v=20260903-108", dashboard)
+        self.assertIn("style.css?v=20260903-109", dashboard)
+        self.assertIn("house.js?v=20260903-109", dashboard)
         self.assertIn("app.js?v=20260821-96", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
@@ -218,7 +218,7 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("[3.62, BALCONY_RAIL_CENTER_Y, -1.10]", script)
         self.assertIn("[3.50, BALCONY_RAIL_TOP_Y + 0.10, -0.34]", script)
         self.assertIn("RoomEnvironment", script)
-        self.assertIn("THREE.PCFSoftShadowMap", script)
+        self.assertIn("THREE.PCFShadowMap", script)
         self.assertIn("Feine Ziegelreihen, Traufen und Fallrohre", script)
         self.assertIn("const skylightFrame", script)
         self.assertIn("function createRoofTiles", script)
@@ -361,7 +361,7 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("function geographicSkyVector", script)
         self.assertIn("azimuthDegrees - configuredPanelAzimuth", script)
         self.assertIn("function updateMoonPhaseTexture", script)
-        self.assertIn("moonLight.castShadow = true", script)
+        self.assertIn("moonLight.castShadow = renderProfile.moonShadows", script)
         self.assertIn("weatherVisual.clouds", script)
         self.assertIn("const screenBlue", script)
         self.assertIn("const claddingColors", script)
@@ -584,6 +584,33 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('summer: "Sommer"', script)
         self.assertIn('autumn: "Herbst"', script)
         self.assertIn('winter: "Winter"', script)
+
+    def test_mobile_render_profile_and_house_builder_are_available(self) -> None:
+        dashboard = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "static" / "house.js").read_text(encoding="utf-8")
+        stylesheet = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
+
+        for element_id in (
+            "renderQualitySelect", "houseBuilderOpen", "houseBuilderPanel",
+            "builderPartType", "builderVariant", "builderColor",
+            "builderRotateLeft", "builderRotateRight", "builderUndo", "builderClear",
+        ):
+            self.assertIn(f'id="{element_id}"', dashboard)
+
+        self.assertIn('targetFps: 30, pixelRatio: 1.15', script)
+        self.assertIn('targetFps: 24, pixelRatio: 1', script)
+        self.assertIn('stage.dataset.targetFps = String(renderProfile.targetFps)', script)
+        self.assertIn('renderer.shadowMap.autoUpdate = renderProfile.shadowInterval === 1', script)
+        self.assertIn('const activeBirdVisitorLimit = Math.min', script)
+        self.assertIn('if (lastRenderedAt && time - lastRenderedAt < frameInterval - 1)', script)
+        self.assertIn('renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, renderProfile.pixelRatio))', script)
+        self.assertIn('const BUILDER_VARIANTS = Object.freeze', script)
+        self.assertIn('function createHouseBuilder()', script)
+        self.assertIn('function createBuilderPart(item)', script)
+        self.assertIn('new THREE.GridHelper(20, 20', script)
+        self.assertIn('window.solixHouseBuilder', script)
+        self.assertIn('.house-builder-panel', stylesheet)
+        self.assertIn('.house-stage.is-building', stylesheet)
         self.assertIn('id="automationHistory"', dashboard)
         self.assertIn("function createAudiBrakeLights", script)
         self.assertIn("function startAudiPresenceTransition", script)
