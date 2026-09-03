@@ -22,7 +22,7 @@ class DashboardSchematicTests(unittest.TestCase):
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
         self.assertIn("style.css?v=20260901-98", dashboard)
-        self.assertIn("house.js?v=20260903-105", dashboard)
+        self.assertIn("house.js?v=20260903-106", dashboard)
         self.assertIn("app.js?v=20260821-96", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
@@ -504,15 +504,22 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'name: "{species}"', script)
         self.assertIn('name: "Purpurhuhn"', script)
         self.assertIn("function createBirdActions", script)
+        self.assertIn('sparrow: "/static/models/bird-sparrow-quirky.glb?v=106"', script)
+        self.assertIn('eat: birdClipByWords(animations', script)
+        self.assertIn('bird.activity === "feeding" ? "eat" : "idle"', script)
         self.assertIn('setBirdAnimation(bird, "landing"', script)
         self.assertIn('setBirdAnimation(bird, "walking"', script)
         self.assertIn('setBirdAnimation(bird, flightAction', script)
-        self.assertIn("const MAX_ACTIVE_BIRD_VISITORS = 8", script)
+        self.assertIn("const MAX_ACTIVE_BIRD_VISITORS = 20", script)
+        self.assertIn('name: "Ringeltaube", model: "pigeon", length: 0.36', script)
+        self.assertIn('name: "Türkentaube", model: "pigeon", length: 0.28', script)
+        self.assertIn("nextVisitAt: 2 + index * 1.8 + random() * 4", script)
         self.assertIn("bird.singingUntil = seconds + duration", script)
         self.assertIn('let flying = bird.state.startsWith("flying")', script)
         self.assertIn("flying = true", script)
         self.assertIn("seconds + 4 + bird.random() * 5", script)
         self.assertIn("stage.dataset.birdSpeciesCount", script)
+        self.assertIn("stage.dataset.birdVisitorLimit", script)
         self.assertIn("stage.dataset.birdSinging", script)
         self.assertIn("stage.dataset.birdMissingAnimations", script)
         self.assertIn("const modelLength = Math.max(size.x * morph[0], size.z * morph[1]", script)
@@ -534,7 +541,9 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("function syncAnimalMotion", script)
         self.assertIn("reconcileSharedAnimalMotion(delta)", script)
         self.assertIn("stage.dataset.animalMotionRole", script)
-        for filename in ("bird-pigeon-animated.glb", "bird-swamphen.glb"):
+        for filename in (
+            "bird-pigeon-animated.glb", "bird-sparrow-quirky.glb", "bird-swamphen.glb"
+        ):
             bird_asset = ROOT / "static" / "models" / filename
             self.assertTrue(bird_asset.exists())
             self.assertLess(bird_asset.stat().st_size, 3_000_000)

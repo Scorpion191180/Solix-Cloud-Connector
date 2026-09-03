@@ -22,6 +22,16 @@ The source files in `audi/vendor/audi_connect/` are vendored from:
 The original license text is included at
 `audi/vendor/audi_connect/LICENSE`.
 
+## Sparrow - Quirky Series
+
+The animated sparrow model in `static/models/bird-sparrow-quirky.glb` is used
+for the sparrow-sized garden visitors:
+
+- Author: Omabuarts Studio
+- Source: https://sketchfab.com/3d-models/sparrow-quirky-series-289e7db66cfa45fbbe7624b8f48f6c8c
+- License: Creative Commons Attribution 4.0 (CC BY 4.0)
+- License text: https://creativecommons.org/licenses/by/4.0/
+
 ## audi_connect_ha device authorization
 
 The RFC 8628 device-authorization flow in

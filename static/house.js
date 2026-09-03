@@ -5448,10 +5448,10 @@ function createCamelPasture() {
 // So bleibt die Artenvielfalt auch auf dem iPhone performant, ohne gleitende
 // Bodenmodelle oder fliegende Standposen.
 const BIRD_VISITOR_CONFIGS = [
-    { name: "Haussperling", model: "pigeon", length: 0.15, tint: 0x8b7259, tintStrength: 0.60,
+    { name: "Haussperling", model: "sparrow", length: 0.15, tint: 0x8b7259, tintStrength: 0.46,
         morph: [0.84, 0.78], accent: 0x5d4536, feedBias: 0.94, poolBias: 0.12, pastureBias: 0.34,
         voice: "chirp", song: [2650, 2920, 2520, 3150] },
-    { name: "Feldsperling", model: "pigeon", length: 0.14, tint: 0x9a7652, tintStrength: 0.62,
+    { name: "Feldsperling", model: "sparrow", length: 0.14, tint: 0x9a7652, tintStrength: 0.48,
         morph: [0.82, 0.77], accent: 0x5a3328, feedBias: 0.94, poolBias: 0.10, pastureBias: 0.62,
         voice: "chirp", song: [2780, 3180, 2860, 3350] },
     { name: "Rotkehlchen", model: "pigeon", length: 0.14, tint: 0x75685c, tintStrength: 0.55,
@@ -5487,7 +5487,7 @@ const BIRD_VISITOR_CONFIGS = [
     { name: "Hausrotschwanz", model: "pigeon", length: 0.15, tint: 0x5b5654, tintStrength: 0.72,
         morph: [0.76, 0.94], accent: 0xb85b35, feedBias: 0.84, poolBias: 0.11, pastureBias: 0.26,
         voice: "scratch", song: [2300, 2850, 2050, 3100], seasons: ["spring", "summer", "autumn"] },
-    { name: "Zaunkönig", model: "pigeon", length: 0.10, tint: 0x765039, tintStrength: 0.76,
+    { name: "Zaunkönig", model: "sparrow", length: 0.10, tint: 0x765039, tintStrength: 0.60,
         morph: [0.92, 0.62], accent: 0x9f724c, feedBias: 0.94, poolBias: 0.09, pastureBias: 0.18,
         voice: "trill", song: [4100, 4550, 4300, 4800, 4450] },
     { name: "Elster", model: "pigeon", length: 0.45, tint: 0x222f34, tintStrength: 0.80,
@@ -5502,10 +5502,13 @@ const BIRD_VISITOR_CONFIGS = [
     { name: "Buntspecht", model: "pigeon", length: 0.23, tint: 0x33363a, tintStrength: 0.78,
         morph: [0.72, 1.06], accent: 0xb92d2b, feedBias: 0.74, poolBias: 0.08, pastureBias: 0.18,
         voice: "drum", song: [2050, 2250, 2450, 2700, 2920] },
-    { name: "Ringeltaube", model: "pigeon", length: 0.42, tint: 0x707982, tintStrength: 0.52,
+    // Das gemeinsame Tauben-Rig wirkt durch seinen breiten Rumpf optisch
+    // groesser als seine reine Laengenangabe. Deshalb etwas kleiner als das
+    // Naturmass skalieren, damit es neben Pferd, Kamelen und Autos stimmig ist.
+    { name: "Ringeltaube", model: "pigeon", length: 0.36, tint: 0x707982, tintStrength: 0.52,
         morph: [1.04, 1.02], accent: 0xdadccf, feedBias: 0.82, poolBias: 0.14, pastureBias: 0.46,
         voice: "coo", song: [510, 440, 480, 420] },
-    { name: "Türkentaube", model: "pigeon", length: 0.32, tint: 0xb4aa99, tintStrength: 0.56,
+    { name: "Türkentaube", model: "pigeon", length: 0.28, tint: 0xb4aa99, tintStrength: 0.56,
         morph: [0.90, 0.96], accent: 0x524f4c, feedBias: 0.84, poolBias: 0.18, pastureBias: 0.28,
         voice: "coo", song: [580, 500, 550] },
     { name: "Teichhuhn", model: "swamphen", length: 0.35, tint: 0x414b4b, tintStrength: 0.38,
@@ -5518,6 +5521,7 @@ const BIRD_VISITOR_CONFIGS = [
 
 const BIRD_MODEL_FILES = Object.freeze({
     pigeon: "/static/models/bird-pigeon-animated.glb?v=100",
+    sparrow: "/static/models/bird-sparrow-quirky.glb?v=106",
     swamphen: "/static/models/bird-swamphen.glb?v=100"
 });
 
@@ -5702,11 +5706,12 @@ function birdClipByWords(animations, words) {
 
 function createBirdActions(mixer, animations) {
     const clips = {
-        fly: birdClipByWords(animations, ["flapping", "_fly", "flying"]),
+        fly: birdClipByWords(animations, ["flapping", "_fly", "flying", "fly"]),
         glide: birdClipByWords(animations, ["gliding", "glide"]),
         landing: birdClipByWords(animations, ["landing", "land"]),
         idle: birdClipByWords(animations, ["standing idle", "_pose", "idle"]),
-        walking: birdClipByWords(animations, ["_walk", "walking"]),
+        walking: birdClipByWords(animations, ["_walk", "walking", "walk"]),
+        eat: birdClipByWords(animations, ["_eat", "eating", "eat"]),
         takeoff: birdClipByWords(animations, ["takeoff", "take_off"])
     };
     if (!clips.fly)
@@ -5786,7 +5791,10 @@ function createGardenBird(config, index, gltf) {
         index, config, random, group, model, mixer, actions,
         state: "away", target: new THREE.Vector3(), activity: "feeding",
         pasture: false, resourceKey: null, stateUntil: 0,
-        nextVisitAt: 3 + index * 7 + random() * 8,
+        // Die Besucher kommen weiterhin nacheinander, aber alle Arten koennen
+        // innerhalb der ersten Minute sichtbar werden. Zuvor dauerte das bei
+        // den hinteren Listeneintraegen ueber zweieinhalb Minuten.
+        nextVisitAt: 2 + index * 1.8 + random() * 4,
         // In der lokalen Animationsvorschau erklingt der erste Ruf frueher,
         // damit Gesang und Schnabelbewegung ohne langes Warten pruefbar sind.
         nextSongAt: animalDemoMode ? 8 + index * 0.9 : 12 + index * 4 + random() * 24,
@@ -5813,7 +5821,10 @@ function createGardenBird(config, index, gltf) {
     return bird;
 }
 
-const MAX_ACTIVE_BIRD_VISITORS = 8;
+// Bis zu 20 gleichzeitig sichtbare Besucher wie vom Nutzer gewuenscht. Die
+// Szene definiert 22 Arten; zwei bleiben als wechselnde Besucher in Reserve,
+// sodass es trotz des hoeheren Limits weiterhin An- und Abfluege gibt.
+const MAX_ACTIVE_BIRD_VISITORS = 20;
 
 function birdVisitsThisSeason(bird) {
     return !Array.isArray(bird.config.seasons) ||
@@ -5857,7 +5868,7 @@ function startBirdDeparture(bird, seconds) {
 function finishBirdLanding(bird, seconds) {
     bird.state = bird.activity;
     bird.stateUntil = seconds + 7 + bird.index * 0.75 + bird.random() * 13;
-    setBirdAnimation(bird, "idle", 0.16);
+    setBirdAnimation(bird, bird.activity === "feeding" ? "eat" : "idle", 0.16);
 }
 
 function startNextBirdActivity(bird, seconds) {
@@ -9516,6 +9527,7 @@ function animate(time) {
             .join("|");
         stage.dataset.birdSpeciesCount = String(gardenBirds.length);
         stage.dataset.birdActiveCount = String(gardenBirds.filter((bird) => bird.state !== "away").length);
+        stage.dataset.birdVisitorLimit = String(MAX_ACTIVE_BIRD_VISITORS);
         stage.dataset.birdSinging = gardenBirds
             .filter((bird) => seconds < bird.singingUntil)
             .map((bird) => bird.config.name)
@@ -9541,8 +9553,9 @@ function animate(time) {
             .join("|") || "none";
         stage.dataset.birdMissingAnimations = gardenBirds.map((bird) => {
             const required = bird.config.model === "swamphen" ?
-                ["fly", "idle", "walking"] :
-                ["fly", "glide", "landing", "idle", "takeoff"];
+                ["fly", "idle", "walking"] : bird.config.model === "sparrow" ?
+                    ["fly", "idle", "walking", "eat"] :
+                    ["fly", "glide", "landing", "idle", "takeoff"];
             const missing = required.filter((name) => !bird.actions[name]);
             return missing.length ? `${bird.config.name}:${missing.join(",")}` : "";
         }).filter(Boolean).join("|") || "none";
