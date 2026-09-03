@@ -42,6 +42,19 @@ dog and is recolored and procedurally animated by the web application:
 - License: Creative Commons Attribution 4.0 (CC BY 4.0)
 - License text: https://creativecommons.org/licenses/by/4.0/
 
+## Benny, the Rottweiler
+
+The primary animated Rottweiler model in
+`static/models/rottweiler-benny/rottweiler-animated.glb` is based on:
+
+- Author: umask007
+- Source: https://opengameart.org/content/benny-the-rottweiler
+- License: Creative Commons Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0)
+- License text: https://creativecommons.org/licenses/by-sa/3.0/
+
+The Blender source was converted to glTF and optimized for mobile rendering.
+The derived model asset is distributed under the same CC BY-SA 3.0 license.
+
 ## audi_connect_ha device authorization
 
 The RFC 8628 device-authorization flow in

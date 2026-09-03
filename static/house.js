@@ -27,6 +27,7 @@ const renderQualityStatus = document.getElementById("renderQualityStatus");
 const builderOpenButton = document.getElementById("houseBuilderOpen");
 const builderPanel = document.getElementById("houseBuilderPanel");
 const builderCloseButton = document.getElementById("houseBuilderClose");
+const builderPanelToggle = document.getElementById("builderPanelToggle");
 const builderPartType = document.getElementById("builderPartType");
 const builderVariant = document.getElementById("builderVariant");
 const builderColor = document.getElementById("builderColor");
@@ -34,6 +35,8 @@ const builderSwatches = document.getElementById("builderSwatches");
 const builderRotateLeft = document.getElementById("builderRotateLeft");
 const builderRotateRight = document.getElementById("builderRotateRight");
 const builderRotation = document.getElementById("builderRotation");
+const builderNew = document.getElementById("builderNew");
+const builderDelete = document.getElementById("builderDelete");
 const builderUndo = document.getElementById("builderUndo");
 const builderClear = document.getElementById("builderClear");
 const builderStatus = document.getElementById("builderStatus");
@@ -4733,7 +4736,11 @@ function tuneRottweilerMaterials(model) {
         "material.002": 0x9d4d24,
         "material.003": 0x030303,
         "material.004": 0xeee8dc,
-        "material.005": 0xb33b42
+        "material.005": 0xb33b42,
+        "fell": 0xffffff,
+        "schnauze": 0xffffff,
+        "hair2": 0xffffff,
+        "ear": 0xffffff
     };
     model.traverse((object) => {
         if (!object.isMesh)
@@ -4772,13 +4779,31 @@ function createDogActions(mixer, animations) {
         return {};
     const clips = {
         idle: dogClipByWords(animations, ["idle1", "idle ear", "idle"]),
-        walk: dogClipByWords(animations, ["walkcycle", "walk"]),
+        walk: dogClipByWords(animations, ["walkcycle", "walk", "run"]),
         run: dogClipByWords(animations, ["runcycle", "run"]),
-        sleep: dogClipByWords(animations, ["idle liedown", "laydown", "lie"])
+        sleep: dogClipByWords(animations, ["idle liedown", "laydown", "lie", "die"]),
+        bark: dogClipByWords(animations, ["bark", "attack"]),
+        jump: dogClipByWords(animations, ["jump", "attack2"]),
+        flinch: dogClipByWords(animations, ["flinch"])
     };
-    return Object.fromEntries(Object.entries(clips)
-        .filter(([, clip]) => clip)
-        .map(([name, clip]) => [name, mixer.clipAction(clip)]));
+    const actions = {};
+    Object.entries(clips).forEach(([name, sourceClip]) => {
+        if (!sourceClip)
+            return;
+        // Benny besitzt nur einen Laufclip. Für das Gehen wird deshalb eine
+        // eigene, langsam abgespielte Kopie verwendet, damit ein Wechsel zum
+        // Rennen nicht dieselbe AnimationAction mit falschem Tempo wiederverwendet.
+        const clip = name === "walk" && sourceClip === clips.run ? sourceClip.clone() : sourceClip;
+        if (clip !== sourceClip)
+            clip.name = `${sourceClip.name}-walk`;
+        const action = mixer.clipAction(clip);
+        if (["sleep", "jump"].includes(name)) {
+            action.setLoop(THREE.LoopOnce, 1);
+            action.clampWhenFinished = true;
+        }
+        actions[name] = action;
+    });
+    return actions;
 }
 
 function setDogAnimation(dogState, name, fadeSeconds = 0.22) {
@@ -4787,7 +4812,9 @@ function setDogAnimation(dogState, name, fadeSeconds = 0.22) {
         return;
     if (dogState.currentAction)
         dogState.currentAction.fadeOut(fadeSeconds);
-    next.reset().setEffectiveTimeScale(1).setEffectiveWeight(1)
+    const timeScale = name === "walk" ? 0.56 : name === "run" ? 1.12 :
+        name === "sleep" ? 0.74 : name === "jump" ? 0.92 : 1;
+    next.reset().setEffectiveTimeScale(timeScale).setEffectiveWeight(1)
         .fadeIn(fadeSeconds).play();
     dogState.currentAction = next;
     dogState.currentActionName = name;
@@ -4812,16 +4839,9 @@ function installDetailedRottweiler(dogState, gltf, assetKind) {
     model.position.y -= bounds.min.y + bodyPivotY;
     model.position.z -= center.z;
     tuneRottweilerMaterials(model);
-    // Das riggbare Ausgangsmodell ist ein Schäferhund. Die etwas breitere
-    // Brust, der kompaktere Körper und kleinere Ohren bringen die Silhouette
-    // näher an einen Rottweiler, ohne das Skelett zu beschädigen.
-    model.scale.x *= 1.10;
-    model.scale.z *= 0.92;
-    model.traverse((object) => {
-        const name = object.name?.toLowerCase() || "";
-        if (name.includes("ear") && object.isBone)
-            object.scale.multiplyScalar(0.68);
-    });
+    // Das neue Ausgangsmodell ist bereits ein echter, kompakter Rottweiler.
+    // Seine Proportionen bleiben deshalb unangetastet; nur die Gesamtlänge
+    // wird an Grundstück, Fahrzeuge und Futterstationen angeglichen.
     dogState.detailedRig.position.y = bodyPivotY;
     dogState.detailedRig.userData.standY = bodyPivotY;
     dogState.detailedRig.add(model);
@@ -4830,6 +4850,14 @@ function installDetailedRottweiler(dogState, gltf, assetKind) {
     dogState.assetKind = assetKind;
     dogState.mixer = gltf.animations?.length ? new THREE.AnimationMixer(model) : null;
     dogState.actions = createDogActions(dogState.mixer, gltf.animations || []);
+    dogState.detailedBones = {};
+    model.traverse((object) => {
+        if (!object.isBone)
+            return;
+        const name = object.name?.toLowerCase() || "";
+        if (name === "head" || name === "hals" || name === "kiefer" || name.startsWith("tail"))
+            dogState.detailedBones[name] = object;
+    });
     dogState.assetLoaded = true;
     setDogAnimation(dogState, "idle", 0);
 }
@@ -4846,8 +4874,8 @@ function loadDetailedRottweilerFallback(dogState) {
 
 function loadDetailedRottweiler(dogState) {
     vehicleLoader.load(
-        "/static/models/rottweiler-animated/rottweiler-rigged.glb?v=108",
-        (gltf) => installDetailedRottweiler(dogState, gltf, "rigged-gltf"),
+        "/static/models/rottweiler-benny/rottweiler-animated.glb?v=110",
+        (gltf) => installDetailedRottweiler(dogState, gltf, "benny-rigged"),
         undefined,
         () => loadDetailedRottweilerFallback(dogState)
     );
@@ -4958,6 +4986,7 @@ function createRottweiler() {
         nextSleepAt: animalDemoMode ? 24 : 160 + random() * 220,
         nextCasualBarkAt: animalDemoMode ? 7 : 14 + random() * 20,
         nextChaseAt: animalDemoMode ? 12 : 32 + random() * 55,
+        nextJumpAt: animalDemoMode ? 18 : 55 + random() * 90,
         lastHungryBarkAt: -Infinity,
         lastAudibleBarkAt: -Infinity,
         chaseBird: null,
@@ -5054,6 +5083,13 @@ function startNextDogActivity(dogState, seconds) {
             return;
         }
     }
+    if (seconds >= dogState.nextJumpAt && dogState.random() < 0.34) {
+        dogState.nextJumpAt = seconds + 70 + dogState.random() * 120;
+        dogState.mode = "jumping";
+        dogState.modeUntil = seconds + 1.15;
+        dogState.navigation = null;
+        return;
+    }
     const hour = new Date().getHours();
     if (seconds >= dogState.nextSleepAt && dogState.random() < (hour >= 22 || hour < 6 ? 0.76 : 0.34)) {
         dogState.mode = "sleeping";
@@ -5068,10 +5104,16 @@ function startNextDogActivity(dogState, seconds) {
 
 function animateRottweilerPose(dogState, seconds, delta, moving, running) {
     const sleeping = dogState.mode === "sleeping";
+    const jumping = dogState.mode === "jumping";
     const loweringHead = ["eating", "drinking", "waiting-food"].includes(dogState.mode);
     const barking = dogState.mode === "barking" ||
         (dogState.mode === "waiting-food" && seconds - dogState.lastHungryBarkAt < 1.15);
+    const jumpProgress = jumping ? THREE.MathUtils.clamp(
+        1 - Math.max(0, dogState.modeUntil - seconds) / 1.15, 0, 1
+    ) : 0;
+    const jumpLift = jumping ? Math.sin(jumpProgress * Math.PI) * 0.24 : 0;
     const bodyY = sleeping ? (dogState.detailedModel ? 0.015 : -0.27) :
+        jumping ? jumpLift :
         moving ? Math.abs(Math.sin(dogState.travelled * 8.2)) * (running ? 0.034 : 0.022) : 0;
     dogState.visualRoot.position.y = THREE.MathUtils.damp(
         dogState.visualRoot.position.y, bodyY, 7, delta);
@@ -5079,11 +5121,22 @@ function animateRottweilerPose(dogState, seconds, delta, moving, running) {
     if (dogState.detailedModel) {
         const standY = dogState.detailedRig.userData.standY || 0.30;
         const gait = moving ? Math.sin(dogState.travelled * (running ? 12.2 : 8.6)) : 0;
-        const rigged = dogState.assetKind === "rigged-gltf" && dogState.mixer;
+        const rigged = dogState.assetKind === "benny-rigged" && dogState.mixer;
         if (rigged) {
-            setDogAnimation(dogState, sleeping ? "sleep" :
-                moving ? (running ? "run" : "walk") : "idle");
+            setDogAnimation(dogState, sleeping ? "sleep" : jumping ? "jump" :
+                barking ? "bark" : moving ? (running ? "run" : "walk") : "idle");
             dogState.mixer.update(delta);
+            const head = dogState.detailedBones.head;
+            const neck = dogState.detailedBones.hals;
+            const jaw = dogState.detailedBones.kiefer;
+            if (loweringHead) {
+                if (neck)
+                    neck.rotation.x += 0.52;
+                if (head)
+                    head.rotation.x += 0.46 + Math.sin(seconds * 4.8) * 0.05;
+                if (jaw)
+                    jaw.rotation.x += 0.08 + Math.max(0, Math.sin(seconds * 5.6)) * 0.07;
+            }
         }
         dogState.detailedRig.position.y = THREE.MathUtils.damp(
             dogState.detailedRig.position.y,
@@ -5093,7 +5146,7 @@ function animateRottweilerPose(dogState, seconds, delta, moving, running) {
             rigged ? 0 : sleeping ? -1.32 : gait * (running ? 0.052 : 0.032), 8, delta);
         dogState.detailedRig.rotation.x = THREE.MathUtils.damp(
             dogState.detailedRig.rotation.x,
-            rigged ? (loweringHead ? 0.08 : barking ? -0.035 : 0) :
+            rigged ? (loweringHead ? 0.10 : barking ? -0.035 : jumping ? -0.08 : 0) :
                 sleeping ? 0.06 : loweringHead ? 0.22 : barking ? -0.08 :
                 moving ? gait * 0.018 : 0, 9, delta);
         const breathing = sleeping ? Math.sin(seconds * 2.1) * 0.012 :
@@ -5151,7 +5204,8 @@ function animateDog(seconds, delta) {
             playDogBark(true);
         }
     }
-    if (dog.mode === "sleeping" || dog.mode === "eating" || dog.mode === "drinking" ||
+    if (dog.mode === "sleeping" || dog.mode === "jumping" ||
+        dog.mode === "eating" || dog.mode === "drinking" ||
         dog.mode === "barking" || dog.mode === "idle" || dog.mode === "waiting-food") {
         animateRottweilerPose(dog, seconds, delta, false, false);
         if (!["waiting-food"].includes(dog.mode) && seconds >= dog.modeUntil)
@@ -7459,7 +7513,9 @@ function createHouseBuilder() {
 
     const builder = {
         root, ground, active: false, rotation: 0,
-        items: safeBuilderItems(), objects: new Map(), previousView: null
+        items: safeBuilderItems(), objects: new Map(), previousView: null,
+        selectedId: null, selectionHelper: null, draggingId: null,
+        dragStartClient: null, dragMoved: false
     };
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
@@ -7473,14 +7529,165 @@ function createHouseBuilder() {
         }
     }
 
+    function itemById(id) {
+        return builder.items.find((item) => item.id === id) || null;
+    }
+
+    function variantForItem(item) {
+        return BUILDER_VARIANTS[item.type]?.find((variant) => variant.id === item.variant) ||
+            BUILDER_VARIANTS[item.type]?.[0] || null;
+    }
+
+    function clearSelectionHelper() {
+        if (!builder.selectionHelper)
+            return;
+        builder.root.remove(builder.selectionHelper);
+        builder.selectionHelper.geometry?.dispose?.();
+        builder.selectionHelper.material?.dispose?.();
+        builder.selectionHelper = null;
+    }
+
+    function refreshSelectionHelper() {
+        clearSelectionHelper();
+        const object = builder.objects.get(builder.selectedId);
+        if (!object)
+            return;
+        builder.selectionHelper = new THREE.BoxHelper(object, 0xfacc15);
+        builder.selectionHelper.name = "Ausgewähltes Bauteil";
+        builder.selectionHelper.material.depthTest = false;
+        builder.selectionHelper.material.transparent = true;
+        builder.selectionHelper.material.opacity = 0.96;
+        builder.selectionHelper.renderOrder = 20;
+        builder.root.add(builder.selectionHelper);
+    }
+
+    function syncControlsFromItem(item) {
+        builderPartType.value = item.type;
+        refreshVariants(item.variant);
+        builderColor.value = item.color || "#f1eee5";
+        builderSwatches.querySelectorAll("button").forEach((button) =>
+            button.classList.toggle("selected",
+                button.style.getPropertyValue("--builder-swatch").toLowerCase() === builderColor.value.toLowerCase()));
+        setRotation(item.rotation);
+    }
+
+    function selectItem(id, message = "") {
+        builder.selectedId = builder.objects.has(id) ? id : null;
+        const item = itemById(builder.selectedId);
+        if (item)
+            syncControlsFromItem(item);
+        refreshSelectionHelper();
+        updateStatus(message || (item ?
+            "Bauteil ausgewählt: ziehen zum Verschieben, Pfeile zum Drehen." :
+            "Neues Bauteil wählen und auf eine freie Fläche tippen."));
+    }
+
+    function wallSegments(item) {
+        const variant = variantForItem(item);
+        if (!variant)
+            return [];
+        const angle = THREE.MathUtils.degToRad(item.rotation);
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const segments = [{
+            x: item.x, z: item.z, length: variant.length,
+            axisX: cos, axisZ: -sin, normalX: sin, normalZ: cos,
+            rotation: item.rotation
+        }];
+        if (item.variant === "wall-corner") {
+            const localX = -variant.length / 2 + 0.10;
+            const localZ = variant.length / 2 - 0.10;
+            segments.push({
+                x: item.x + cos * localX + sin * localZ,
+                z: item.z - sin * localX + cos * localZ,
+                length: variant.length,
+                axisX: sin, axisZ: cos, normalX: cos, normalZ: -sin,
+                rotation: item.rotation + 90
+            });
+        }
+        return segments;
+    }
+
+    function snapOpeningToWall(item, rawX, rawZ) {
+        if (!["window", "door"].includes(item.type))
+            return { x: rawX, z: rawZ, rotation: item.rotation, wallId: null };
+        const opening = variantForItem(item);
+        let best = null;
+        builder.items.filter((candidate) => candidate.type === "wall").forEach((wall) => {
+            wallSegments(wall).forEach((segment) => {
+                const dx = rawX - segment.x;
+                const dz = rawZ - segment.z;
+                const half = Math.max(0.05, segment.length / 2 - (opening?.width || 0.8) / 2 - 0.08);
+                const progress = THREE.MathUtils.clamp(dx * segment.axisX + dz * segment.axisZ, -half, half);
+                const projectedX = segment.x + segment.axisX * progress;
+                const projectedZ = segment.z + segment.axisZ * progress;
+                const distance = Math.hypot(rawX - projectedX, rawZ - projectedZ);
+                if (!best || distance < best.distance) {
+                    const side = (dx * segment.normalX + dz * segment.normalZ) < 0 ? -1 : 1;
+                    best = {
+                        distance,
+                        x: projectedX + segment.normalX * side * 0.115,
+                        z: projectedZ + segment.normalZ * side * 0.115,
+                        rotation: ((segment.rotation + (side < 0 ? 180 : 0)) % 360 + 360) % 360,
+                        wallId: wall.id
+                    };
+                }
+            });
+        });
+        return best?.distance <= 1.25 ? best : null;
+    }
+
+    function pointerOnGround(event) {
+        const rect = canvas.getBoundingClientRect();
+        pointer.set(
+            (event.clientX - rect.left) / rect.width * 2 - 1,
+            -(event.clientY - rect.top) / rect.height * 2 + 1
+        );
+        raycaster.setFromCamera(pointer, camera);
+        const hit = raycaster.intersectObject(builder.ground, false)[0];
+        return hit ? builder.root.worldToLocal(hit.point.clone()) : null;
+    }
+
+    function itemIdFromObject(object) {
+        let current = object;
+        while (current && current !== builder.root) {
+            if (current.userData?.builderItemId)
+                return current.userData.builderItemId;
+            current = current.parent;
+        }
+        return null;
+    }
+
+    function builderItemHitAtPointer(event) {
+        const rect = canvas.getBoundingClientRect();
+        pointer.set(
+            (event.clientX - rect.left) / rect.width * 2 - 1,
+            -(event.clientY - rect.top) / rect.height * 2 + 1
+        );
+        raycaster.setFromCamera(pointer, camera);
+        for (const hit of raycaster.intersectObjects(Array.from(builder.objects.values()), true)) {
+            const id = itemIdFromObject(hit.object);
+            if (id)
+                return { id, point: builder.root.worldToLocal(hit.point.clone()) };
+        }
+        return null;
+    }
+
+    function itemAtPointer(event) {
+        return builderItemHitAtPointer(event)?.id || null;
+    }
+
     function updateStatus(message = "") {
         const count = builder.items.length;
         builderUndo.disabled = count === 0;
         builderClear.disabled = count === 0;
+        builderDelete.disabled = !builder.selectedId;
         builderStatus.textContent = message || (count === 0 ?
             "Noch keine Bauteile gesetzt." :
-            `${count} ${count === 1 ? "Bauteil" : "Bauteile"} gespeichert.`);
+            builder.selectedId ? "Bauteil ausgewählt: ziehen oder mit den Pfeilen drehen." :
+                `${count} ${count === 1 ? "Bauteil" : "Bauteile"} gespeichert.`);
         stage.dataset.builderItemCount = String(count);
+        stage.dataset.builderSelection = builder.selectedId ? "true" : "false";
     }
 
     function addItemObject(item) {
@@ -7489,10 +7696,23 @@ function createHouseBuilder() {
         builder.objects.set(item.id, object);
     }
 
+    function replaceItemObject(item) {
+        const previous = builder.objects.get(item.id);
+        if (previous)
+            builder.root.remove(previous);
+        addItemObject(item);
+        refreshSelectionHelper();
+        renderer.shadowMap.needsUpdate = true;
+    }
+
     function rebuild() {
+        clearSelectionHelper();
         builder.objects.forEach((object) => builder.root.remove(object));
         builder.objects.clear();
         builder.items.forEach(addItemObject);
+        if (!builder.objects.has(builder.selectedId))
+            builder.selectedId = null;
+        refreshSelectionHelper();
         updateStatus();
     }
 
@@ -7501,7 +7721,7 @@ function createHouseBuilder() {
         return variants.find((variant) => variant.id === builderVariant.value) || variants[0];
     }
 
-    function refreshVariants() {
+    function refreshVariants(preferredVariant = null) {
         const variants = BUILDER_VARIANTS[builderPartType.value] || BUILDER_VARIANTS.wall;
         builderVariant.replaceChildren(...variants.map((variant) => {
             const option = document.createElement("option");
@@ -7509,6 +7729,8 @@ function createHouseBuilder() {
             option.textContent = variant.label;
             return option;
         }));
+        if (preferredVariant && variants.some((variant) => variant.id === preferredVariant))
+            builderVariant.value = preferredVariant;
     }
 
     function setRotation(value) {
@@ -7517,21 +7739,33 @@ function createHouseBuilder() {
         builderRotation.textContent = `${builder.rotation}°`;
     }
 
+    function rotateSelection(delta) {
+        const item = itemById(builder.selectedId);
+        if (!item) {
+            setRotation(builder.rotation + delta);
+            return;
+        }
+        item.rotation = ((item.rotation + delta) % 360 + 360) % 360;
+        setRotation(item.rotation);
+        replaceItemObject(item);
+        save();
+        updateStatus(`Auswahl auf ${item.rotation}° gedreht.`);
+    }
+
     function placeAtPointer(event) {
         if (!builder.active)
             return false;
-        const rect = canvas.getBoundingClientRect();
-        pointer.set(
-            (event.clientX - rect.left) / rect.width * 2 - 1,
-            -(event.clientY - rect.top) / rect.height * 2 + 1
-        );
-        raycaster.setFromCamera(pointer, camera);
-        const hit = raycaster.intersectObject(builder.ground, false)[0];
-        if (!hit)
+        const openingType = ["window", "door"].includes(builderPartType.value);
+        const clickedItemHit = openingType ? builderItemHitAtPointer(event) : null;
+        const clickedItem = clickedItemHit ? itemById(clickedItemHit.id) : null;
+        // Beim Setzen eines Fensters oder einer Tür ist der Klick auf die Wand
+        // selbst die präziseste Eingabe. Der Trefferpunkt der Wand wird direkt
+        // benutzt, statt ihn perspektivisch auf die Bodenebene zu verlängern.
+        const point = clickedItem?.type === "wall" ? clickedItemHit.point : pointerOnGround(event);
+        if (!point)
             return false;
-        const point = builder.root.worldToLocal(hit.point.clone());
-        const x = THREE.MathUtils.clamp(Math.round(point.x * 2) / 2, -9.5, 9.5);
-        const z = THREE.MathUtils.clamp(Math.round(point.z * 2) / 2, -9.5, 9.5);
+        let x = THREE.MathUtils.clamp(Math.round(point.x * 2) / 2, -9.5, 9.5);
+        let z = THREE.MathUtils.clamp(Math.round(point.z * 2) / 2, -9.5, 9.5);
         const variant = selectedVariant();
         const item = {
             id: globalThis.crypto?.randomUUID?.() || `part-${Date.now()}-${builder.items.length}`,
@@ -7541,12 +7775,103 @@ function createHouseBuilder() {
             rotation: builder.rotation,
             x, z
         };
+        const snapped = snapOpeningToWall(item, x, z);
+        if (["window", "door"].includes(item.type) && !snapped) {
+            updateStatus(`${variant.label}: bitte direkt auf oder neben eine vorhandene Wand tippen.`);
+            return false;
+        }
+        if (snapped) {
+            x = THREE.MathUtils.clamp(Math.round(snapped.x * 100) / 100, -9.5, 9.5);
+            z = THREE.MathUtils.clamp(Math.round(snapped.z * 100) / 100, -9.5, 9.5);
+            Object.assign(item, { x, z, rotation: snapped.rotation, wallId: snapped.wallId });
+        }
         builder.items.push(item);
         addItemObject(item);
         save();
-        updateStatus(`${variant.label} bei ${x.toLocaleString("de-DE")} / ${z.toLocaleString("de-DE")} m gesetzt.`);
+        selectItem(item.id, `${variant.label}${snapped?.wallId ? " an Wand eingerastet" : " gesetzt"}.`);
         renderer.shadowMap.needsUpdate = true;
         return true;
+    }
+
+    function beginPointer(event) {
+        if (!builder.active || event.button !== 0)
+            return false;
+        const id = itemAtPointer(event);
+        if (!id)
+            return false;
+        const clickedItem = itemById(id);
+        // Im Fenster-/Türwerkzeug bedeutet ein Klick auf eine Wand „hier
+        // einsetzen“. Bereits gesetzte Fenster und Türen bleiben weiterhin
+        // direkt auswähl- und verschiebbar.
+        if (["window", "door"].includes(builderPartType.value) && clickedItem?.type === "wall")
+            return false;
+        selectItem(id);
+        builder.draggingId = id;
+        builder.dragStartClient = { x: event.clientX, y: event.clientY };
+        builder.dragMoved = false;
+        return true;
+    }
+
+    function movePointer(event) {
+        const item = itemById(builder.draggingId);
+        if (!item)
+            return false;
+        const movedPixels = Math.hypot(
+            event.clientX - builder.dragStartClient.x,
+            event.clientY - builder.dragStartClient.y
+        );
+        if (movedPixels < 4)
+            return true;
+        const point = pointerOnGround(event);
+        if (!point)
+            return true;
+        let x = THREE.MathUtils.clamp(Math.round(point.x * 2) / 2, -9.5, 9.5);
+        let z = THREE.MathUtils.clamp(Math.round(point.z * 2) / 2, -9.5, 9.5);
+        const snapped = snapOpeningToWall(item, x, z);
+        if (["window", "door"].includes(item.type) && !snapped) {
+            updateStatus("Fenster und Türen bleiben an einer Wand eingerastet.");
+            return true;
+        }
+        if (snapped) {
+            x = Math.round(snapped.x * 100) / 100;
+            z = Math.round(snapped.z * 100) / 100;
+            item.rotation = snapped.rotation;
+            item.wallId = snapped.wallId;
+            setRotation(item.rotation);
+        }
+        item.x = x;
+        item.z = z;
+        const object = builder.objects.get(item.id);
+        if (object) {
+            object.position.set(x, 0, z);
+            object.rotation.y = THREE.MathUtils.degToRad(item.rotation);
+        }
+        builder.selectionHelper?.update();
+        builder.dragMoved = true;
+        updateStatus(`Auswahl bei ${x.toLocaleString("de-DE")} / ${z.toLocaleString("de-DE")} m.`);
+        return true;
+    }
+
+    function endPointer() {
+        if (!builder.draggingId)
+            return false;
+        if (builder.dragMoved) {
+            save();
+            renderer.shadowMap.needsUpdate = true;
+            updateStatus("Bauteil verschoben und gespeichert.");
+        }
+        builder.draggingId = null;
+        builder.dragStartClient = null;
+        builder.dragMoved = false;
+        return true;
+    }
+
+    function setPanelCollapsed(collapsed) {
+        builderPanel.classList.toggle("is-collapsed", collapsed);
+        builderPanelToggle.setAttribute("aria-expanded", String(!collapsed));
+        builderPanelToggle.textContent = collapsed ? "⌃" : "⌄";
+        builderPanelToggle.setAttribute("aria-label", collapsed ?
+            "Werkzeuge ausklappen" : "Werkzeuge einklappen");
     }
 
     function setActive(active) {
@@ -7570,6 +7895,7 @@ function createHouseBuilder() {
             state.targetPanY = 0;
             state.targetZoom = 0.92;
             setMenuOpen(false);
+            setPanelCollapsed(window.innerWidth <= 760);
             updateStatus("Bauteil wählen und anschließend auf das Raster tippen.");
         }
         else {
@@ -7597,14 +7923,60 @@ function createHouseBuilder() {
             builderColor.value = color;
             builderSwatches.querySelectorAll("button").forEach((button) =>
                 button.classList.toggle("selected", button === swatch));
+            const item = itemById(builder.selectedId);
+            if (item) {
+                item.color = color;
+                replaceItemObject(item);
+                save();
+                updateStatus("Farbe der Auswahl geändert.");
+            }
         });
         builderSwatches.appendChild(swatch);
     });
-    builderPartType.addEventListener("change", refreshVariants);
-    builderColor.addEventListener("input", () =>
-        builderSwatches.querySelectorAll("button").forEach((button) => button.classList.remove("selected")));
-    builderRotateLeft.addEventListener("click", () => setRotation(builder.rotation - 90));
-    builderRotateRight.addEventListener("click", () => setRotation(builder.rotation + 90));
+    builderPanelToggle.addEventListener("click", () =>
+        setPanelCollapsed(!builderPanel.classList.contains("is-collapsed")));
+    builderPartType.addEventListener("change", () => {
+        if (builder.selectedId)
+            selectItem(null, "Neues Bauteil gewählt. Freie Fläche antippen.");
+        refreshVariants();
+    });
+    builderVariant.addEventListener("change", () => {
+        const item = itemById(builder.selectedId);
+        if (!item)
+            return;
+        item.variant = builderVariant.value;
+        replaceItemObject(item);
+        save();
+        updateStatus("Modell der Auswahl geändert.");
+    });
+    builderColor.addEventListener("input", () => {
+        builderSwatches.querySelectorAll("button").forEach((button) => button.classList.remove("selected"));
+        const item = itemById(builder.selectedId);
+        if (!item)
+            return;
+        item.color = builderColor.value;
+        replaceItemObject(item);
+        save();
+        updateStatus("Farbe der Auswahl geändert.");
+    });
+    builderRotateLeft.addEventListener("click", () => rotateSelection(-90));
+    builderRotateRight.addEventListener("click", () => rotateSelection(90));
+    builderNew.addEventListener("click", () =>
+        selectItem(null, "Neues Bauteil: Modell wählen und auf eine freie Fläche tippen."));
+    builderDelete.addEventListener("click", () => {
+        const id = builder.selectedId;
+        if (!id)
+            return;
+        const object = builder.objects.get(id);
+        if (object)
+            builder.root.remove(object);
+        builder.objects.delete(id);
+        builder.items = builder.items.filter((item) => item.id !== id);
+        builder.selectedId = null;
+        clearSelectionHelper();
+        save();
+        updateStatus("Ausgewähltes Bauteil gelöscht.");
+    });
     builderUndo.addEventListener("click", () => {
         const item = builder.items.pop();
         if (item) {
@@ -7612,6 +7984,10 @@ function createHouseBuilder() {
             if (object)
                 builder.root.remove(object);
             builder.objects.delete(item.id);
+            if (builder.selectedId === item.id) {
+                builder.selectedId = null;
+                clearSelectionHelper();
+            }
             save();
             updateStatus("Letztes Bauteil entfernt.");
         }
@@ -7630,11 +8006,19 @@ function createHouseBuilder() {
     builder.root.visible = false;
 
     builder.placeAtPointer = placeAtPointer;
+    builder.beginPointer = beginPointer;
+    builder.movePointer = movePointer;
+    builder.endPointer = endPointer;
     builder.setActive = setActive;
     window.solixHouseBuilder = {
         open: () => setActive(true),
         close: () => setActive(false),
-        getState: () => ({ active: builder.active, items: builder.items.map((item) => ({ ...item })) })
+        select: (id) => selectItem(id),
+        getState: () => ({
+            active: builder.active,
+            selectedId: builder.selectedId,
+            items: builder.items.map((item) => ({ ...item }))
+        })
     };
     return builder;
 }
@@ -7680,6 +8064,13 @@ if (animalDemoMode) {
             focusAnimal.mode = "resting";
             focusAnimal.modeUntil = Number.POSITIVE_INFINITY;
         }
+        else if (animalFocusMode === "dog") {
+            dog.path = [];
+            dog.target.copy(dog.group.position);
+            dog.navigation = null;
+            dog.mode = "idle";
+            dog.modeUntil = Number.POSITIVE_INFINITY;
+        }
     }
     // Ausschließlich für die lokale Vorschau: Damit lassen sich seltene
     // Zustände prüfen, ohne die Produktionsansicht oder Live-Daten zu ändern.
@@ -7697,7 +8088,7 @@ if (animalDemoMode) {
         })),
         dog: dog ? {
             mode: dog.mode,
-            asset: dog.assetLoaded ? "rottweiler-gltf" : "fallback",
+            asset: dog.assetKind || (dog.assetLoaded ? "rottweiler-gltf" : "fallback"),
             hungry: animalResources.dogHungry,
             food: animalResources.dogFood,
             water: animalResources.dogWater,
@@ -9928,10 +10319,13 @@ canvas.addEventListener("pointerdown", (event) => {
         state.pointerStartY = event.clientY;
         state.lastPointerX = event.clientX;
         state.lastPointerY = event.clientY;
-        state.pointerMode = event.pointerType === "mouse" && event.button === 2 ? "pan" : "rotate";
+        const builderDrag = houseBuilder.beginPointer(event);
+        state.pointerMode = builderDrag ? "builder-drag" :
+            event.pointerType === "mouse" && event.button === 2 ? "pan" : "rotate";
         state.pointerMoved = false;
     }
     else if (state.pointers.size === 2) {
+        houseBuilder.endPointer();
         state.pinchStartDistance = pointerDistance();
         state.pinchStartZoom = state.targetZoom;
         state.pinchStartPanX = state.targetPanX;
@@ -9983,6 +10377,12 @@ canvas.addEventListener("pointermove", (event) => {
     const deltaY = event.clientY - state.lastPointerY;
     if (Math.hypot(event.clientX - state.pointerStartX, event.clientY - state.pointerStartY) > 5)
         state.pointerMoved = true;
+    if (state.pointerMode === "builder-drag") {
+        houseBuilder.movePointer(event);
+        state.lastPointerX = event.clientX;
+        state.lastPointerY = event.clientY;
+        return;
+    }
     if (state.pointerMode === "pan") {
         const panSpeed = 0.012 / Math.max(0.80, state.targetZoom);
         state.targetPanX = THREE.MathUtils.clamp(state.targetPanX - deltaX * panSpeed, -3.2, 3.2);
@@ -10003,8 +10403,9 @@ canvas.addEventListener("pointermove", (event) => {
 function finishPointer(event) {
     if (!state.pointers.has(event.pointerId))
         return;
+    const handledBuilderPointer = houseBuilder.endPointer();
     const placeBuilderPart = houseBuilder.active && state.pointers.size === 1 &&
-        !state.pointerMoved && event.button === 0;
+        !handledBuilderPointer && !state.pointerMoved && event.button === 0 && event.type === "pointerup";
     if (canvas.hasPointerCapture(event.pointerId))
         canvas.releasePointerCapture(event.pointerId);
     state.pointers.delete(event.pointerId);

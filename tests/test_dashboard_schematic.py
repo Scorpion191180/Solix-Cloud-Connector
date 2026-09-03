@@ -21,8 +21,8 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260903-109", dashboard)
-        self.assertIn("house.js?v=20260903-109", dashboard)
+        self.assertIn("style.css?v=20260903-111", dashboard)
+        self.assertIn("house.js?v=20260903-111", dashboard)
         self.assertIn("app.js?v=20260821-96", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
@@ -542,7 +542,7 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("function animateDog", script)
         self.assertIn("function playDogBark", script)
         self.assertIn("function loadDetailedRottweiler", script)
-        self.assertIn('rottweiler-animated/rottweiler-rigged.glb?v=108', script)
+        self.assertIn('rottweiler-benny/rottweiler-animated.glb?v=110', script)
         self.assertIn('rottweiler/scene.gltf?v=108', script)
         self.assertIn('new Audio("/static/sounds/rottweiler-barking.ogg?v=108")', script)
         self.assertIn('new Audio("/static/sounds/bird-singing-clear.ogg?v=108")', script)
@@ -572,9 +572,11 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertTrue(rottweiler_binary.exists())
         self.assertLess(rottweiler_model.stat().st_size + rottweiler_binary.stat().st_size, 250_000)
         animated_rottweiler = (ROOT / "static" / "models" /
-                               "rottweiler-animated" / "rottweiler-rigged.glb")
+                               "rottweiler-benny" / "rottweiler-animated.glb")
         self.assertTrue(animated_rottweiler.exists())
-        self.assertLess(animated_rottweiler.stat().st_size, 650_000)
+        self.assertLess(animated_rottweiler.stat().st_size, 400_000)
+        self.assertIn("Benny, the Rottweiler", (ROOT / "THIRD_PARTY_NOTICES.md").read_text())
+        self.assertIn("Benny, the Rottweiler", (ROOT / "templates" / "index.html").read_text())
         self.assertNotIn('bird-swamphen-nestling.glb?v=', script)
         self.assertIn("function createTroughWater", script)
         self.assertIn("function animateTroughWater", script)
@@ -593,7 +595,8 @@ class DashboardSchematicTests(unittest.TestCase):
         for element_id in (
             "renderQualitySelect", "houseBuilderOpen", "houseBuilderPanel",
             "builderPartType", "builderVariant", "builderColor",
-            "builderRotateLeft", "builderRotateRight", "builderUndo", "builderClear",
+            "builderPanelToggle", "builderRotateLeft", "builderRotateRight",
+            "builderNew", "builderDelete", "builderUndo", "builderClear",
         ):
             self.assertIn(f'id="{element_id}"', dashboard)
 
@@ -608,8 +611,15 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('function createHouseBuilder()', script)
         self.assertIn('function createBuilderPart(item)', script)
         self.assertIn('new THREE.GridHelper(20, 20', script)
+        self.assertIn('function snapOpeningToWall(item, rawX, rawZ)', script)
+        self.assertIn('function builderItemHitAtPointer(event)', script)
+        self.assertIn('clickedItem?.type === "wall"', script)
+        self.assertIn('function beginPointer(event)', script)
+        self.assertIn('function movePointer(event)', script)
+        self.assertIn('builder.selectionHelper = new THREE.BoxHelper', script)
         self.assertIn('window.solixHouseBuilder', script)
         self.assertIn('.house-builder-panel', stylesheet)
+        self.assertIn('.house-builder-panel.is-collapsed', stylesheet)
         self.assertIn('.house-stage.is-building', stylesheet)
         self.assertIn('id="automationHistory"', dashboard)
         self.assertIn("function createAudiBrakeLights", script)

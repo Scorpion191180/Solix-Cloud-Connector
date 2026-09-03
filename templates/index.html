@@ -14,7 +14,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/solix-home-32.png?v=94">
 <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/solix-home-180.png?v=94">
 <link rel="manifest" href="/static/site.webmanifest?v=94">
-<link rel="stylesheet" href="/static/style.css?v=20260903-109">
+<link rel="stylesheet" href="/static/style.css?v=20260903-111">
 
 <script type="importmap">
 {
@@ -237,8 +237,12 @@ Signalstärke
 <section class="house-builder-panel" id="houseBuilderPanel" aria-label="Haus-Baumodus" hidden>
 <div class="house-builder-head">
 <div><small>20 × 20 M GRUNDSTÜCK</small><strong>Haus-Baumodus</strong></div>
+<div class="house-builder-head-actions">
+<button id="builderPanelToggle" type="button" aria-label="Werkzeuge ein- oder ausklappen" aria-expanded="true">⌄</button>
 <button id="houseBuilderClose" type="button" aria-label="Baumodus schließen">×</button>
 </div>
+</div>
+<div class="house-builder-body">
 <div class="house-builder-grid">
 <label>Bauteil
 <select id="builderPartType">
@@ -262,10 +266,13 @@ Signalstärke
 <output id="builderRotation">0°</output>
 <button id="builderRotateRight" type="button" aria-label="Nach rechts drehen">↷</button>
 </div>
-<p class="house-builder-help">Tippe auf ein Feld, um das ausgewählte Bauteil zu setzen. Ziehen dreht die Ansicht.</p>
+<p class="house-builder-help">Freie Fläche antippen: neues Bauteil. Vorhandenes Bauteil antippen und ziehen: auswählen und verschieben.</p>
 <div class="house-builder-actions">
+<button id="builderNew" type="button">＋ Neues Bauteil</button>
+<button id="builderDelete" type="button" disabled>Auswahl löschen</button>
 <button id="builderUndo" type="button">↶ Letztes zurück</button>
 <button id="builderClear" type="button">Grundstück leeren</button>
+</div>
 </div>
 <p class="house-builder-status" id="builderStatus" aria-live="polite">Noch keine Bauteile gesetzt.</p>
 </section>
@@ -313,6 +320,9 @@ Yeti/Fox/Karoq: <a href="https://creativecommons.org/licenses/by/4.0/" target="_
 Pferd und Bewegungsanimationen:
 <a href="https://mesh2motion.org/" target="_blank" rel="noopener">Mesh2Motion</a> ·
 <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener">CC0 1.0</a> ·
+Hund:
+<a href="https://opengameart.org/content/benny-the-rottweiler" target="_blank" rel="noopener">„Benny, the Rottweiler“ von umask007</a> ·
+<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener">CC BY-SA 3.0</a> ·
 Kamele:
 <a href="https://sketchfab.com/3d-models/bactrian-camel-low-poly-1fb4d897df2e4d12ab185302a36b3d5f" target="_blank" rel="noopener">„Bactrian Camel (Low Poly)“ von Nyilonelycompany</a> ·
 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a> ·
@@ -713,7 +723,7 @@ Einstellungen
 
 </div>
 
-<script type="module" src="/static/house.js?v=20260903-109"></script>
+<script type="module" src="/static/house.js?v=20260903-111"></script>
 <script src="/static/app.js?v=20260821-96"></script>
 
 </body>

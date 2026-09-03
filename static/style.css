@@ -1353,6 +1353,12 @@ header p{
     gap:12px;
 }
 
+.house-builder-head-actions{
+    display:flex;
+    align-items:center;
+    gap:7px;
+}
+
 .house-builder-head small,
 .house-builder-head strong{display:block;}
 
@@ -1376,6 +1382,41 @@ header p{
     background:rgba(148,163,184,.16);
     color:#fff;
     font-size:24px;
+}
+
+#builderPanelToggle{
+    font-size:17px;
+    font-weight:950;
+}
+
+.house-builder-body{
+    display:block;
+}
+
+.house-builder-panel.is-collapsed{
+    width:min(282px,calc(100vw - 24px));
+    padding:9px 10px;
+    overflow:hidden;
+}
+
+.house-builder-panel.is-collapsed .house-builder-body{
+    display:none;
+}
+
+.house-builder-panel.is-collapsed .house-builder-head strong{
+    font-size:15px;
+}
+
+.house-builder-panel.is-collapsed .house-builder-head small{
+    font-size:8px;
+}
+
+.house-builder-panel.is-collapsed .house-builder-status{
+    margin-top:5px;
+    max-width:220px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
 }
 
 .house-builder-grid{
@@ -1483,9 +1524,23 @@ header p{
     color:#fecaca;
 }
 
+#builderDelete{
+    border-color:rgba(248,113,113,.36);
+    background:rgba(127,29,29,.16);
+    color:#fecaca;
+}
+
+#builderNew{
+    border-color:rgba(45,212,191,.46);
+    background:rgba(13,148,136,.18);
+    color:#ccfbf1;
+}
+
 .house-builder-actions button:disabled{opacity:.42;}
 
 .house-stage.is-building #houseCanvas{cursor:crosshair;}
+.house-stage.is-building[data-builder-selection="true"] #houseCanvas{cursor:grab;}
+.house-stage.is-building[data-builder-selection="true"] #houseCanvas:active{cursor:grabbing;}
 
 .house-stage.is-building .house-scene-label,
 .house-stage.is-building .house-string-label,
@@ -2472,16 +2527,61 @@ body{
     bottom:max(10px,env(safe-area-inset-bottom));
     left:max(10px,env(safe-area-inset-left));
     width:auto;
-    max-height:min(48dvh,410px);
-    padding:12px;
-    border-radius:17px;
+    max-height:min(43dvh,360px);
+    padding:9px 10px;
+    border-radius:15px;
 }
 
-.house-builder-grid{grid-template-columns:1fr 1.25fr;}
+.house-builder-head{gap:8px;}
+
+.house-builder-head strong{font-size:15px;}
+
+.house-builder-head button{
+    width:32px;
+    height:32px;
+    border-radius:9px;
+}
+
+.house-builder-grid{
+    grid-template-columns:.9fr 1.25fr;
+    gap:7px;
+    margin-top:8px;
+}
+
+.house-builder-color-row,
+.house-builder-rotation,
+.house-builder-actions{margin-top:7px;}
+
+.house-builder-help,
+.house-builder-status{
+    margin-top:6px;
+    font-size:8.75px;
+}
 
 .house-builder-panel select,
 .house-builder-rotation button,
-.house-builder-actions button{min-height:42px;}
+.house-builder-actions button{min-height:34px;}
+
+.house-builder-color-row{
+    grid-template-columns:auto 36px 1fr;
+    gap:7px;
+}
+
+.house-builder-color-row input[type="color"]{
+    width:36px;
+    height:32px;
+}
+
+.house-builder-swatch{
+    width:23px;
+    height:23px;
+}
+
+.house-builder-panel.is-collapsed{
+    right:max(10px,env(safe-area-inset-right));
+    left:auto;
+    width:min(270px,calc(100vw - 20px));
+}
 
 .animal-resource-label{
     width:116px;
