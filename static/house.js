@@ -28,6 +28,7 @@ const builderOpenButton = document.getElementById("houseBuilderOpen");
 const builderPanel = document.getElementById("houseBuilderPanel");
 const builderCloseButton = document.getElementById("houseBuilderClose");
 const builderPanelToggle = document.getElementById("builderPanelToggle");
+const builderPointerMode = document.getElementById("builderPointerMode");
 const builderPartType = document.getElementById("builderPartType");
 const builderVariant = document.getElementById("builderVariant");
 const builderVariantLabel = document.getElementById("builderVariantLabel");
@@ -48,6 +49,7 @@ const builderSelectionTools = document.getElementById("builderSelectionTools");
 const builderSelectionRotateLeft = document.getElementById("builderSelectionRotateLeft");
 const builderSelectionRotateRight = document.getElementById("builderSelectionRotateRight");
 const builderSelectionDelete = document.getElementById("builderSelectionDelete");
+const houseInstructions = document.getElementById("houseInstructions");
 const menuCleanStatus = document.getElementById("houseCleanStatus");
 const menuCareStatus = document.getElementById("houseCareStatus");
 const menuPvToday = document.getElementById("menuPvToday");
@@ -7877,8 +7879,14 @@ function createHouseBuilder() {
         selectedId: null, selectionHelper: null, draggingId: null,
         dragStartClient: null, dragMoved: false,
         drawing: false, drawStart: null, drawEnd: null, drawPreview,
+        drawStartSnapped: false, drawEndSnapped: false,
+        placementPreview: null, placementPreviewHelper: null,
+        previewSnap: null, lastHoverPointer: null, placementEnabled: true,
         selectionBox: new THREE.Box3(), selectionAnchor: new THREE.Vector3()
     };
+    // Only points inside the same 25-cm grid cell join. A deliberately left
+    // gap of one or more grid fields therefore remains open.
+    const WALL_ENDPOINT_SNAP_DISTANCE = 0.18;
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
 
@@ -7988,13 +7996,51 @@ function createHouseBuilder() {
         setWallLengthControls(item);
     }
 
+    function updateBuilderToolUi() {
+        const navigationOnly = !builder.placementEnabled;
+        builderPointerMode.classList.toggle("selected", navigationOnly);
+        builderPointerMode.setAttribute("aria-pressed", String(navigationOnly));
+        stage.dataset.builderTool = navigationOnly ? "select" : builderPartType.value;
+    }
+
+    function setPlacementEnabled(enabled) {
+        builder.placementEnabled = Boolean(enabled);
+        updateBuilderToolUi();
+        if (builder.placementEnabled)
+            refreshPlacementPreview();
+        else
+            disposePlacementPreview();
+    }
+
+    function startNewPart() {
+        setPlacementEnabled(true);
+        selectItem(null, builderPartType.value === "wall" ?
+            "Neue Wand: Start- und Endpunkt auf dem Raster ziehen." :
+            ["window", "door"].includes(builderPartType.value) ?
+                "Neues Fenster oder neue Tür direkt auf eine Wand tippen." :
+                `${builderTypeLabel(builderPartType.value)} auf einer freien Fläche platzieren.`);
+    }
+
+    function activatePointerMode() {
+        finishWallDrawing(true);
+        setPlacementEnabled(false);
+        selectItem(null, "Auswahl/Maus aktiv: links verschieben, rechts drehen, Mausrad zoomen.");
+    }
+
     function selectItem(id, message = "") {
         builder.selectedId = builder.objects.has(id) ? id : null;
         const item = itemById(builder.selectedId);
-        if (item)
+        if (item) {
             syncControlsFromItem(item);
+            builder.placementEnabled = false;
+            updateBuilderToolUi();
+        }
         else
             setWallLengthControls(null);
+        if (item)
+            disposePlacementPreview();
+        else
+            refreshPlacementPreview();
         refreshSelectionHelper();
         updateStatus(message || (item ?
             `${builderTypeLabel(item.type)} ausgewählt: ziehen zum Verschieben, Symbole direkt am Objekt zum Drehen oder Löschen.` :
@@ -8029,6 +8075,61 @@ function createHouseBuilder() {
             });
         }
         return segments;
+    }
+
+    function wallEndpoints(excludeWallId = null) {
+        const endpoints = [];
+        builder.items.filter((item) => item.type === "wall" && item.id !== excludeWallId)
+            .forEach((wall) => wallSegments(wall).forEach((segment, wallSegment) => {
+                [-1, 1].forEach((direction) => endpoints.push({
+                    x: segment.x + segment.axisX * segment.length / 2 * direction,
+                    z: segment.z + segment.axisZ * segment.length / 2 * direction,
+                    wallId: wall.id,
+                    wallSegment,
+                    direction
+                }));
+            }));
+        return endpoints;
+    }
+
+    function snapWallPoint(point, excludeWallId = null) {
+        let best = null;
+        wallEndpoints(excludeWallId).forEach((endpoint) => {
+            const distance = Math.hypot(point.x - endpoint.x, point.z - endpoint.z);
+            if ((!best || distance < best.distance) && distance <= WALL_ENDPOINT_SNAP_DISTANCE)
+                best = { ...endpoint, distance };
+        });
+        return best ? {
+            point: new THREE.Vector3(best.x, 0, best.z),
+            snapped: true,
+            wallId: best.wallId,
+            wallSegment: best.wallSegment,
+            direction: best.direction
+        } : { point: point.clone(), snapped: false, wallId: null };
+    }
+
+    function snapMovedWallCenter(item, rawX, rawZ) {
+        if (item.type !== "wall")
+            return { x: rawX, z: rawZ, snapped: false };
+        const candidate = { ...item, x: rawX, z: rawZ };
+        let best = null;
+        wallSegments(candidate).forEach((segment) => {
+            [-1, 1].forEach((direction) => {
+                const endpointX = segment.x + segment.axisX * segment.length / 2 * direction;
+                const endpointZ = segment.z + segment.axisZ * segment.length / 2 * direction;
+                wallEndpoints(item.id).forEach((target) => {
+                    const distance = Math.hypot(endpointX - target.x, endpointZ - target.z);
+                    if ((!best || distance < best.distance) && distance <= WALL_ENDPOINT_SNAP_DISTANCE) {
+                        best = {
+                            distance,
+                            x: rawX + target.x - endpointX,
+                            z: rawZ + target.z - endpointZ
+                        };
+                    }
+                });
+            });
+        });
+        return best ? { x: best.x, z: best.z, snapped: true } : { x: rawX, z: rawZ, snapped: false };
     }
 
     function snapOpeningToWall(item, rawX, rawZ, onlyWallId = null) {
@@ -8204,6 +8305,187 @@ function createHouseBuilder() {
         return variants.find((variant) => variant.id === builderVariant.value) || variants[0];
     }
 
+    function disposePlacementPreview() {
+        if (builder.placementPreview) {
+            builder.root.remove(builder.placementPreview);
+            builder.placementPreview.traverse((child) => {
+                child.geometry?.dispose?.();
+                const materials = Array.isArray(child.material) ? child.material : [child.material];
+                materials.filter(Boolean).forEach((material) => material.dispose?.());
+            });
+        }
+        if (builder.placementPreviewHelper) {
+            builder.root.remove(builder.placementPreviewHelper);
+            builder.placementPreviewHelper.geometry?.dispose?.();
+            builder.placementPreviewHelper.material?.dispose?.();
+        }
+        builder.placementPreview = null;
+        builder.placementPreviewHelper = null;
+        builder.previewSnap = null;
+        stage.dataset.builderPlacementPreview = "hidden";
+    }
+
+    function createPlacementPreview() {
+        disposePlacementPreview();
+        const type = builderPartType.value;
+        if (!builder.active || !builder.placementEnabled || builder.selectedId || !BUILDER_VARIANTS[type])
+            return null;
+        const variant = selectedVariant();
+        const previewItem = {
+            id: "builder-placement-preview",
+            type,
+            variant: variant.id,
+            color: builderColor.value,
+            rotation: builder.rotation,
+            x: 0,
+            z: 0
+        };
+        if (type === "wall")
+            previewItem.length = 0.5;
+        const preview = createBuilderPart(previewItem);
+        preview.name = `${builderTypeLabel(type)}-Platzierungsvorschau`;
+        const sourceMaterialsToDispose = new Set();
+        preview.traverse((child) => {
+            if (!child.isMesh)
+                return;
+            child.castShadow = false;
+            child.receiveShadow = false;
+            child.renderOrder = 18;
+            const sourceMaterials = Array.isArray(child.material) ? child.material : [child.material];
+            const previewMaterials = sourceMaterials.map((source) => {
+                sourceMaterialsToDispose.add(source);
+                const material = source.clone();
+                material.transparent = true;
+                material.opacity = Math.min(source.opacity ?? 1, 0.62);
+                material.depthWrite = false;
+                if (material.emissive)
+                    material.emissive.set(0x0f766e).multiplyScalar(0.38);
+                return material;
+            });
+            child.material = Array.isArray(child.material) ? previewMaterials : previewMaterials[0];
+        });
+        sourceMaterialsToDispose.forEach((material) => material.dispose?.());
+        preview.visible = false;
+        builder.root.add(preview);
+        const helper = new THREE.BoxHelper(preview, 0xef4444);
+        helper.name = "Platzierungsvorschau-Rahmen";
+        helper.material.depthTest = false;
+        helper.material.transparent = true;
+        helper.material.opacity = 0.92;
+        helper.renderOrder = 19;
+        helper.visible = false;
+        builder.root.add(helper);
+        builder.placementPreview = preview;
+        builder.placementPreviewHelper = helper;
+        return preview;
+    }
+
+    function openingPlacementAtPointer(event) {
+        const type = builderPartType.value;
+        if (!["window", "door"].includes(type))
+            return null;
+        const wallHit = wallHitAtPointer(event);
+        const groundPoint = pointerOnGround(event);
+        const rawPoint = wallHit?.point || groundPoint;
+        if (!rawPoint)
+            return null;
+        const variant = selectedVariant();
+        const draft = {
+            type,
+            variant: variant.id,
+            color: builderColor.value,
+            rotation: builder.rotation,
+            x: rawPoint.x,
+            z: rawPoint.z
+        };
+        const snap = wallHit ? snapOpeningToWall(draft, rawPoint.x, rawPoint.z, wallHit.id) : null;
+        return { point: rawPoint, snap, variant, wallId: wallHit?.id || null };
+    }
+
+    function previewPlacementAtPointer(event) {
+        const type = builderPartType.value;
+        if (["window", "door"].includes(type)) {
+            const opening = openingPlacementAtPointer(event);
+            if (!opening)
+                return null;
+            return {
+                x: opening.snap?.x ?? opening.point.x,
+                z: opening.snap?.z ?? opening.point.z,
+                rotation: opening.snap?.rotation ?? builder.rotation,
+                snap: opening.snap || null,
+                valid: Boolean(opening.snap)
+            };
+        }
+        const point = pointerOnGround(event);
+        if (!point)
+            return null;
+        if (type === "wall") {
+            const snapped = snappedWallOrGridPoint(point);
+            return {
+                x: snapped.point.x,
+                z: snapped.point.z,
+                rotation: builder.rotation,
+                snap: snapped.snapped ? snapped : null,
+                valid: true
+            };
+        }
+        return {
+            x: THREE.MathUtils.clamp(Math.round(point.x * 2) / 2, -9.5, 9.5),
+            z: THREE.MathUtils.clamp(Math.round(point.z * 2) / 2, -9.5, 9.5),
+            rotation: builder.rotation,
+            snap: null,
+            valid: true
+        };
+    }
+
+    function updatePlacementPreview(event) {
+        if (!builder.active || !builder.placementEnabled) {
+            disposePlacementPreview();
+            return false;
+        }
+        builder.lastHoverPointer = { clientX: event.clientX, clientY: event.clientY };
+        if (builder.selectedId || builder.drawing) {
+            disposePlacementPreview();
+            return false;
+        }
+        const placement = previewPlacementAtPointer(event);
+        const preview = builder.placementPreview || createPlacementPreview();
+        if (!placement || !preview)
+            return false;
+        preview.position.set(placement.x, 0, placement.z);
+        preview.rotation.y = THREE.MathUtils.degToRad(placement.rotation);
+        preview.visible = true;
+        builder.previewSnap = placement.snap || null;
+        const valid = placement.valid;
+        preview.traverse((child) => {
+            if (!child.isMesh)
+                return;
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            materials.filter(Boolean).forEach((material) => {
+                if (material.emissive)
+                    material.emissive.set(valid ? 0x0f766e : 0x7f1d1d).multiplyScalar(valid ? 0.50 : 0.72);
+            });
+        });
+        if (builder.placementPreviewHelper) {
+            builder.placementPreviewHelper.material.color.set(valid ? 0x2dd4bf : 0xef4444);
+            builder.placementPreviewHelper.visible = true;
+            builder.placementPreviewHelper.update();
+        }
+        stage.dataset.builderPlacementPreview = valid ? "valid" : "invalid";
+        return valid;
+    }
+
+    function refreshPlacementPreview() {
+        createPlacementPreview();
+        if (builder.lastHoverPointer)
+            updatePlacementPreview(builder.lastHoverPointer);
+    }
+
+    function leavePlacementPreview() {
+        builder.lastHoverPointer = null;
+        disposePlacementPreview();
+    }
+
     function refreshVariants(preferredVariant = null) {
         const variants = availableVariants(builderPartType.value);
         builderVariant.replaceChildren(...variants.map((variant) => {
@@ -8234,10 +8516,22 @@ function createHouseBuilder() {
         );
     }
 
+    function snappedWallOrGridPoint(point) {
+        const endpointSnap = snapWallPoint(point);
+        return endpointSnap.snapped ? endpointSnap : {
+            point: snappedGroundPoint(point),
+            snapped: false,
+            wallId: null
+        };
+    }
+
     function updateWallPreview(point) {
         if (!builder.drawing || !builder.drawStart)
             return false;
-        builder.drawEnd = snappedGroundPoint(point);
+        disposePlacementPreview();
+        const endpointSnap = snappedWallOrGridPoint(point);
+        builder.drawEnd = endpointSnap.point;
+        builder.drawEndSnapped = endpointSnap.snapped;
         const dx = builder.drawEnd.x - builder.drawStart.x;
         const dz = builder.drawEnd.z - builder.drawStart.z;
         const length = THREE.MathUtils.clamp(Math.hypot(dx, dz), 0.01, 28.25);
@@ -8255,7 +8549,7 @@ function createHouseBuilder() {
         setWallLengthControls({ type: "wall", variant: variant.id, length });
         updateStatus(`Wandlänge: ${length.toLocaleString("de-DE", {
             minimumFractionDigits: 2, maximumFractionDigits: 2
-        })} m · loslassen zum Setzen.`);
+        })} m${endpointSnap.snapped ? " · Ecke eingerastet" : ""} · loslassen zum Setzen.`);
         return true;
     }
 
@@ -8265,9 +8559,12 @@ function createHouseBuilder() {
         const start = builder.drawStart;
         const end = builder.drawEnd || builder.drawStart;
         const length = Math.hypot(end.x - start.x, end.z - start.z);
+        const connectedCorners = Number(builder.drawStartSnapped) + Number(builder.drawEndSnapped);
         builder.drawing = false;
         builder.drawStart = null;
         builder.drawEnd = null;
+        builder.drawStartSnapped = false;
+        builder.drawEndSnapped = false;
         builder.drawPreview.visible = false;
         if (cancelled || length < 0.5) {
             setWallLengthControls(null);
@@ -8286,7 +8583,9 @@ function createHouseBuilder() {
         builder.items.push(item);
         addItemObject(item);
         save();
-        selectItem(item.id, `Freie Wand mit ${item.length.toLocaleString("de-DE")} m Länge gesetzt.`);
+        selectItem(item.id, connectedCorners ?
+            `Wand mit ${item.length.toLocaleString("de-DE")} m Länge und ${connectedCorners} eingerasteten ${connectedCorners === 1 ? "Ecke" : "Ecken"} gesetzt.` :
+            `Freie Wand mit ${item.length.toLocaleString("de-DE")} m Länge gesetzt.`);
         renderer.shadowMap.needsUpdate = true;
         return true;
     }
@@ -8295,6 +8594,7 @@ function createHouseBuilder() {
         const item = itemById(builder.selectedId);
         if (!item) {
             setRotation(builder.rotation + delta);
+            refreshPlacementPreview();
             return;
         }
         if (["window", "door"].includes(item.type) && item.wallId) {
@@ -8315,21 +8615,20 @@ function createHouseBuilder() {
     }
 
     function placeAtPointer(event) {
-        if (!builder.active)
+        if (!builder.active || !builder.placementEnabled || builder.selectedId)
             return false;
         const selectedType = builderPartType.value;
         const openingType = ["window", "door"].includes(selectedType);
-        const clickedItemHit = openingType ? builderItemHitAtPointer(event) : null;
-        const clickedItem = clickedItemHit ? itemById(clickedItemHit.id) : null;
+        const openingPlacement = openingType ? openingPlacementAtPointer(event) : null;
         if (selectedType === "wall") {
             updateStatus("Eine Wand wird durch Ziehen vom Start- bis zum Endpunkt erstellt.");
             return false;
         }
-        if (openingType && clickedItem?.type !== "wall") {
+        if (openingType && !openingPlacement?.snap) {
             updateStatus("Fenster und Türen können nur direkt auf einer vorhandenen Wand sitzen.");
             return false;
         }
-        const point = openingType ? clickedItemHit.point : pointerOnGround(event);
+        const point = openingType ? openingPlacement.point : pointerOnGround(event);
         if (!point)
             return false;
         let x = THREE.MathUtils.clamp(Math.round(point.x * 2) / 2, -9.5, 9.5);
@@ -8343,7 +8642,7 @@ function createHouseBuilder() {
             rotation: builder.rotation,
             x, z
         };
-        const snapped = openingType ? snapOpeningToWall(item, x, z, clickedItem.id) : null;
+        const snapped = openingType ? openingPlacement.snap : null;
         if (["window", "door"].includes(item.type) && !snapped) {
             updateStatus(`${variant.label}: bitte direkt auf oder neben eine vorhandene Wand tippen.`);
             return false;
@@ -8370,17 +8669,24 @@ function createHouseBuilder() {
             return false;
         const hit = builderItemHitAtPointer(event);
         const id = hit?.id || null;
-        if (!id && builderPartType.value === "wall") {
+        if (builder.placementEnabled && builderPartType.value === "wall") {
             const point = pointerOnGround(event);
             if (!point)
                 return false;
-            builder.drawing = true;
-            builder.drawStart = snappedGroundPoint(point);
-            builder.drawEnd = builder.drawStart.clone();
-            builder.dragStartClient = { x: event.clientX, y: event.clientY };
-            builder.dragMoved = false;
-            updateWallPreview(builder.drawEnd);
-            return true;
+            const startSnap = snappedWallOrGridPoint(hit?.point || point);
+            const hitItem = itemById(id);
+            const startsAtWallEnd = startSnap.snapped && hitItem?.type === "wall" && startSnap.wallId === hitItem.id;
+            if (!id || startsAtWallEnd) {
+                builder.drawing = true;
+                builder.drawStart = startSnap.point;
+                builder.drawEnd = builder.drawStart.clone();
+                builder.drawStartSnapped = startSnap.snapped;
+                builder.drawEndSnapped = false;
+                builder.dragStartClient = { x: event.clientX, y: event.clientY };
+                builder.dragMoved = false;
+                updateWallPreview(builder.drawEnd);
+                return true;
+            }
         }
         if (!id)
             return false;
@@ -8388,7 +8694,8 @@ function createHouseBuilder() {
         // Im Fenster-/Türwerkzeug bedeutet ein Klick auf eine Wand „hier
         // einsetzen“. Bereits gesetzte Fenster und Türen bleiben weiterhin
         // direkt auswähl- und verschiebbar.
-        if (["window", "door"].includes(builderPartType.value) && clickedItem?.type === "wall")
+        if (builder.placementEnabled && ["window", "door"].includes(builderPartType.value) &&
+            clickedItem?.type === "wall")
             return false;
         selectItem(id);
         builder.draggingId = id;
@@ -8399,7 +8706,7 @@ function createHouseBuilder() {
 
     function movePointer(event) {
         if (builder.drawing) {
-            const point = pointerOnGround(event);
+            const point = wallHitAtPointer(event)?.point || pointerOnGround(event);
             if (point) {
                 updateWallPreview(point);
                 builder.dragMoved = true;
@@ -8436,6 +8743,11 @@ function createHouseBuilder() {
             item.wallProgress = snapped.wallProgress;
             item.wallSide = snapped.wallSide;
             setRotation(item.rotation);
+        }
+        else if (item.type === "wall") {
+            const wallSnap = snapMovedWallCenter(item, x, z);
+            x = THREE.MathUtils.clamp(Math.round(wallSnap.x * 100) / 100, -9.5, 9.5);
+            z = THREE.MathUtils.clamp(Math.round(wallSnap.z * 100) / 100, -9.5, 9.5);
         }
         item.x = x;
         item.z = z;
@@ -8481,8 +8793,11 @@ function createHouseBuilder() {
         stage.dataset.builderActive = String(active);
         world.visible = !active;
         builder.root.visible = active;
-        if (!active)
+        if (!active) {
             builderSelectionTools.hidden = true;
+            leavePlacementPreview();
+            houseInstructions.textContent = "Ziehen: drehen · Zwei Finger/Rechtsklick: verschieben · Zoom: Details";
+        }
         if (active) {
             builder.previousView = {
                 yaw: state.targetYaw, pitch: state.targetPitch,
@@ -8496,7 +8811,10 @@ function createHouseBuilder() {
             state.targetZoom = 0.92;
             setMenuOpen(false);
             setPanelCollapsed(window.innerWidth <= 760);
+            updateBuilderToolUi();
+            houseInstructions.textContent = "Baumodus: rechts ziehen = drehen · Auswahl/Maus: links ziehen = verschieben · Mausrad = Zoom";
             updateStatus("Wand frei auf dem Raster ziehen oder Fenster/Tür direkt auf eine Wand setzen.");
+            refreshPlacementPreview();
         }
         else {
             finishWallDrawing(true);
@@ -8514,6 +8832,7 @@ function createHouseBuilder() {
 
     refreshVariants();
     setRotation(0);
+    updateBuilderToolUi();
     BUILDER_COLOR_SWATCHES.forEach((color, index) => {
         const swatch = document.createElement("button");
         swatch.type = "button";
@@ -8531,20 +8850,25 @@ function createHouseBuilder() {
                 save();
                 updateStatus("Farbe der Auswahl geändert.");
             }
+            else
+                refreshPlacementPreview();
         });
         builderSwatches.appendChild(swatch);
     });
     builderPanelToggle.addEventListener("click", () =>
         setPanelCollapsed(!builderPanel.classList.contains("is-collapsed")));
+    builderPointerMode.addEventListener("click", activatePointerMode);
     builderPartType.addEventListener("change", () => {
         if (builder.selectedId)
             selectItem(null);
+        setPlacementEnabled(true);
         builderColor.value = BUILDER_DEFAULT_COLORS[builderPartType.value] || "#f1eee5";
         builderSwatches.querySelectorAll("button").forEach((button) =>
             button.classList.toggle("selected",
                 button.style.getPropertyValue("--builder-swatch").toLowerCase() === builderColor.value.toLowerCase()));
         refreshVariants();
         setWallLengthControls(null);
+        refreshPlacementPreview();
         updateStatus(builderPartType.value === "wall" ?
             "Neue Wand: auf dem Raster vom Start- bis zum Endpunkt ziehen." :
             ["window", "door"].includes(builderPartType.value) ?
@@ -8553,8 +8877,10 @@ function createHouseBuilder() {
     });
     builderVariant.addEventListener("change", () => {
         const item = itemById(builder.selectedId);
-        if (!item)
+        if (!item) {
+            refreshPlacementPreview();
             return;
+        }
         item.variant = builderVariant.value;
         replaceItemObject(item);
         if (item.type === "wall")
@@ -8583,8 +8909,10 @@ function createHouseBuilder() {
     builderColor.addEventListener("input", () => {
         builderSwatches.querySelectorAll("button").forEach((button) => button.classList.remove("selected"));
         const item = itemById(builder.selectedId);
-        if (!item)
+        if (!item) {
+            refreshPlacementPreview();
             return;
+        }
         item.color = builderColor.value;
         replaceItemObject(item);
         save();
@@ -8592,12 +8920,7 @@ function createHouseBuilder() {
     });
     builderRotateLeft.addEventListener("click", () => rotateSelection(-15));
     builderRotateRight.addEventListener("click", () => rotateSelection(15));
-    builderNew.addEventListener("click", () =>
-        selectItem(null, builderPartType.value === "wall" ?
-            "Neue Wand: Start- und Endpunkt auf dem Raster ziehen." :
-            ["window", "door"].includes(builderPartType.value) ?
-                "Neues Fenster oder neue Tür direkt auf eine Wand tippen." :
-                `${builderTypeLabel(builderPartType.value)} auf einer freien Fläche platzieren.`));
+    builderNew.addEventListener("click", startNewPart);
     function deleteSelection() {
         const id = builder.selectedId;
         if (!id)
@@ -8638,6 +8961,14 @@ function createHouseBuilder() {
         else if ([".", ">"].includes(event.key)) {
             event.preventDefault();
             rotateSelection(15);
+        }
+        else if (event.key.toLowerCase() === "n") {
+            event.preventDefault();
+            startNewPart();
+        }
+        else if (event.key.toLowerCase() === "m") {
+            event.preventDefault();
+            activatePointerMode();
         }
         else if (event.key === "Escape")
             selectItem(null);
@@ -8683,6 +9014,9 @@ function createHouseBuilder() {
     builder.beginPointer = beginPointer;
     builder.movePointer = movePointer;
     builder.endPointer = endPointer;
+    builder.hoverPointer = updatePlacementPreview;
+    builder.leavePointer = leavePlacementPreview;
+    builder.navigationOnly = () => !builder.placementEnabled;
     builder.setActive = setActive;
     builder.updateSelectionToolsPosition = updateSelectionToolsPosition;
     window.solixHouseBuilder = {
@@ -8692,6 +9026,8 @@ function createHouseBuilder() {
         getState: () => ({
             active: builder.active,
             selectedId: builder.selectedId,
+            placementEnabled: builder.placementEnabled,
+            preview: stage.dataset.builderPlacementPreview,
             items: builder.items.map((item) => ({ ...item }))
         })
     };
@@ -10989,6 +11325,7 @@ function finishSceneInteractionSoon() {
 
 canvas.addEventListener("pointerdown", (event) => {
     beginSceneInteraction();
+    houseBuilder.hoverPointer(event);
     state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     canvas.setPointerCapture(event.pointerId);
     if (state.pointers.size === 1) {
@@ -10997,8 +11334,12 @@ canvas.addEventListener("pointerdown", (event) => {
         state.lastPointerX = event.clientX;
         state.lastPointerY = event.clientY;
         const builderDrag = houseBuilder.beginPointer(event);
+        const mouse = event.pointerType === "mouse";
+        const builderNavigation = houseBuilder.active && houseBuilder.navigationOnly();
         state.pointerMode = builderDrag ? "builder-drag" :
-            event.pointerType === "mouse" && event.button === 2 ? "pan" : "rotate";
+            mouse && houseBuilder.active && event.button === 2 ? "rotate" :
+                mouse && (event.button === 1 || (builderNavigation && event.button === 0) ||
+                    (!houseBuilder.active && event.button === 2)) ? "pan" : "rotate";
         state.pointerMoved = false;
     }
     else if (state.pointers.size === 2) {
@@ -11019,6 +11360,7 @@ canvas.addEventListener("pointerdown", (event) => {
 });
 
 canvas.addEventListener("pointermove", (event) => {
+    houseBuilder.hoverPointer(event);
     if (!state.pointers.has(event.pointerId))
         return;
     state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -11107,6 +11449,10 @@ function finishPointer(event) {
 
 canvas.addEventListener("pointerup", finishPointer);
 canvas.addEventListener("pointercancel", finishPointer);
+canvas.addEventListener("pointerleave", () => {
+    if (!state.pointers.size)
+        houseBuilder.leavePointer();
+});
 stage.addEventListener("touchmove", (event) => event.preventDefault(), { passive: false });
 canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 canvas.addEventListener("wheel", (event) => {

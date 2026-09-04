@@ -1565,6 +1565,37 @@ header p{
     margin-top:13px;
 }
 
+.house-builder-mode{
+    display:grid;
+    grid-template-columns:auto 1fr;
+    align-items:center;
+    gap:9px;
+    margin-top:11px;
+}
+
+.house-builder-mode button{
+    min-height:38px;
+    padding:0 12px;
+    border:1px solid rgba(45,212,191,.44);
+    border-radius:10px;
+    background:rgba(13,148,136,.14);
+    color:#ccfbf1;
+    font-size:11px;
+    font-weight:900;
+}
+
+.house-builder-mode button.selected{
+    border-color:#5eead4;
+    background:rgba(13,148,136,.38);
+    box-shadow:0 0 0 2px rgba(45,212,191,.14),0 0 18px rgba(45,212,191,.12);
+}
+
+.house-builder-mode small{
+    color:#94a3b8;
+    font-size:8.5px;
+    line-height:1.25;
+}
+
 .house-builder-grid label,
 .house-builder-color-row > label{
     display:grid;
@@ -1703,6 +1734,8 @@ header p{
 .house-builder-actions button:disabled{opacity:.42;}
 
 .house-stage.is-building #houseCanvas{cursor:crosshair;}
+.house-stage.is-building[data-builder-tool="select"] #houseCanvas{cursor:grab;}
+.house-stage.is-building[data-builder-tool="select"] #houseCanvas:active{cursor:grabbing;}
 .house-stage.is-building[data-builder-selection="true"] #houseCanvas{cursor:grab;}
 .house-stage.is-building[data-builder-selection="true"] #houseCanvas:active{cursor:grabbing;}
 
