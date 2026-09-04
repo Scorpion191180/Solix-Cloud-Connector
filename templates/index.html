@@ -14,7 +14,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/solix-home-32.png?v=94">
 <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/solix-home-180.png?v=94">
 <link rel="manifest" href="/static/site.webmanifest?v=94">
-<link rel="stylesheet" href="/static/style.css?v=20260904-117">
+<link rel="stylesheet" href="/static/style.css?v=20260904-118">
 
 <script type="importmap">
 {
@@ -304,6 +304,14 @@ Signalstärke
 <button id="builderSelectionRotateRight" type="button" aria-label="Auswahl nach rechts drehen">↷</button>
 <button class="delete" id="builderSelectionDelete" type="button" aria-label="Auswahl löschen">⌫</button>
 </div>
+<nav class="house-builder-touch-nav" id="builderTouchNav" aria-label="Mobile Steuerung im Baumodus">
+<button class="selected" id="builderTouchBuild" type="button" aria-pressed="true">
+<span aria-hidden="true">＋</span> Bauen
+</button>
+<button id="builderTouchCamera" type="button" aria-pressed="false">
+<span aria-hidden="true">✥</span> Kamera
+</button>
+</nav>
 <canvas
     id="houseCanvas"
     role="img"
@@ -751,7 +759,7 @@ Einstellungen
 
 </div>
 
-<script type="module" src="/static/house.js?v=20260904-117"></script>
+<script type="module" src="/static/house.js?v=20260904-118"></script>
 <script src="/static/app.js?v=20260821-96"></script>
 
 </body>

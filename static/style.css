@@ -1444,6 +1444,10 @@ header p{
 
 .house-builder-panel[hidden]{display:none!important;}
 
+.house-builder-touch-nav{
+    display:none;
+}
+
 .house-builder-selection-tools{
     position:absolute;
     z-index:18;
@@ -1747,7 +1751,10 @@ header p{
 .house-stage.is-building .animal-clean-label,
 .house-stage.is-building .house-weather,
 .house-stage.is-building .house-reset,
-.house-stage.is-building .house-gesture{
+.house-stage.is-building .house-gesture,
+.house-stage.is-building .house-cutaway-badge,
+.house-stage.is-building .house-menu-toggle,
+.house-stage.is-building .house-menu-panel{
     display:none!important;
 }
 
@@ -2665,7 +2672,7 @@ header p{
     color:white;
 }
 
-@media(max-width:700px){
+@media(max-width:900px){
 
 html,
 body{
@@ -2791,6 +2798,64 @@ body{
     right:max(10px,env(safe-area-inset-right));
     left:auto;
     width:min(270px,calc(100vw - 20px));
+}
+
+.house-stage.is-building .house-builder-touch-nav{
+    position:absolute;
+    z-index:19;
+    right:max(12px,env(safe-area-inset-right));
+    bottom:max(12px,env(safe-area-inset-bottom));
+    left:max(12px,env(safe-area-inset-left));
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:7px;
+    padding:6px;
+    border:1px solid rgba(148,163,184,.42);
+    border-radius:16px;
+    background:rgba(7,15,27,.88);
+    box-shadow:0 12px 34px rgba(2,6,23,.52);
+    backdrop-filter:blur(13px) saturate(1.15);
+    -webkit-backdrop-filter:blur(13px) saturate(1.15);
+}
+
+.house-builder-touch-nav button{
+    min-height:46px;
+    padding:7px 14px;
+    border:1px solid rgba(148,163,184,.30);
+    border-radius:11px;
+    background:rgba(30,41,59,.70);
+    color:#cbd5e1;
+    font-size:13px;
+    font-weight:900;
+    letter-spacing:.01em;
+}
+
+.house-builder-touch-nav button span{
+    margin-right:4px;
+    font-size:17px;
+}
+
+.house-builder-touch-nav button.selected{
+    border-color:#5eead4;
+    background:linear-gradient(145deg,rgba(13,148,136,.46),rgba(15,118,110,.30));
+    color:#f0fdfa;
+    box-shadow:0 0 0 2px rgba(45,212,191,.14),0 0 18px rgba(45,212,191,.12);
+}
+
+.house-stage.is-building .house-builder-selection-tools{
+    top:auto!important;
+    right:auto!important;
+    bottom:calc(max(12px,env(safe-area-inset-bottom)) + 66px);
+    left:50%!important;
+    transform:translateX(-50%);
+}
+
+.house-stage.is-building[data-builder-camera="true"] #houseCanvas{
+    cursor:grab;
+}
+
+.house-stage.is-building[data-builder-camera="true"] #houseCanvas:active{
+    cursor:grabbing;
 }
 
 .animal-resource-label{

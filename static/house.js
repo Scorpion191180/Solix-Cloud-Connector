@@ -49,6 +49,8 @@ const builderSelectionTools = document.getElementById("builderSelectionTools");
 const builderSelectionRotateLeft = document.getElementById("builderSelectionRotateLeft");
 const builderSelectionRotateRight = document.getElementById("builderSelectionRotateRight");
 const builderSelectionDelete = document.getElementById("builderSelectionDelete");
+const builderTouchBuild = document.getElementById("builderTouchBuild");
+const builderTouchCamera = document.getElementById("builderTouchCamera");
 const houseInstructions = document.getElementById("houseInstructions");
 const menuCleanStatus = document.getElementById("houseCleanStatus");
 const menuCareStatus = document.getElementById("houseCareStatus");
@@ -7882,6 +7884,7 @@ function createHouseBuilder() {
         drawStartSnapped: false, drawEndSnapped: false,
         placementPreview: null, placementPreviewHelper: null,
         previewSnap: null, lastHoverPointer: null, placementEnabled: true,
+        cameraNavigation: false,
         selectionBox: new THREE.Box3(), selectionAnchor: new THREE.Vector3()
     };
     // Only points inside the same 25-cm grid cell join. A deliberately left
@@ -7997,14 +8000,21 @@ function createHouseBuilder() {
     }
 
     function updateBuilderToolUi() {
-        const navigationOnly = !builder.placementEnabled;
-        builderPointerMode.classList.toggle("selected", navigationOnly);
-        builderPointerMode.setAttribute("aria-pressed", String(navigationOnly));
-        stage.dataset.builderTool = navigationOnly ? "select" : builderPartType.value;
+        const selectionOnly = !builder.placementEnabled && !builder.cameraNavigation;
+        builderPointerMode.classList.toggle("selected", selectionOnly);
+        builderPointerMode.setAttribute("aria-pressed", String(selectionOnly));
+        builderTouchBuild?.classList.toggle("selected", !builder.cameraNavigation);
+        builderTouchBuild?.setAttribute("aria-pressed", String(!builder.cameraNavigation));
+        builderTouchCamera?.classList.toggle("selected", builder.cameraNavigation);
+        builderTouchCamera?.setAttribute("aria-pressed", String(builder.cameraNavigation));
+        stage.dataset.builderCamera = String(builder.cameraNavigation);
+        stage.dataset.builderTool = builder.cameraNavigation ? "camera" :
+            selectionOnly ? "select" : builderPartType.value;
     }
 
     function setPlacementEnabled(enabled) {
         builder.placementEnabled = Boolean(enabled);
+        builder.cameraNavigation = false;
         updateBuilderToolUi();
         if (builder.placementEnabled)
             refreshPlacementPreview();
@@ -8025,6 +8035,31 @@ function createHouseBuilder() {
         finishWallDrawing(true);
         setPlacementEnabled(false);
         selectItem(null, "Auswahl/Maus aktiv: links verschieben, rechts drehen, Mausrad zoomen.");
+    }
+
+    function setCameraNavigation(enabled) {
+        builder.cameraNavigation = Boolean(enabled);
+        finishWallDrawing(true);
+        builder.draggingId = null;
+        builder.dragStartClient = null;
+        builder.dragMoved = false;
+        if (builder.cameraNavigation) {
+            disposePlacementPreview();
+            builderSelectionTools.hidden = true;
+            if (window.innerWidth <= 900)
+                setPanelCollapsed(true);
+            updateStatus("Kamera aktiv: mit einem Finger drehen, mit zwei Fingern verschieben und zoomen.");
+        }
+        else {
+            if (builder.selectedId)
+                updateSelectionToolsPosition();
+            else if (builder.placementEnabled)
+                refreshPlacementPreview();
+            updateStatus(builder.placementEnabled ?
+                `${builderTypeLabel(builderPartType.value)} wieder aktiv – jetzt auf dem Grundstück platzieren.` :
+                "Auswahl wieder aktiv – vorhandenes Bauteil antippen.");
+        }
+        updateBuilderToolUi();
     }
 
     function selectItem(id, message = "") {
@@ -8665,7 +8700,7 @@ function createHouseBuilder() {
     }
 
     function beginPointer(event) {
-        if (!builder.active || event.button !== 0)
+        if (!builder.active || builder.cameraNavigation || event.button !== 0)
             return false;
         const hit = builderItemHitAtPointer(event);
         const id = hit?.id || null;
@@ -8794,11 +8829,13 @@ function createHouseBuilder() {
         world.visible = !active;
         builder.root.visible = active;
         if (!active) {
+            builder.cameraNavigation = false;
             builderSelectionTools.hidden = true;
             leavePlacementPreview();
             houseInstructions.textContent = "Ziehen: drehen · Zwei Finger/Rechtsklick: verschieben · Zoom: Details";
         }
         if (active) {
+            builder.cameraNavigation = false;
             builder.previousView = {
                 yaw: state.targetYaw, pitch: state.targetPitch,
                 panX: state.targetPanX, panY: state.targetPanY, zoom: state.targetZoom
@@ -8810,7 +8847,7 @@ function createHouseBuilder() {
             state.targetPanY = 0;
             state.targetZoom = 0.92;
             setMenuOpen(false);
-            setPanelCollapsed(window.innerWidth <= 760);
+            setPanelCollapsed(window.innerWidth <= 900);
             updateBuilderToolUi();
             houseInstructions.textContent = "Baumodus: rechts ziehen = drehen · Auswahl/Maus: links ziehen = verschieben · Mausrad = Zoom";
             updateStatus("Wand frei auf dem Raster ziehen oder Fenster/Tür direkt auf eine Wand setzen.");
@@ -8858,6 +8895,13 @@ function createHouseBuilder() {
     builderPanelToggle.addEventListener("click", () =>
         setPanelCollapsed(!builderPanel.classList.contains("is-collapsed")));
     builderPointerMode.addEventListener("click", activatePointerMode);
+    builderTouchBuild?.addEventListener("click", () => {
+        if (builder.placementEnabled)
+            setCameraNavigation(false);
+        else
+            startNewPart();
+    });
+    builderTouchCamera?.addEventListener("click", () => setCameraNavigation(true));
     builderPartType.addEventListener("change", () => {
         if (builder.selectedId)
             selectItem(null);
@@ -9016,7 +9060,7 @@ function createHouseBuilder() {
     builder.endPointer = endPointer;
     builder.hoverPointer = updatePlacementPreview;
     builder.leavePointer = leavePlacementPreview;
-    builder.navigationOnly = () => !builder.placementEnabled;
+    builder.navigationOnly = () => builder.cameraNavigation || !builder.placementEnabled;
     builder.setActive = setActive;
     builder.updateSelectionToolsPosition = updateSelectionToolsPosition;
     window.solixHouseBuilder = {
@@ -9027,6 +9071,7 @@ function createHouseBuilder() {
             active: builder.active,
             selectedId: builder.selectedId,
             placementEnabled: builder.placementEnabled,
+            cameraNavigation: builder.cameraNavigation,
             preview: stage.dataset.builderPlacementPreview,
             items: builder.items.map((item) => ({ ...item }))
         })
