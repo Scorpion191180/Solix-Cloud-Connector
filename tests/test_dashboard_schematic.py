@@ -21,8 +21,8 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260903-111", dashboard)
-        self.assertIn("house.js?v=20260903-111", dashboard)
+        self.assertIn("style.css?v=20260904-112", dashboard)
+        self.assertIn("house.js?v=20260904-112", dashboard)
         self.assertIn("app.js?v=20260821-96", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
@@ -542,7 +542,7 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("function animateDog", script)
         self.assertIn("function playDogBark", script)
         self.assertIn("function loadDetailedRottweiler", script)
-        self.assertIn('rottweiler-benny/rottweiler-animated.glb?v=110', script)
+        self.assertIn('rottweiler-benny/rottweiler-animated.glb?v=112', script)
         self.assertIn('rottweiler/scene.gltf?v=108', script)
         self.assertIn('new Audio("/static/sounds/rottweiler-barking.ogg?v=108")', script)
         self.assertIn('new Audio("/static/sounds/bird-singing-clear.ogg?v=108")', script)
@@ -595,6 +595,8 @@ class DashboardSchematicTests(unittest.TestCase):
         for element_id in (
             "renderQualitySelect", "houseBuilderOpen", "houseBuilderPanel",
             "builderPartType", "builderVariant", "builderColor",
+            "builderVariantLabel", "builderWallLengthRow", "builderWallLength",
+            "builderWallLengthValue",
             "builderPanelToggle", "builderRotateLeft", "builderRotateRight",
             "builderNew", "builderDelete", "builderUndo", "builderClear",
         ):
@@ -611,7 +613,12 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('function createHouseBuilder()', script)
         self.assertIn('function createBuilderPart(item)', script)
         self.assertIn('new THREE.GridHelper(20, 20', script)
-        self.assertIn('function snapOpeningToWall(item, rawX, rawZ)', script)
+        self.assertIn('function snapOpeningToWall(item, rawX, rawZ, onlyWallId = null)', script)
+        self.assertIn('function updateWallPreview(point)', script)
+        self.assertIn('function finishWallDrawing(cancelled = false)', script)
+        self.assertIn('function positionOpeningOnWall(item)', script)
+        self.assertIn('function updateAttachedOpenings(wallId)', script)
+        self.assertIn('id: "wall-custom-standard"', script)
         self.assertIn('function builderItemHitAtPointer(event)', script)
         self.assertIn('clickedItem?.type === "wall"', script)
         self.assertIn('function beginPointer(event)', script)

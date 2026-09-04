@@ -30,6 +30,10 @@ const builderCloseButton = document.getElementById("houseBuilderClose");
 const builderPanelToggle = document.getElementById("builderPanelToggle");
 const builderPartType = document.getElementById("builderPartType");
 const builderVariant = document.getElementById("builderVariant");
+const builderVariantLabel = document.getElementById("builderVariantLabel");
+const builderWallLengthRow = document.getElementById("builderWallLengthRow");
+const builderWallLength = document.getElementById("builderWallLength");
+const builderWallLengthValue = document.getElementById("builderWallLengthValue");
 const builderColor = document.getElementById("builderColor");
 const builderSwatches = document.getElementById("builderSwatches");
 const builderRotateLeft = document.getElementById("builderRotateLeft");
@@ -4755,7 +4759,9 @@ function tuneRottweilerMaterials(model) {
                 material.color.setHex(palette[name]);
             material.metalness = 0;
             material.roughness = name === "material.003" ? 0.28 :
-                name === "material.005" ? 0.64 : 0.76;
+                name === "material.005" ? 0.64 :
+                    ["fell", "hair2"].includes(name) ? 0.56 :
+                        ["schnauze", "ear"].includes(name) ? 0.66 : 0.76;
             material.transparent = false;
             material.opacity = 1;
             material.depthWrite = true;
@@ -4874,7 +4880,7 @@ function loadDetailedRottweilerFallback(dogState) {
 
 function loadDetailedRottweiler(dogState) {
     vehicleLoader.load(
-        "/static/models/rottweiler-benny/rottweiler-animated.glb?v=110",
+        "/static/models/rottweiler-benny/rottweiler-animated.glb?v=112",
         (gltf) => installDetailedRottweiler(dogState, gltf, "benny-rigged"),
         undefined,
         () => loadDetailedRottweilerFallback(dogState)
@@ -7360,9 +7366,13 @@ function createAudiChargeConnection() {
 const BUILDER_STORAGE_KEY = "solix-house-builder-v1";
 const BUILDER_VARIANTS = Object.freeze({
     wall: [
-        { id: "wall-4m", label: "Gerade Wand · 4 m", length: 4.0, height: 2.75 },
-        { id: "wall-2m", label: "Kurze Wand · 2 m", length: 2.0, height: 2.75 },
-        { id: "wall-corner", label: "Eckwand · 3 × 3 m", length: 3.0, height: 2.75 }
+        { id: "wall-custom-standard", label: "Standard · 2,75 m hoch", length: 4.0, height: 2.75 },
+        { id: "wall-custom-low", label: "Niedrig · 2,40 m hoch", length: 4.0, height: 2.40 },
+        { id: "wall-custom-high", label: "Hoch · 3,10 m hoch", length: 4.0, height: 3.10 },
+        // Unsichtbare Altvarianten halten bereits gespeicherte Entwürfe kompatibel.
+        { id: "wall-4m", label: "Gerade Wand · 4 m", length: 4.0, height: 2.75, legacy: true },
+        { id: "wall-2m", label: "Kurze Wand · 2 m", length: 2.0, height: 2.75, legacy: true },
+        { id: "wall-corner", label: "Eckwand · 3 × 3 m", length: 3.0, height: 2.75, legacy: true }
     ],
     window: [
         { id: "window-single", label: "Modern · einflügelig", width: 1.05, height: 1.35 },
@@ -7410,7 +7420,8 @@ function createBuilderPart(item) {
         BUILDER_VARIANTS[item.type][0];
 
     if (item.type === "wall") {
-        addBox(part, [variant.length, variant.height, 0.20], wallMaterial,
+        const wallLength = THREE.MathUtils.clamp(item.length || variant.length, 0.5, 28.25);
+        addBox(part, [wallLength, variant.height, 0.20], wallMaterial,
             [0, variant.height / 2, 0], { radius: 0.025 });
         if (item.variant === "wall-corner")
             addBox(part, [0.20, variant.height, variant.length], wallMaterial,
@@ -7500,6 +7511,17 @@ function createHouseBuilder() {
     );
     perimeter.position.y = -0.04;
     root.add(perimeter);
+    const drawPreview = new THREE.Mesh(
+        new THREE.BoxGeometry(1, 1, 1),
+        new THREE.MeshStandardMaterial({
+            color: 0xfacc15, transparent: true, opacity: 0.64,
+            roughness: 0.62, depthWrite: false
+        })
+    );
+    drawPreview.name = "Wand-Zeichenvorschau";
+    drawPreview.visible = false;
+    drawPreview.renderOrder = 19;
+    root.add(drawPreview);
     const builderLight = new THREE.DirectionalLight(0xfff1d7, 3.1);
     builderLight.position.set(-8, 14, 10);
     builderLight.castShadow = true;
@@ -7515,7 +7537,8 @@ function createHouseBuilder() {
         root, ground, active: false, rotation: 0,
         items: safeBuilderItems(), objects: new Map(), previousView: null,
         selectedId: null, selectionHelper: null, draggingId: null,
-        dragStartClient: null, dragMoved: false
+        dragStartClient: null, dragMoved: false,
+        drawing: false, drawStart: null, drawEnd: null, drawPreview
     };
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
@@ -7536,6 +7559,28 @@ function createHouseBuilder() {
     function variantForItem(item) {
         return BUILDER_VARIANTS[item.type]?.find((variant) => variant.id === item.variant) ||
             BUILDER_VARIANTS[item.type]?.[0] || null;
+    }
+
+    function availableVariants(type) {
+        const variants = BUILDER_VARIANTS[type] || BUILDER_VARIANTS.wall;
+        return variants.filter((variant) => !variant.legacy);
+    }
+
+    function wallLengthForItem(item) {
+        return THREE.MathUtils.clamp(item?.length || variantForItem(item)?.length || 4, 0.5, 28.25);
+    }
+
+    function setWallLengthControls(item = null) {
+        const visible = item?.type === "wall";
+        builderWallLengthRow.hidden = !visible;
+        if (!visible)
+            return;
+        const length = wallLengthForItem(item);
+        builderWallLength.value = String(length);
+        builderWallLengthValue.value = `${length.toLocaleString("de-DE", {
+            minimumFractionDigits: 2, maximumFractionDigits: 2
+        })} m`;
+        builderWallLengthValue.textContent = builderWallLengthValue.value;
     }
 
     function clearSelectionHelper() {
@@ -7562,6 +7607,8 @@ function createHouseBuilder() {
     }
 
     function syncControlsFromItem(item) {
+        if (item.type === "wall" && !Number.isFinite(item.length))
+            item.length = variantForItem(item)?.length || 4;
         builderPartType.value = item.type;
         refreshVariants(item.variant);
         builderColor.value = item.color || "#f1eee5";
@@ -7569,6 +7616,7 @@ function createHouseBuilder() {
             button.classList.toggle("selected",
                 button.style.getPropertyValue("--builder-swatch").toLowerCase() === builderColor.value.toLowerCase()));
         setRotation(item.rotation);
+        setWallLengthControls(item);
     }
 
     function selectItem(id, message = "") {
@@ -7576,21 +7624,25 @@ function createHouseBuilder() {
         const item = itemById(builder.selectedId);
         if (item)
             syncControlsFromItem(item);
+        else
+            setWallLengthControls(null);
         refreshSelectionHelper();
         updateStatus(message || (item ?
-            "Bauteil ausgewählt: ziehen zum Verschieben, Pfeile zum Drehen." :
-            "Neues Bauteil wählen und auf eine freie Fläche tippen."));
+            `${item.type === "wall" ? "Wand" : item.type === "window" ? "Fenster" : "Tür"} ausgewählt: ziehen zum Verschieben, Pfeile zum Drehen.` :
+            builderPartType.value === "wall" ? "Neue Wand: Start- und Endpunkt auf dem Raster ziehen." :
+                "Fenster oder Tür wählen und direkt auf eine Wand tippen."));
     }
 
     function wallSegments(item) {
         const variant = variantForItem(item);
         if (!variant)
             return [];
+        const wallLength = wallLengthForItem(item);
         const angle = THREE.MathUtils.degToRad(item.rotation);
         const cos = Math.cos(angle);
         const sin = Math.sin(angle);
         const segments = [{
-            x: item.x, z: item.z, length: variant.length,
+            x: item.x, z: item.z, length: wallLength,
             axisX: cos, axisZ: -sin, normalX: sin, normalZ: cos,
             rotation: item.rotation
         }];
@@ -7608,13 +7660,14 @@ function createHouseBuilder() {
         return segments;
     }
 
-    function snapOpeningToWall(item, rawX, rawZ) {
+    function snapOpeningToWall(item, rawX, rawZ, onlyWallId = null) {
         if (!["window", "door"].includes(item.type))
             return { x: rawX, z: rawZ, rotation: item.rotation, wallId: null };
         const opening = variantForItem(item);
         let best = null;
-        builder.items.filter((candidate) => candidate.type === "wall").forEach((wall) => {
-            wallSegments(wall).forEach((segment) => {
+        builder.items.filter((candidate) => candidate.type === "wall" &&
+            (!onlyWallId || candidate.id === onlyWallId)).forEach((wall) => {
+            wallSegments(wall).forEach((segment, wallSegment) => {
                 const dx = rawX - segment.x;
                 const dz = rawZ - segment.z;
                 const half = Math.max(0.05, segment.length / 2 - (opening?.width || 0.8) / 2 - 0.08);
@@ -7629,12 +7682,56 @@ function createHouseBuilder() {
                         x: projectedX + segment.normalX * side * 0.115,
                         z: projectedZ + segment.normalZ * side * 0.115,
                         rotation: ((segment.rotation + (side < 0 ? 180 : 0)) % 360 + 360) % 360,
-                        wallId: wall.id
+                        wallId: wall.id, wallSegment, wallProgress: progress, wallSide: side
                     };
                 }
             });
         });
         return best?.distance <= 1.25 ? best : null;
+    }
+
+    function applyItemTransform(item) {
+        const object = builder.objects.get(item.id);
+        if (!object)
+            return;
+        object.position.set(item.x, 0, item.z);
+        object.rotation.y = THREE.MathUtils.degToRad(item.rotation);
+    }
+
+    function positionOpeningOnWall(item) {
+        if (!["window", "door"].includes(item.type) || !item.wallId)
+            return false;
+        const wall = itemById(item.wallId);
+        const opening = variantForItem(item);
+        if (!wall || wall.type !== "wall" || !opening)
+            return false;
+        const segments = wallSegments(wall);
+        const segmentIndex = Math.min(Math.max(Number(item.wallSegment) || 0, 0), segments.length - 1);
+        const segment = segments[segmentIndex];
+        if (!segment)
+            return false;
+        const inferred = (item.x - segment.x) * segment.axisX + (item.z - segment.z) * segment.axisZ;
+        const half = Math.max(0.05, segment.length / 2 - (opening.width || 0.8) / 2 - 0.08);
+        const progress = THREE.MathUtils.clamp(
+            Number.isFinite(item.wallProgress) ? item.wallProgress : inferred,
+            -half, half
+        );
+        const side = Number(item.wallSide) < 0 ? -1 : 1;
+        item.wallProgress = progress;
+        item.wallSide = side;
+        item.wallSegment = segmentIndex;
+        item.x = Math.round((segment.x + segment.axisX * progress + segment.normalX * side * 0.115) * 100) / 100;
+        item.z = Math.round((segment.z + segment.axisZ * progress + segment.normalZ * side * 0.115) * 100) / 100;
+        item.rotation = ((segment.rotation + (side < 0 ? 180 : 0)) % 360 + 360) % 360;
+        applyItemTransform(item);
+        if (builder.selectedId === item.id)
+            builder.selectionHelper?.update();
+        return true;
+    }
+
+    function updateAttachedOpenings(wallId) {
+        builder.items.filter((item) => item.wallId === wallId).forEach(positionOpeningOnWall);
+        builder.selectionHelper?.update();
     }
 
     function pointerOnGround(event) {
@@ -7668,6 +7765,21 @@ function createHouseBuilder() {
         for (const hit of raycaster.intersectObjects(Array.from(builder.objects.values()), true)) {
             const id = itemIdFromObject(hit.object);
             if (id)
+                return { id, point: builder.root.worldToLocal(hit.point.clone()) };
+        }
+        return null;
+    }
+
+    function wallHitAtPointer(event) {
+        const rect = canvas.getBoundingClientRect();
+        pointer.set(
+            (event.clientX - rect.left) / rect.width * 2 - 1,
+            -(event.clientY - rect.top) / rect.height * 2 + 1
+        );
+        raycaster.setFromCamera(pointer, camera);
+        for (const hit of raycaster.intersectObjects(Array.from(builder.objects.values()), true)) {
+            const id = itemIdFromObject(hit.object);
+            if (itemById(id)?.type === "wall")
                 return { id, point: builder.root.worldToLocal(hit.point.clone()) };
         }
         return null;
@@ -7717,12 +7829,12 @@ function createHouseBuilder() {
     }
 
     function selectedVariant() {
-        const variants = BUILDER_VARIANTS[builderPartType.value] || BUILDER_VARIANTS.wall;
+        const variants = availableVariants(builderPartType.value);
         return variants.find((variant) => variant.id === builderVariant.value) || variants[0];
     }
 
     function refreshVariants(preferredVariant = null) {
-        const variants = BUILDER_VARIANTS[builderPartType.value] || BUILDER_VARIANTS.wall;
+        const variants = availableVariants(builderPartType.value);
         builderVariant.replaceChildren(...variants.map((variant) => {
             const option = document.createElement("option");
             option.value = variant.id;
@@ -7731,6 +7843,7 @@ function createHouseBuilder() {
         }));
         if (preferredVariant && variants.some((variant) => variant.id === preferredVariant))
             builderVariant.value = preferredVariant;
+        builderVariantLabel.textContent = builderPartType.value === "wall" ? "Wandhöhe" : "Ausführung";
     }
 
     function setRotation(value) {
@@ -7739,17 +7852,92 @@ function createHouseBuilder() {
         builderRotation.textContent = `${builder.rotation}°`;
     }
 
+    function snappedGroundPoint(point) {
+        return new THREE.Vector3(
+            THREE.MathUtils.clamp(Math.round(point.x * 4) / 4, -10, 10),
+            0,
+            THREE.MathUtils.clamp(Math.round(point.z * 4) / 4, -10, 10)
+        );
+    }
+
+    function updateWallPreview(point) {
+        if (!builder.drawing || !builder.drawStart)
+            return false;
+        builder.drawEnd = snappedGroundPoint(point);
+        const dx = builder.drawEnd.x - builder.drawStart.x;
+        const dz = builder.drawEnd.z - builder.drawStart.z;
+        const length = THREE.MathUtils.clamp(Math.hypot(dx, dz), 0.01, 28.25);
+        const variant = selectedVariant();
+        const rotation = THREE.MathUtils.radToDeg(Math.atan2(-dz, dx));
+        builder.drawPreview.position.set(
+            (builder.drawStart.x + builder.drawEnd.x) / 2,
+            variant.height / 2,
+            (builder.drawStart.z + builder.drawEnd.z) / 2
+        );
+        builder.drawPreview.rotation.y = THREE.MathUtils.degToRad(rotation);
+        builder.drawPreview.scale.set(length, variant.height, 0.20);
+        builder.drawPreview.visible = true;
+        setRotation(rotation);
+        setWallLengthControls({ type: "wall", variant: variant.id, length });
+        updateStatus(`Wandlänge: ${length.toLocaleString("de-DE", {
+            minimumFractionDigits: 2, maximumFractionDigits: 2
+        })} m · loslassen zum Setzen.`);
+        return true;
+    }
+
+    function finishWallDrawing(cancelled = false) {
+        if (!builder.drawing)
+            return false;
+        const start = builder.drawStart;
+        const end = builder.drawEnd || builder.drawStart;
+        const length = Math.hypot(end.x - start.x, end.z - start.z);
+        builder.drawing = false;
+        builder.drawStart = null;
+        builder.drawEnd = null;
+        builder.drawPreview.visible = false;
+        if (cancelled || length < 0.5) {
+            setWallLengthControls(null);
+            updateStatus(cancelled ? "Wandzeichnung abgebrochen." : "Wand mindestens 0,50 m lang ziehen.");
+            return true;
+        }
+        const variant = selectedVariant();
+        const item = {
+            id: globalThis.crypto?.randomUUID?.() || `part-${Date.now()}-${builder.items.length}`,
+            type: "wall", variant: variant.id, color: builderColor.value,
+            length: Math.round(Math.min(length, 28.25) * 100) / 100,
+            rotation: ((THREE.MathUtils.radToDeg(Math.atan2(-(end.z - start.z), end.x - start.x)) % 360) + 360) % 360,
+            x: Math.round(((start.x + end.x) / 2) * 100) / 100,
+            z: Math.round(((start.z + end.z) / 2) * 100) / 100
+        };
+        builder.items.push(item);
+        addItemObject(item);
+        save();
+        selectItem(item.id, `Freie Wand mit ${item.length.toLocaleString("de-DE")} m Länge gesetzt.`);
+        renderer.shadowMap.needsUpdate = true;
+        return true;
+    }
+
     function rotateSelection(delta) {
         const item = itemById(builder.selectedId);
         if (!item) {
             setRotation(builder.rotation + delta);
             return;
         }
-        item.rotation = ((item.rotation + delta) % 360 + 360) % 360;
+        if (["window", "door"].includes(item.type) && item.wallId) {
+            item.wallSide = Number(item.wallSide) < 0 ? 1 : -1;
+            positionOpeningOnWall(item);
+        }
+        else {
+            item.rotation = ((item.rotation + delta) % 360 + 360) % 360;
+            if (item.type === "wall")
+                updateAttachedOpenings(item.id);
+            applyItemTransform(item);
+        }
         setRotation(item.rotation);
-        replaceItemObject(item);
+        refreshSelectionHelper();
         save();
-        updateStatus(`Auswahl auf ${item.rotation}° gedreht.`);
+        updateStatus(["window", "door"].includes(item.type) ?
+            "Öffnungsrichtung an der Wand gewechselt." : `Auswahl auf ${Math.round(item.rotation)}° gedreht.`);
     }
 
     function placeAtPointer(event) {
@@ -7758,12 +7946,15 @@ function createHouseBuilder() {
         const openingType = ["window", "door"].includes(builderPartType.value);
         const clickedItemHit = openingType ? builderItemHitAtPointer(event) : null;
         const clickedItem = clickedItemHit ? itemById(clickedItemHit.id) : null;
-        // Beim Setzen eines Fensters oder einer Tür ist der Klick auf die Wand
-        // selbst die präziseste Eingabe. Der Trefferpunkt der Wand wird direkt
-        // benutzt, statt ihn perspektivisch auf die Bodenebene zu verlängern.
-        const point = clickedItem?.type === "wall" ? clickedItemHit.point : pointerOnGround(event);
-        if (!point)
+        if (!openingType) {
+            updateStatus("Eine Wand wird durch Ziehen vom Start- bis zum Endpunkt erstellt.");
             return false;
+        }
+        if (clickedItem?.type !== "wall") {
+            updateStatus("Fenster und Türen können nur direkt auf einer vorhandenen Wand sitzen.");
+            return false;
+        }
+        const point = clickedItemHit.point;
         let x = THREE.MathUtils.clamp(Math.round(point.x * 2) / 2, -9.5, 9.5);
         let z = THREE.MathUtils.clamp(Math.round(point.z * 2) / 2, -9.5, 9.5);
         const variant = selectedVariant();
@@ -7775,7 +7966,7 @@ function createHouseBuilder() {
             rotation: builder.rotation,
             x, z
         };
-        const snapped = snapOpeningToWall(item, x, z);
+        const snapped = snapOpeningToWall(item, x, z, clickedItem.id);
         if (["window", "door"].includes(item.type) && !snapped) {
             updateStatus(`${variant.label}: bitte direkt auf oder neben eine vorhandene Wand tippen.`);
             return false;
@@ -7783,7 +7974,11 @@ function createHouseBuilder() {
         if (snapped) {
             x = THREE.MathUtils.clamp(Math.round(snapped.x * 100) / 100, -9.5, 9.5);
             z = THREE.MathUtils.clamp(Math.round(snapped.z * 100) / 100, -9.5, 9.5);
-            Object.assign(item, { x, z, rotation: snapped.rotation, wallId: snapped.wallId });
+            Object.assign(item, {
+                x, z, rotation: snapped.rotation, wallId: snapped.wallId,
+                wallSegment: snapped.wallSegment, wallProgress: snapped.wallProgress,
+                wallSide: snapped.wallSide
+            });
         }
         builder.items.push(item);
         addItemObject(item);
@@ -7796,7 +7991,20 @@ function createHouseBuilder() {
     function beginPointer(event) {
         if (!builder.active || event.button !== 0)
             return false;
-        const id = itemAtPointer(event);
+        const hit = builderItemHitAtPointer(event);
+        const id = hit?.id || null;
+        if (!id && builderPartType.value === "wall") {
+            const point = pointerOnGround(event);
+            if (!point)
+                return false;
+            builder.drawing = true;
+            builder.drawStart = snappedGroundPoint(point);
+            builder.drawEnd = builder.drawStart.clone();
+            builder.dragStartClient = { x: event.clientX, y: event.clientY };
+            builder.dragMoved = false;
+            updateWallPreview(builder.drawEnd);
+            return true;
+        }
         if (!id)
             return false;
         const clickedItem = itemById(id);
@@ -7813,6 +8021,14 @@ function createHouseBuilder() {
     }
 
     function movePointer(event) {
+        if (builder.drawing) {
+            const point = pointerOnGround(event);
+            if (point) {
+                updateWallPreview(point);
+                builder.dragMoved = true;
+            }
+            return true;
+        }
         const item = itemById(builder.draggingId);
         if (!item)
             return false;
@@ -7822,12 +8038,14 @@ function createHouseBuilder() {
         );
         if (movedPixels < 4)
             return true;
-        const point = pointerOnGround(event);
+        const wallHit = ["window", "door"].includes(item.type) ? wallHitAtPointer(event) : null;
+        const point = wallHit?.point || pointerOnGround(event);
         if (!point)
             return true;
         let x = THREE.MathUtils.clamp(Math.round(point.x * 2) / 2, -9.5, 9.5);
         let z = THREE.MathUtils.clamp(Math.round(point.z * 2) / 2, -9.5, 9.5);
-        const snapped = snapOpeningToWall(item, x, z);
+        const snapped = ["window", "door"].includes(item.type) ?
+            (wallHit ? snapOpeningToWall(item, x, z, wallHit.id) : null) : null;
         if (["window", "door"].includes(item.type) && !snapped) {
             updateStatus("Fenster und Türen bleiben an einer Wand eingerastet.");
             return true;
@@ -7837,22 +8055,25 @@ function createHouseBuilder() {
             z = Math.round(snapped.z * 100) / 100;
             item.rotation = snapped.rotation;
             item.wallId = snapped.wallId;
+            item.wallSegment = snapped.wallSegment;
+            item.wallProgress = snapped.wallProgress;
+            item.wallSide = snapped.wallSide;
             setRotation(item.rotation);
         }
         item.x = x;
         item.z = z;
-        const object = builder.objects.get(item.id);
-        if (object) {
-            object.position.set(x, 0, z);
-            object.rotation.y = THREE.MathUtils.degToRad(item.rotation);
-        }
+        applyItemTransform(item);
+        if (item.type === "wall")
+            updateAttachedOpenings(item.id);
         builder.selectionHelper?.update();
         builder.dragMoved = true;
         updateStatus(`Auswahl bei ${x.toLocaleString("de-DE")} / ${z.toLocaleString("de-DE")} m.`);
         return true;
     }
 
-    function endPointer() {
+    function endPointer(cancelled = false) {
+        if (builder.drawing)
+            return finishWallDrawing(cancelled);
         if (!builder.draggingId)
             return false;
         if (builder.dragMoved) {
@@ -7896,9 +8117,10 @@ function createHouseBuilder() {
             state.targetZoom = 0.92;
             setMenuOpen(false);
             setPanelCollapsed(window.innerWidth <= 760);
-            updateStatus("Bauteil wählen und anschließend auf das Raster tippen.");
+            updateStatus("Wand frei auf dem Raster ziehen oder Fenster/Tür direkt auf eine Wand setzen.");
         }
         else {
+            finishWallDrawing(true);
             cameraTarget.set(0, 2.1, 0);
             const view = builder.previousView || DEFAULT_VIEW;
             state.targetYaw = view.yaw;
@@ -7937,8 +8159,12 @@ function createHouseBuilder() {
         setPanelCollapsed(!builderPanel.classList.contains("is-collapsed")));
     builderPartType.addEventListener("change", () => {
         if (builder.selectedId)
-            selectItem(null, "Neues Bauteil gewählt. Freie Fläche antippen.");
+            selectItem(null);
         refreshVariants();
+        setWallLengthControls(null);
+        updateStatus(builderPartType.value === "wall" ?
+            "Neue Wand: auf dem Raster vom Start- bis zum Endpunkt ziehen." :
+            `${builderPartType.value === "window" ? "Fenster" : "Tür"}: direkt auf eine Wand tippen.`);
     });
     builderVariant.addEventListener("change", () => {
         const item = itemById(builder.selectedId);
@@ -7946,8 +8172,28 @@ function createHouseBuilder() {
             return;
         item.variant = builderVariant.value;
         replaceItemObject(item);
+        if (item.type === "wall")
+            updateAttachedOpenings(item.id);
+        else
+            positionOpeningOnWall(item);
         save();
-        updateStatus("Modell der Auswahl geändert.");
+        updateStatus(item.type === "wall" ? "Wandhöhe geändert." : "Ausführung geändert.");
+    });
+    builderWallLength.addEventListener("input", () => {
+        const item = itemById(builder.selectedId);
+        if (item?.type !== "wall")
+            return;
+        const length = THREE.MathUtils.clamp(Number(builderWallLength.value) || 0.5, 0.5, 28.25);
+        if (item.variant === "wall-corner")
+            item.variant = "wall-custom-standard";
+        item.length = Math.round(length * 100) / 100;
+        replaceItemObject(item);
+        updateAttachedOpenings(item.id);
+        setWallLengthControls(item);
+        save();
+        updateStatus(`Wand auf ${item.length.toLocaleString("de-DE", {
+            minimumFractionDigits: 2, maximumFractionDigits: 2
+        })} m geändert.`);
     });
     builderColor.addEventListener("input", () => {
         builderSwatches.querySelectorAll("button").forEach((button) => button.classList.remove("selected"));
@@ -7959,34 +8205,51 @@ function createHouseBuilder() {
         save();
         updateStatus("Farbe der Auswahl geändert.");
     });
-    builderRotateLeft.addEventListener("click", () => rotateSelection(-90));
-    builderRotateRight.addEventListener("click", () => rotateSelection(90));
+    builderRotateLeft.addEventListener("click", () => rotateSelection(-15));
+    builderRotateRight.addEventListener("click", () => rotateSelection(15));
     builderNew.addEventListener("click", () =>
-        selectItem(null, "Neues Bauteil: Modell wählen und auf eine freie Fläche tippen."));
+        selectItem(null, builderPartType.value === "wall" ?
+            "Neue Wand: Start- und Endpunkt auf dem Raster ziehen." :
+            "Neues Fenster oder neue Tür direkt auf eine Wand tippen."));
     builderDelete.addEventListener("click", () => {
         const id = builder.selectedId;
         if (!id)
             return;
-        const object = builder.objects.get(id);
-        if (object)
-            builder.root.remove(object);
-        builder.objects.delete(id);
-        builder.items = builder.items.filter((item) => item.id !== id);
+        const removedIds = new Set([id]);
+        if (itemById(id)?.type === "wall")
+            builder.items.filter((item) => item.wallId === id).forEach((item) => removedIds.add(item.id));
+        removedIds.forEach((removedId) => {
+            const object = builder.objects.get(removedId);
+            if (object)
+                builder.root.remove(object);
+            builder.objects.delete(removedId);
+        });
+        builder.items = builder.items.filter((item) => !removedIds.has(item.id));
         builder.selectedId = null;
         clearSelectionHelper();
+        setWallLengthControls(null);
         save();
-        updateStatus("Ausgewähltes Bauteil gelöscht.");
+        updateStatus(removedIds.size > 1 ?
+            "Wand und daran befestigte Fenster/Türen gelöscht." : "Ausgewähltes Bauteil gelöscht.");
     });
     builderUndo.addEventListener("click", () => {
         const item = builder.items.pop();
         if (item) {
-            const object = builder.objects.get(item.id);
-            if (object)
-                builder.root.remove(object);
-            builder.objects.delete(item.id);
-            if (builder.selectedId === item.id) {
+            const removedIds = new Set([item.id]);
+            if (item.type === "wall")
+                builder.items.filter((candidate) => candidate.wallId === item.id)
+                    .forEach((candidate) => removedIds.add(candidate.id));
+            removedIds.forEach((removedId) => {
+                const object = builder.objects.get(removedId);
+                if (object)
+                    builder.root.remove(object);
+                builder.objects.delete(removedId);
+            });
+            builder.items = builder.items.filter((candidate) => !removedIds.has(candidate.id));
+            if (removedIds.has(builder.selectedId)) {
                 builder.selectedId = null;
                 clearSelectionHelper();
+                setWallLengthControls(null);
             }
             save();
             updateStatus("Letztes Bauteil entfernt.");
@@ -10325,7 +10588,7 @@ canvas.addEventListener("pointerdown", (event) => {
         state.pointerMoved = false;
     }
     else if (state.pointers.size === 2) {
-        houseBuilder.endPointer();
+        houseBuilder.endPointer(true);
         state.pinchStartDistance = pointerDistance();
         state.pinchStartZoom = state.targetZoom;
         state.pinchStartPanX = state.targetPanX;
@@ -10403,7 +10666,7 @@ canvas.addEventListener("pointermove", (event) => {
 function finishPointer(event) {
     if (!state.pointers.has(event.pointerId))
         return;
-    const handledBuilderPointer = houseBuilder.endPointer();
+    const handledBuilderPointer = houseBuilder.endPointer(event.type === "pointercancel");
     const placeBuilderPart = houseBuilder.active && state.pointers.size === 1 &&
         !handledBuilderPointer && !state.pointerMoved && event.button === 0 && event.type === "pointerup";
     if (canvas.hasPointerCapture(event.pointerId))

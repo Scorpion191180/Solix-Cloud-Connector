@@ -1443,6 +1443,31 @@ header p{
     margin-top:11px;
 }
 
+.house-builder-length{
+    display:grid;
+    grid-template-columns:auto minmax(92px,1fr) 56px;
+    align-items:center;
+    gap:8px;
+    margin-top:10px;
+    color:#cbd5e1;
+    font-size:10px;
+    font-weight:850;
+}
+
+.house-builder-length[hidden]{display:none!important;}
+
+.house-builder-length input[type="range"]{
+    width:100%;
+    accent-color:#facc15;
+}
+
+.house-builder-length output{
+    color:#fff;
+    text-align:right;
+    font-size:11px;
+    font-variant-numeric:tabular-nums;
+}
+
 .house-builder-color-row input[type="color"]{
     width:42px;
     height:36px;
@@ -2549,6 +2574,7 @@ body{
 }
 
 .house-builder-color-row,
+.house-builder-length,
 .house-builder-rotation,
 .house-builder-actions{margin-top:7px;}
 
