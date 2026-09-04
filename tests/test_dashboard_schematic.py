@@ -21,8 +21,8 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260904-119", dashboard)
-        self.assertIn("house.js?v=20260904-119", dashboard)
+        self.assertIn("style.css?v=20260904-120", dashboard)
+        self.assertIn("house.js?v=20260904-120", dashboard)
         self.assertIn("app.js?v=20260821-96", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
@@ -609,8 +609,12 @@ class DashboardSchematicTests(unittest.TestCase):
             "builderSelectionTools", "builderSelectionRotateLeft",
             "builderSelectionRotateRight", "builderSelectionDelete",
             "sceneLoader", "sceneLoaderBar", "sceneLoaderStatus", "sceneLoaderPercent",
+            "sceneLoaderVersion",
         ):
             self.assertIn(f'id="{element_id}"', dashboard)
+
+        self.assertIn('const APP_BUILD_VERSION = "120"', script)
+        self.assertIn("Version 120", dashboard)
 
         self.assertIn('targetFps: 30, pixelRatio: 1.15', script)
         self.assertIn('targetFps: 24, pixelRatio: 1', script)
