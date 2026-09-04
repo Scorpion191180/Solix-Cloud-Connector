@@ -7513,6 +7513,7 @@ function createAudiChargeConnection() {
 }
 
 const BUILDER_STORAGE_KEY = "solix-house-builder-v1";
+const BUILDER_ROTATION_STEP = 90;
 const BUILDER_VARIANTS = Object.freeze({
     wall: [
         { id: "wall-custom-standard", label: "Standard · 2,75 m hoch", length: 4.0, height: 2.75 },
@@ -8962,8 +8963,8 @@ function createHouseBuilder() {
         save();
         updateStatus("Farbe der Auswahl geändert.");
     });
-    builderRotateLeft.addEventListener("click", () => rotateSelection(-15));
-    builderRotateRight.addEventListener("click", () => rotateSelection(15));
+    builderRotateLeft.addEventListener("click", () => rotateSelection(-BUILDER_ROTATION_STEP));
+    builderRotateRight.addEventListener("click", () => rotateSelection(BUILDER_ROTATION_STEP));
     builderNew.addEventListener("click", startNewPart);
     function deleteSelection() {
         const id = builder.selectedId;
@@ -8988,8 +8989,8 @@ function createHouseBuilder() {
             "Wand und daran befestigte Fenster/Türen gelöscht." : "Ausgewähltes Bauteil gelöscht.");
     }
     builderDelete.addEventListener("click", deleteSelection);
-    builderSelectionRotateLeft.addEventListener("click", () => rotateSelection(-15));
-    builderSelectionRotateRight.addEventListener("click", () => rotateSelection(15));
+    builderSelectionRotateLeft.addEventListener("click", () => rotateSelection(-BUILDER_ROTATION_STEP));
+    builderSelectionRotateRight.addEventListener("click", () => rotateSelection(BUILDER_ROTATION_STEP));
     builderSelectionDelete.addEventListener("click", deleteSelection);
     window.addEventListener("keydown", (event) => {
         if (!builder.active || ["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(event.target?.tagName))
@@ -9000,11 +9001,11 @@ function createHouseBuilder() {
         }
         else if ([",", "<"].includes(event.key)) {
             event.preventDefault();
-            rotateSelection(-15);
+            rotateSelection(-BUILDER_ROTATION_STEP);
         }
         else if ([".", ">"].includes(event.key)) {
             event.preventDefault();
-            rotateSelection(15);
+            rotateSelection(BUILDER_ROTATION_STEP);
         }
         else if (event.key.toLowerCase() === "n") {
             event.preventDefault();
