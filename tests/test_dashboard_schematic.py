@@ -21,8 +21,8 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260904-112", dashboard)
-        self.assertIn("house.js?v=20260904-112", dashboard)
+        self.assertIn("style.css?v=20260904-113", dashboard)
+        self.assertIn("house.js?v=20260904-113", dashboard)
         self.assertIn("app.js?v=20260821-96", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
@@ -599,6 +599,8 @@ class DashboardSchematicTests(unittest.TestCase):
             "builderWallLengthValue",
             "builderPanelToggle", "builderRotateLeft", "builderRotateRight",
             "builderNew", "builderDelete", "builderUndo", "builderClear",
+            "builderSelectionTools", "builderSelectionRotateLeft",
+            "builderSelectionRotateRight", "builderSelectionDelete",
         ):
             self.assertIn(f'id="{element_id}"', dashboard)
 
@@ -619,13 +621,19 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('function positionOpeningOnWall(item)', script)
         self.assertIn('function updateAttachedOpenings(wallId)', script)
         self.assertIn('id: "wall-custom-standard"', script)
+        self.assertIn('id: "floor-stone"', script)
+        self.assertIn('id: "grass-lawn"', script)
+        self.assertIn('id: "tree-deciduous"', script)
         self.assertIn('function builderItemHitAtPointer(event)', script)
         self.assertIn('clickedItem?.type === "wall"', script)
         self.assertIn('function beginPointer(event)', script)
         self.assertIn('function movePointer(event)', script)
         self.assertIn('builder.selectionHelper = new THREE.BoxHelper', script)
+        self.assertIn('function updateSelectionToolsPosition()', script)
+        self.assertIn('builderSelectionDelete.addEventListener("click", deleteSelection)', script)
         self.assertIn('window.solixHouseBuilder', script)
         self.assertIn('.house-builder-panel', stylesheet)
+        self.assertIn('.house-builder-selection-tools', stylesheet)
         self.assertIn('.house-builder-panel.is-collapsed', stylesheet)
         self.assertIn('.house-stage.is-building', stylesheet)
         self.assertIn('id="automationHistory"', dashboard)

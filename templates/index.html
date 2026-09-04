@@ -14,7 +14,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/solix-home-32.png?v=94">
 <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/solix-home-180.png?v=94">
 <link rel="manifest" href="/static/site.webmanifest?v=94">
-<link rel="stylesheet" href="/static/style.css?v=20260904-112">
+<link rel="stylesheet" href="/static/style.css?v=20260904-113">
 
 <script type="importmap">
 {
@@ -246,9 +246,12 @@ Signalstärke
 <div class="house-builder-grid">
 <label>Bauteil
 <select id="builderPartType">
-<option value="wall">Wand</option>
-<option value="window">Fenster</option>
-<option value="door">Tür</option>
+<option value="wall">▰ Wand</option>
+<option value="window">▢ Fenster</option>
+<option value="door">▯ Tür</option>
+<option value="floor">▦ Boden</option>
+<option value="grass">▧ Grasfläche</option>
+<option value="tree">♣ Baum</option>
 </select>
 </label>
 <label><span id="builderVariantLabel">Ausführung</span>
@@ -271,7 +274,7 @@ Signalstärke
 <output id="builderRotation">0°</output>
 <button id="builderRotateRight" type="button" aria-label="Nach rechts drehen">↷</button>
 </div>
-<p class="house-builder-help">Wand: Start- und Endpunkt auf dem Raster ziehen. Fenster/Tür: direkt auf eine Wand tippen. Vorhandene Teile antippen und ziehen.</p>
+<p class="house-builder-help">Wand: aufziehen. Fenster/Tür: auf eine Wand tippen. Boden, Gras und Baum: Fläche antippen. Bauteil antippen: direkt drehen, verschieben oder löschen.</p>
 <div class="house-builder-actions">
 <button id="builderNew" type="button">＋ Neues Bauteil</button>
 <button id="builderDelete" type="button" disabled>Auswahl löschen</button>
@@ -281,6 +284,11 @@ Signalstärke
 </div>
 <p class="house-builder-status" id="builderStatus" aria-live="polite">Noch keine Bauteile gesetzt.</p>
 </section>
+<div class="house-builder-selection-tools" id="builderSelectionTools" role="toolbar" aria-label="Ausgewähltes Bauteil bearbeiten" hidden>
+<button id="builderSelectionRotateLeft" type="button" aria-label="Auswahl nach links drehen">↶</button>
+<button id="builderSelectionRotateRight" type="button" aria-label="Auswahl nach rechts drehen">↷</button>
+<button class="delete" id="builderSelectionDelete" type="button" aria-label="Auswahl löschen">⌫</button>
+</div>
 <canvas
     id="houseCanvas"
     role="img"
@@ -728,7 +736,7 @@ Einstellungen
 
 </div>
 
-<script type="module" src="/static/house.js?v=20260904-112"></script>
+<script type="module" src="/static/house.js?v=20260904-113"></script>
 <script src="/static/app.js?v=20260821-96"></script>
 
 </body>
