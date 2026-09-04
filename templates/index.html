@@ -14,7 +14,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/solix-home-32.png?v=94">
 <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/solix-home-180.png?v=94">
 <link rel="manifest" href="/static/site.webmanifest?v=94">
-<link rel="stylesheet" href="/static/style.css?v=20260904-113">
+<link rel="stylesheet" href="/static/style.css?v=20260904-115">
 
 <script type="importmap">
 {
@@ -28,6 +28,16 @@
 </head>
 
 <body>
+
+<div class="scene-loader" id="sceneLoader" role="status" aria-live="polite" aria-label="3D-Szene wird geladen">
+<div class="scene-loader-content">
+<div class="scene-loader-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+<strong>Dein Energiehaus wird aufgebaut</strong>
+<p id="sceneLoaderStatus">Haus und 3D-Objekte werden vorbereitet …</p>
+<div class="scene-loader-track" aria-hidden="true"><span id="sceneLoaderBar"></span></div>
+<small id="sceneLoaderPercent">0 %</small>
+</div>
+</div>
 
 <div class="container">
 
@@ -251,6 +261,7 @@ Signalstärke
 <option value="door">▯ Tür</option>
 <option value="floor">▦ Boden</option>
 <option value="grass">▧ Grasfläche</option>
+<option value="fence">▥ Zaun</option>
 <option value="tree">♣ Baum</option>
 </select>
 </label>
@@ -274,7 +285,7 @@ Signalstärke
 <output id="builderRotation">0°</output>
 <button id="builderRotateRight" type="button" aria-label="Nach rechts drehen">↷</button>
 </div>
-<p class="house-builder-help">Wand: aufziehen. Fenster/Tür: auf eine Wand tippen. Boden, Gras und Baum: Fläche antippen. Bauteil antippen: direkt drehen, verschieben oder löschen.</p>
+<p class="house-builder-help">Wand: aufziehen. Fenster/Tür: auf eine Wand tippen. Boden, Gras, Zaun und Baum: Fläche antippen. Bauteil antippen: direkt drehen, verschieben oder löschen.</p>
 <div class="house-builder-actions">
 <button id="builderNew" type="button">＋ Neues Bauteil</button>
 <button id="builderDelete" type="button" disabled>Auswahl löschen</button>
@@ -736,7 +747,7 @@ Einstellungen
 
 </div>
 
-<script type="module" src="/static/house.js?v=20260904-113"></script>
+<script type="module" src="/static/house.js?v=20260904-115"></script>
 <script src="/static/app.js?v=20260821-96"></script>
 
 </body>

@@ -60,8 +60,149 @@ const weatherPanel = document.getElementById("houseWeather");
 const weatherIcon = document.getElementById("houseWeatherIcon");
 const weatherTemp = document.getElementById("houseWeatherTemp");
 const weatherText = document.getElementById("houseWeatherText");
+const sceneLoader = document.getElementById("sceneLoader");
+const sceneLoaderBar = document.getElementById("sceneLoaderBar");
+const sceneLoaderStatus = document.getElementById("sceneLoaderStatus");
+const sceneLoaderPercent = document.getElementById("sceneLoaderPercent");
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const INTERIOR_VIEW_ENABLED = false;
+
+let initialSceneAssetsReady = false;
+let sceneLoaderGeneration = 0;
+let sceneLoaderHideTimer = null;
+let sceneLoaderValue = 0;
+let sceneWasHidden = false;
+const sceneLoaderErrors = new Set();
+
+function setSceneLoaderProgress(percent, message = "") {
+    if (!sceneLoader)
+        return;
+    sceneLoaderValue = THREE.MathUtils.clamp(Math.round(percent), 0, 100);
+    if (sceneLoaderBar)
+        sceneLoaderBar.style.width = `${sceneLoaderValue}%`;
+    if (sceneLoaderPercent)
+        sceneLoaderPercent.textContent = `${sceneLoaderValue} %`;
+    if (message && sceneLoaderStatus)
+        sceneLoaderStatus.textContent = message;
+}
+
+function showSceneLoader(message, initialPercent = 8) {
+    if (!sceneLoader)
+        return 0;
+    sceneLoaderGeneration += 1;
+    if (sceneLoaderHideTimer)
+        window.clearTimeout(sceneLoaderHideTimer);
+    sceneLoader.hidden = false;
+    sceneLoader.classList.remove("is-ready");
+    sceneLoaderValue = 0;
+    setSceneLoaderProgress(initialPercent, message);
+    return sceneLoaderGeneration;
+}
+
+function warmAndHideSceneLoader(message, startPercent = 72) {
+    const generation = sceneLoaderGeneration || showSceneLoader(message, startPercent);
+    const startedAt = performance.now();
+    let renderedWarmupFrames = 0;
+    const warmFrame = (now) => {
+        if (generation !== sceneLoaderGeneration || !sceneLoader)
+            return;
+        renderedWarmupFrames += 1;
+        const frameProgress = renderedWarmupFrames / 10;
+        const timeProgress = (now - startedAt) / 520;
+        const progress = Math.min(1, frameProgress, timeProgress);
+        setSceneLoaderProgress(startPercent + progress * (99 - startPercent), message);
+        if (progress < 1) {
+            window.requestAnimationFrame(warmFrame);
+            return;
+        }
+        setSceneLoaderProgress(100, message);
+        stage.dataset.sceneReady = "true";
+        sceneLoader.classList.add("is-ready");
+        sceneLoaderHideTimer = window.setTimeout(() => {
+            if (generation === sceneLoaderGeneration) {
+                sceneLoader.hidden = true;
+                sceneLoader.classList.remove("is-ready");
+            }
+        }, 360);
+    };
+    window.requestAnimationFrame(warmFrame);
+}
+
+function finishInitialSceneLoading() {
+    if (initialSceneAssetsReady)
+        return;
+    initialSceneAssetsReady = true;
+    const message = sceneLoaderErrors.size ?
+        "Szene bereit – einzelne nicht verfügbare Details wurden übersprungen." :
+        "Alle 3D-Objekte sind bereit.";
+    warmAndHideSceneLoader(message, Math.max(72, sceneLoaderValue));
+}
+
+function resumeSceneWithLoader() {
+    if (!initialSceneAssetsReady || document.hidden)
+        return;
+    showSceneLoader("Animationen werden flüssig fortgesetzt …", 18);
+    stage.dataset.sceneReady = "warming";
+    state.lastTime = performance.now();
+    lastRenderedAt = 0;
+    renderer.shadowMap.needsUpdate = true;
+    warmAndHideSceneLoader("Animationen sind bereit.", 18);
+}
+
+const sceneLoadingManager = new THREE.LoadingManager();
+sceneLoadingManager.onStart = (url, loaded, total) => {
+    stage.dataset.sceneLoadingUrl = url;
+    stage.dataset.sceneLoadedItems = String(loaded);
+    stage.dataset.sceneTotalItems = String(total);
+    const progress = total > 0 ? 8 + loaded / total * 82 : 8;
+    setSceneLoaderProgress(Math.max(sceneLoaderValue, progress),
+        "Haus, Texturen und 3D-Modelle werden geladen …");
+};
+sceneLoadingManager.onProgress = (url, loaded, total) => {
+    stage.dataset.sceneLoadingUrl = url;
+    stage.dataset.sceneLoadedItems = String(loaded);
+    stage.dataset.sceneTotalItems = String(total);
+    const progress = total > 0 ? 8 + loaded / total * 84 : 88;
+    setSceneLoaderProgress(Math.max(sceneLoaderValue, Math.min(92, progress)),
+        "3D-Objekte werden zusammengesetzt …");
+};
+sceneLoadingManager.onError = (url) => {
+    sceneLoaderErrors.add(url);
+    setSceneLoaderProgress(sceneLoaderValue, "Ein Detail konnte nicht geladen werden – Aufbau läuft weiter …");
+};
+sceneLoadingManager.onLoad = finishInitialSceneLoading;
+// Keep the manager open until the complete synchronous scene setup has
+// registered every texture and model. Otherwise a fast cached asset can end
+// the first loading batch before later objects have even been requested.
+const SCENE_BOOTSTRAP_ITEM = "solix-scene-bootstrap";
+sceneLoadingManager.itemStart(SCENE_BOOTSTRAP_ITEM);
+
+document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+        sceneWasHidden = true;
+        return;
+    }
+    if (sceneWasHidden) {
+        sceneWasHidden = false;
+        resumeSceneWithLoader();
+    }
+});
+window.addEventListener("pagehide", () => {
+    sceneWasHidden = true;
+});
+window.addEventListener("pageshow", (event) => {
+    if (event.persisted || sceneWasHidden) {
+        sceneWasHidden = false;
+        resumeSceneWithLoader();
+    }
+});
+window.setTimeout(() => {
+    if (!initialSceneAssetsReady) {
+        stage.dataset.sceneLoaderTimeout = "true";
+        sceneLoaderErrors.add("scene-load-timeout");
+        finishInitialSceneLoading();
+    }
+}, 45000);
 
 function storedRenderQuality() {
     try {
@@ -1010,7 +1151,7 @@ function makeSkyTexture() {
     return texture;
 }
 
-const textureLoader = new THREE.TextureLoader();
+const textureLoader = new THREE.TextureLoader(sceneLoadingManager);
 
 function loadImageTexture(path, repeatX = 1, repeatY = 1) {
     const texture = textureLoader.load(path);
@@ -2795,7 +2936,7 @@ function createVehicles() {
     };
 }
 
-const vehicleLoader = new GLTFLoader();
+const vehicleLoader = new GLTFLoader(sceneLoadingManager);
 vehicleLoader.setMeshoptDecoder(MeshoptDecoder);
 
 function tuneVehicleMaterials(model, paintColor, options = {}) {
@@ -7398,10 +7539,22 @@ const BUILDER_VARIANTS = Object.freeze({
         { id: "grass-meadow", label: "Wiese · 3 × 3 m", width: 3, depth: 3, surface: "meadow" },
         { id: "grass-dry", label: "Trockengras · 3 × 3 m", width: 3, depth: 3, surface: "dry" }
     ],
+    fence: [
+        { id: "fence-picket", label: "Holzlattenzaun · 3 m", length: 3, height: 1.15, style: "picket" },
+        { id: "fence-rail", label: "Weidezaun · 3 m", length: 3, height: 1.20, style: "rail" },
+        { id: "fence-privacy", label: "Holz-Sichtschutz · 3 m", length: 3, height: 1.80, style: "privacy" },
+        { id: "fence-metal", label: "Metallzaun · 3 m", length: 3, height: 1.25, style: "metal" }
+    ],
     tree: [
-        { id: "tree-deciduous", label: "Laubbaum", height: 4.4, crown: 1.55, style: "deciduous" },
-        { id: "tree-fruit", label: "Obstbaum", height: 3.2, crown: 1.35, style: "fruit" },
-        { id: "tree-conifer", label: "Nadelbaum", height: 5.1, crown: 1.45, style: "conifer" }
+        { id: "tree-deciduous", label: "Laubbaum", height: 4.4, crown: 1.55, style: "deciduous", foliage: "#4f7d3d" },
+        { id: "tree-oak", label: "Eiche", height: 5.2, crown: 1.82, style: "oak", foliage: "#426f35" },
+        { id: "tree-maple", label: "Ahorn", height: 4.7, crown: 1.68, style: "maple", foliage: "#628c43" },
+        { id: "tree-birch", label: "Birke", height: 5.0, crown: 1.28, style: "birch", foliage: "#70a65a", trunk: "#e8e3d5" },
+        { id: "tree-fruit", label: "Apfelbaum", height: 3.2, crown: 1.35, style: "fruit", foliage: "#5b883d" },
+        { id: "tree-cherry", label: "Kirschbaum", height: 3.7, crown: 1.45, style: "cherry", foliage: "#638f48" },
+        { id: "tree-conifer", label: "Fichte", height: 5.1, crown: 1.45, style: "conifer", foliage: "#315f42" },
+        { id: "tree-pine", label: "Kiefer", height: 5.3, crown: 1.32, style: "pine", foliage: "#426f4b" },
+        { id: "tree-cypress", label: "Zypresse", height: 4.6, crown: 0.88, style: "cypress", foliage: "#2f6542" }
     ]
 });
 const BUILDER_COLOR_SWATCHES = Object.freeze([
@@ -7409,11 +7562,11 @@ const BUILDER_COLOR_SWATCHES = Object.freeze([
 ]);
 const BUILDER_DEFAULT_COLORS = Object.freeze({
     wall: "#f1eee5", window: "#9db5ce", door: "#8e5a43",
-    floor: "#9d9487", grass: "#5d9b49", tree: "#4f7d3d"
+    floor: "#9d9487", grass: "#5d9b49", fence: "#8e6947", tree: "#4f7d3d"
 });
 const BUILDER_TYPE_LABELS = Object.freeze({
     wall: "Wand", window: "Fenster", door: "Tür",
-    floor: "Boden", grass: "Grasfläche", tree: "Baum"
+    floor: "Boden", grass: "Grasfläche", fence: "Zaun", tree: "Baum"
 });
 
 function safeBuilderItems() {
@@ -7535,27 +7688,129 @@ function createBuilderPart(item) {
             }
         }
     }
-    else if (item.type === "tree") {
-        const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x70452d, roughness: 0.96 });
-        const crownMaterial = new THREE.MeshStandardMaterial({
+    else if (item.type === "fence") {
+        const fenceMaterial = new THREE.MeshStandardMaterial({
             color,
+            roughness: variant.style === "metal" ? 0.48 : 0.90,
+            metalness: variant.style === "metal" ? 0.68 : 0.02
+        });
+        const detailMaterial = new THREE.MeshStandardMaterial({
+            color: color.clone().multiplyScalar(0.70),
+            roughness: variant.style === "metal" ? 0.42 : 0.94,
+            metalness: variant.style === "metal" ? 0.72 : 0
+        });
+        const length = variant.length;
+        const height = variant.height;
+        const postWidth = variant.style === "metal" ? 0.09 : 0.14;
+        [-length / 2, length / 2].forEach((x) =>
+            addBox(part, [postWidth, height + 0.16, postWidth], detailMaterial,
+                [x, (height + 0.16) / 2, 0], { radius: 0.018 }));
+
+        if (variant.style === "rail") {
+            [0.37, 0.78].forEach((ratio) =>
+                addBox(part, [length, 0.12, 0.10], fenceMaterial,
+                    [0, height * ratio, 0], { radius: 0.02 }));
+            addBox(part, [0.13, height, 0.13], detailMaterial, [0, height / 2, 0], { radius: 0.018 });
+        }
+        else if (variant.style === "privacy") {
+            const slatCount = 15;
+            for (let index = 0; index < slatCount; index += 1) {
+                const x = -length / 2 + (index + 0.5) * length / slatCount;
+                addBox(part, [length / slatCount * 0.88, height - 0.12, 0.075], fenceMaterial,
+                    [x, height / 2, 0], { radius: 0.012 });
+            }
+            [0.20, height - 0.20].forEach((y) =>
+                addBox(part, [length, 0.10, 0.11], detailMaterial, [0, y, -0.055], { radius: 0.015 }));
+            addBox(part, [length + 0.08, 0.09, 0.13], detailMaterial,
+                [0, height + 0.02, 0], { radius: 0.018 });
+        }
+        else if (variant.style === "metal") {
+            const barCount = 13;
+            for (let index = 1; index < barCount - 1; index += 1) {
+                const x = -length / 2 + index * length / (barCount - 1);
+                addBox(part, [0.035, height - 0.10, 0.035], fenceMaterial,
+                    [x, height / 2, 0], { castShadow: false });
+            }
+            [0.22, height - 0.12].forEach((y) =>
+                addBox(part, [length, 0.055, 0.055], detailMaterial,
+                    [0, y, 0], { castShadow: false }));
+        }
+        else {
+            [0.34, 0.76].forEach((ratio) =>
+                addBox(part, [length, 0.09, 0.11], detailMaterial,
+                    [0, height * ratio, -0.035], { radius: 0.014 }));
+            const slatCount = 12;
+            for (let index = 0; index < slatCount; index += 1) {
+                const x = -length / 2 + (index + 0.5) * length / slatCount;
+                const slatHeight = height - (index % 2) * 0.08;
+                addBox(part, [0.12, slatHeight, 0.07], fenceMaterial,
+                    [x, slatHeight / 2, 0], { radius: 0.014 });
+            }
+        }
+    }
+    else if (item.type === "tree") {
+        const defaultTreeColor = BUILDER_DEFAULT_COLORS.tree.toLowerCase();
+        const usesNaturalColor = !item.color || item.color.toLowerCase() === defaultTreeColor;
+        const crownColor = usesNaturalColor && variant.foliage ?
+            new THREE.Color(variant.foliage) : color;
+        const trunkMaterial = new THREE.MeshStandardMaterial({
+            color: variant.trunk || "#70452d", roughness: 0.96
+        });
+        const crownMaterial = new THREE.MeshStandardMaterial({
+            color: crownColor,
             roughness: 0.94
         });
         const trunkHeight = variant.height * 0.47;
         addMesh(part, new THREE.CylinderGeometry(0.19, 0.28, trunkHeight, 12), trunkMaterial,
             0, trunkHeight / 2, 0);
+        if (variant.style === "birch") {
+            const barkMarkMaterial = new THREE.MeshStandardMaterial({ color: 0x4b4b42, roughness: 1 });
+            [0.28, 0.47, 0.66, 0.84].forEach((ratio) =>
+                addMesh(part, new THREE.CylinderGeometry(0.195, 0.205, 0.035, 12), barkMarkMaterial,
+                    0, trunkHeight * ratio, 0, { castShadow: false }));
+        }
         if (variant.style === "conifer") {
             [0, 0.72, 1.35].forEach((offset, index) =>
                 addMesh(part, new THREE.ConeGeometry(variant.crown * (1 - index * 0.16), 2.25, 14),
                     crownMaterial, 0, trunkHeight + 0.55 + offset, 0));
         }
+        else if (variant.style === "cypress") {
+            const crown = addMesh(part,
+                new THREE.SphereGeometry(variant.crown, 16, 14), crownMaterial,
+                0, trunkHeight + variant.height * 0.24, 0);
+            crown.scale.set(0.70, 2.15, 0.70);
+        }
+        else if (variant.style === "pine") {
+            [[0, 0, 0], [-0.38, -0.16, 0.12], [0.34, -0.08, -0.18], [0.04, 0.42, 0.02]]
+                .forEach(([x, y, z], index) => {
+                    const crown = addMesh(part, new THREE.SphereGeometry(variant.crown, 15, 11),
+                        crownMaterial, x, trunkHeight + variant.crown * 0.92 + y, z);
+                    crown.scale.set(1.06 - index * 0.05, 0.48, 0.92);
+                });
+        }
         else {
+            const spread = variant.style === "oak" ? 1.18 : variant.style === "birch" ? 0.75 : 1;
             [[0, 0, 0], [-0.55, -0.18, 0.18], [0.48, -0.12, -0.25], [0.10, 0.50, 0.08]]
                 .forEach(([x, y, z], index) => {
                     const crown = addMesh(part, new THREE.SphereGeometry(variant.crown, 16, 12),
-                        crownMaterial, x, trunkHeight + variant.crown * 0.72 + y, z);
-                    crown.scale.set(1, 0.78 + index * 0.025, 0.92);
+                        crownMaterial, x * spread, trunkHeight + variant.crown * 0.72 + y, z * spread);
+                    crown.scale.set(spread, 0.78 + index * 0.025, 0.92 * spread);
                 });
+            if (["fruit", "cherry"].includes(variant.style)) {
+                const fruitMaterial = new THREE.MeshStandardMaterial({
+                    color: variant.style === "cherry" ? 0xf3a3b5 : 0xc72f26,
+                    roughness: 0.82
+                });
+                for (let index = 0; index < 10; index += 1) {
+                    const angle = index * Math.PI * 0.76;
+                    const radius = variant.crown * (0.42 + (index % 3) * 0.12);
+                    addMesh(part, new THREE.SphereGeometry(0.075, 8, 6), fruitMaterial,
+                        Math.cos(angle) * radius,
+                        trunkHeight + variant.crown * (0.58 + (index % 4) * 0.16),
+                        Math.sin(angle) * radius * 0.82,
+                        { castShadow: false });
+                }
+            }
         }
     }
     return part;
@@ -7961,7 +8216,8 @@ function createHouseBuilder() {
             builderVariant.value = preferredVariant;
         builderVariantLabel.textContent = builderPartType.value === "wall" ? "Wandhöhe" :
             ["floor", "grass"].includes(builderPartType.value) ? "Oberfläche" :
-                builderPartType.value === "tree" ? "Baumart" : "Ausführung";
+                builderPartType.value === "tree" ? "Baumart" :
+                    builderPartType.value === "fence" ? "Zaunart" : "Ausführung";
     }
 
     function setRotation(value) {
@@ -11126,4 +11382,5 @@ resize();
 updateLiveUi();
 if (new URLSearchParams(window.location.search).get("audi_demo") === "1")
     window.setTimeout(runAudiPresenceDemo, 1400);
+sceneLoadingManager.itemEnd(SCENE_BOOTSTRAP_ITEM);
 window.requestAnimationFrame(animate);

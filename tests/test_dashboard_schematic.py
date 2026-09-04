@@ -21,8 +21,8 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260904-113", dashboard)
-        self.assertIn("house.js?v=20260904-113", dashboard)
+        self.assertIn("style.css?v=20260904-115", dashboard)
+        self.assertIn("house.js?v=20260904-115", dashboard)
         self.assertIn("app.js?v=20260821-96", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
@@ -601,6 +601,7 @@ class DashboardSchematicTests(unittest.TestCase):
             "builderNew", "builderDelete", "builderUndo", "builderClear",
             "builderSelectionTools", "builderSelectionRotateLeft",
             "builderSelectionRotateRight", "builderSelectionDelete",
+            "sceneLoader", "sceneLoaderBar", "sceneLoaderStatus", "sceneLoaderPercent",
         ):
             self.assertIn(f'id="{element_id}"', dashboard)
 
@@ -612,6 +613,14 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('if (lastRenderedAt && time - lastRenderedAt < frameInterval - 1)', script)
         self.assertIn('renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, renderProfile.pixelRatio))', script)
         self.assertIn('const BUILDER_VARIANTS = Object.freeze', script)
+        self.assertIn('const sceneLoadingManager = new THREE.LoadingManager()', script)
+        self.assertIn('new THREE.TextureLoader(sceneLoadingManager)', script)
+        self.assertIn('new GLTFLoader(sceneLoadingManager)', script)
+        self.assertIn('function resumeSceneWithLoader()', script)
+        self.assertIn('document.addEventListener("visibilitychange"', script)
+        self.assertIn('window.addEventListener("pagehide"', script)
+        self.assertIn('sceneLoadingManager.itemStart(SCENE_BOOTSTRAP_ITEM)', script)
+        self.assertIn('sceneLoadingManager.itemEnd(SCENE_BOOTSTRAP_ITEM)', script)
         self.assertIn('function createHouseBuilder()', script)
         self.assertIn('function createBuilderPart(item)', script)
         self.assertIn('new THREE.GridHelper(20, 20', script)
@@ -623,7 +632,10 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('id: "wall-custom-standard"', script)
         self.assertIn('id: "floor-stone"', script)
         self.assertIn('id: "grass-lawn"', script)
+        self.assertIn('id: "fence-picket"', script)
         self.assertIn('id: "tree-deciduous"', script)
+        self.assertIn('id: "tree-birch"', script)
+        self.assertIn('<option value="fence">', dashboard)
         self.assertIn('function builderItemHitAtPointer(event)', script)
         self.assertIn('clickedItem?.type === "wall"', script)
         self.assertIn('function beginPointer(event)', script)
@@ -636,6 +648,9 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('.house-builder-selection-tools', stylesheet)
         self.assertIn('.house-builder-panel.is-collapsed', stylesheet)
         self.assertIn('.house-stage.is-building', stylesheet)
+        self.assertIn('bottom:max(12px,env(safe-area-inset-bottom))', stylesheet)
+        self.assertIn('scrollbar-gutter:stable', stylesheet)
+        self.assertIn('.scene-loader{', stylesheet)
         self.assertIn('id="automationHistory"', dashboard)
         self.assertIn("function createAudiBrakeLights", script)
         self.assertIn("function startAudiPresenceTransition", script)
