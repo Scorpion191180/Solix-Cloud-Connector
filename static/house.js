@@ -7888,9 +7888,9 @@ function createHouseBuilder() {
         cameraNavigation: false,
         selectionBox: new THREE.Box3(), selectionAnchor: new THREE.Vector3()
     };
-    // Only points inside the same 25-cm grid cell join. A deliberately left
-    // gap of one or more grid fields therefore remains open.
-    const WALL_ENDPOINT_SNAP_DISTANCE = 0.18;
+    // Wandecken innerhalb eines sichtbaren 1-m-Rasterfeldes werden zu einem
+    // gemeinsamen, exakt deckungsgleichen Eckpunkt zusammengezogen.
+    const WALL_ENDPOINT_SNAP_DISTANCE = 0.95;
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
 
@@ -8539,7 +8539,7 @@ function createHouseBuilder() {
     }
 
     function setRotation(value) {
-        builder.rotation = ((value % 360) + 360) % 360;
+        builder.rotation = ((Math.round(value / BUILDER_ROTATION_STEP) * BUILDER_ROTATION_STEP % 360) + 360) % 360;
         builderRotation.value = `${builder.rotation}°`;
         builderRotation.textContent = `${builder.rotation}°`;
     }
@@ -8561,11 +8561,29 @@ function createHouseBuilder() {
         };
     }
 
+    function orthogonalWallPoint(start, point) {
+        const snapped = snappedGroundPoint(point);
+        const dx = snapped.x - start.x;
+        const dz = snapped.z - start.z;
+        return Math.abs(dx) >= Math.abs(dz) ?
+            new THREE.Vector3(snapped.x, 0, start.z) :
+            new THREE.Vector3(start.x, 0, snapped.z);
+    }
+
     function updateWallPreview(point) {
         if (!builder.drawing || !builder.drawStart)
             return false;
         disposePlacementPreview();
-        const endpointSnap = snappedWallOrGridPoint(point);
+        const constrainedPoint = orthogonalWallPoint(builder.drawStart, point);
+        const candidateSnap = snapWallPoint(constrainedPoint);
+        const axisAlignedSnap = candidateSnap.snapped &&
+            (Math.abs(candidateSnap.point.x - builder.drawStart.x) < 0.001 ||
+                Math.abs(candidateSnap.point.z - builder.drawStart.z) < 0.001);
+        const endpointSnap = axisAlignedSnap ? candidateSnap : {
+            point: constrainedPoint,
+            snapped: false,
+            wallId: null
+        };
         builder.drawEnd = endpointSnap.point;
         builder.drawEndSnapped = endpointSnap.snapped;
         const dx = builder.drawEnd.x - builder.drawStart.x;
@@ -8612,7 +8630,8 @@ function createHouseBuilder() {
             id: globalThis.crypto?.randomUUID?.() || `part-${Date.now()}-${builder.items.length}`,
             type: "wall", variant: variant.id, color: builderColor.value,
             length: Math.round(Math.min(length, 28.25) * 100) / 100,
-            rotation: ((THREE.MathUtils.radToDeg(Math.atan2(-(end.z - start.z), end.x - start.x)) % 360) + 360) % 360,
+            rotation: ((Math.round(THREE.MathUtils.radToDeg(Math.atan2(-(end.z - start.z), end.x - start.x)) /
+                BUILDER_ROTATION_STEP) * BUILDER_ROTATION_STEP % 360) + 360) % 360,
             x: Math.round(((start.x + end.x) / 2) * 100) / 100,
             z: Math.round(((start.z + end.z) / 2) * 100) / 100
         };
@@ -8638,7 +8657,8 @@ function createHouseBuilder() {
             positionOpeningOnWall(item);
         }
         else {
-            item.rotation = ((item.rotation + delta) % 360 + 360) % 360;
+            item.rotation = ((Math.round((item.rotation + delta) / BUILDER_ROTATION_STEP) *
+                BUILDER_ROTATION_STEP % 360) + 360) % 360;
             if (item.type === "wall")
                 updateAttachedOpenings(item.id);
             applyItemTransform(item);
@@ -8849,10 +8869,9 @@ function createHouseBuilder() {
             state.targetZoom = 0.92;
             setMenuOpen(false);
             setPanelCollapsed(window.innerWidth <= 900);
-            updateBuilderToolUi();
+            activatePointerMode();
             houseInstructions.textContent = "Baumodus: rechts ziehen = drehen · Auswahl/Maus: links ziehen = verschieben · Mausrad = Zoom";
-            updateStatus("Wand frei auf dem Raster ziehen oder Fenster/Tür direkt auf eine Wand setzen.");
-            refreshPlacementPreview();
+            updateStatus("Auswahl/Maus ist aktiv. Erst nach Wahl eines Bauteils oder „Neues Bauteil“ wird etwas gesetzt.");
         }
         else {
             finishWallDrawing(true);
