@@ -69,7 +69,7 @@ const sceneLoaderBar = document.getElementById("sceneLoaderBar");
 const sceneLoaderStatus = document.getElementById("sceneLoaderStatus");
 const sceneLoaderPercent = document.getElementById("sceneLoaderPercent");
 const sceneLoaderVersion = document.getElementById("sceneLoaderVersion");
-const APP_BUILD_VERSION = "127";
+const APP_BUILD_VERSION = "128";
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const INTERIOR_VIEW_ENABLED = false;
 
@@ -1817,6 +1817,80 @@ function createRoof(parent) {
     });
 }
 
+function createGarageInterior(bay, index, doorWidth) {
+    const interior = new THREE.Group();
+    interior.name = `Garage ${index + 1} · Innenraum`;
+    bay.add(interior);
+
+    const concrete = new THREE.MeshStandardMaterial({
+        color: 0x777b7c, roughness: 0.94, metalness: 0.02
+    });
+    const wall = new THREE.MeshStandardMaterial({
+        color: 0xd7d0c1, roughness: 0.92, metalness: 0.01
+    });
+    const dark = new THREE.MeshStandardMaterial({
+        color: 0x202428, roughness: 0.78, metalness: 0.30
+    });
+    const shelf = new THREE.MeshStandardMaterial({
+        color: index === 1 ? 0x32414a : 0x55606a,
+        roughness: 0.58, metalness: 0.48
+    });
+    const warmWood = new THREE.MeshStandardMaterial({
+        color: 0x6f4a2e, roughness: 0.88
+    });
+    const depth = 4.45;
+    const innerWidth = doorWidth + 0.14;
+
+    // Echte Tiefe hinter dem geöffneten Tor: Boden, Wände und Decke enden
+    // deutlich vor der gegenüberliegenden Hauswand und bilden je eine Bucht.
+    addBox(interior, [innerWidth, 0.08, depth], concrete,
+        [0, 0.05, -depth / 2], { castShadow: false });
+    addBox(interior, [0.08, 2.58, depth], wall,
+        [-innerWidth / 2, 1.32, -depth / 2], { castShadow: false });
+    addBox(interior, [0.08, 2.58, depth], wall,
+        [innerWidth / 2, 1.32, -depth / 2], { castShadow: false });
+    addBox(interior, [innerWidth, 2.58, 0.10], wall,
+        [0, 1.32, -depth], { castShadow: false });
+    addBox(interior, [innerWidth, 0.08, depth], wall,
+        [0, 2.58, -depth / 2], { castShadow: false });
+
+    // Regale, Werkbank, Reifen und Werkzeug machen den Raum auch aus einer
+    // schrägen Kameraposition lesbar, ohne die Fahrspur zu verengen.
+    [-3.88, -3.20, -2.52].forEach((z, shelfIndex) => {
+        addBox(interior, [0.48, 0.055, 0.42], shelf,
+            [-0.65, 0.48 + shelfIndex * 0.48, z], { castShadow: false });
+        addBox(interior, [0.045, 1.42, 0.045], dark,
+            [-0.84, 0.74, z - 0.16], { castShadow: false });
+        addBox(interior, [0.045, 1.42, 0.045], dark,
+            [-0.46, 0.74, z + 0.16], { castShadow: false });
+    });
+    addBox(interior, [0.70, 0.10, 0.52], warmWood,
+        [0.48, 0.84, -4.02], { castShadow: false });
+    addBox(interior, [0.08, 0.78, 0.08], dark,
+        [0.20, 0.43, -3.84], { castShadow: false });
+    addBox(interior, [0.08, 0.78, 0.08], dark,
+        [0.76, 0.43, -3.84], { castShadow: false });
+    [0.39, 0.88, 1.37].forEach((y) => {
+        addMesh(interior, new THREE.TorusGeometry(0.21, 0.065, 10, 24), dark,
+            0.62, y, -4.08, { castShadow: false });
+    });
+    const toolColors = [0xc33f32, 0xe0a82f, 0x3478a8];
+    toolColors.forEach((color, toolIndex) => {
+        const material = new THREE.MeshStandardMaterial({ color, roughness: 0.54 });
+        addBox(interior, [0.055, 0.52, 0.045], material,
+            [0.18 + toolIndex * 0.16, 1.52, -4.075], {
+                rotation: [0, 0, (toolIndex - 1) * 0.13], castShadow: false
+            });
+    });
+    const lampMaterial = new THREE.MeshBasicMaterial({ color: 0xffe4a8, toneMapped: false });
+    addBox(interior, [0.54, 0.035, 0.16], lampMaterial,
+        [0, 2.525, -2.10], { castShadow: false });
+    const lamp = new THREE.PointLight(0xffdca0, 0.72, 5.4, 1.75);
+    lamp.position.set(0, 2.42, -2.10);
+    interior.add(lamp);
+    return interior;
+}
+
 function createGarageDoors(parent) {
     const doorWidth = 1.72;
     const doors = {};
@@ -1832,13 +1906,7 @@ function createGarageDoors(parent) {
         bay.position.set(x, 0, GABLE_Z);
         bay.userData.interactiveId = `garage-${key}`;
         parent.add(bay);
-        const interiorMaterial = new THREE.MeshStandardMaterial({
-            color: 0x111418,
-            roughness: 0.96,
-            metalness: 0.02
-        });
-        addBox(bay, [doorWidth - 0.10, 2.18, 0.10], interiorMaterial,
-            [0, 1.42, -0.09], { castShadow: false });
+        const interior = createGarageInterior(bay, index, doorWidth);
         const garagePhoto = makePhotoMaterial(INDIVIDUAL_OPENINGS.garage.door, {
             roughness: 0.36,
             clearcoat: 0.36
@@ -1857,6 +1925,7 @@ function createGarageDoors(parent) {
             key,
             bay,
             door,
+            interior,
             open: false,
             progress: 0,
             target: 0,
@@ -1875,7 +1944,25 @@ function createGarageDoors(parent) {
 function createGable(parent) {
     // Die reale Garagenseite ist vom Sockel bis in den Giebel vollständig mit
     // den gleichen braunen Holzschindeln verkleidet.
-    addBox(parent, [6.45, 4.90, 0.18], materials.shingle, [0, 2.50, GABLE_Z - 0.10]);
+    // Die Frontwand besteht aus echten Segmenten statt einer geschlossenen
+    // Platte. Nur so werden die modellierten Garagen bei geöffnetem Tor auch
+    // räumlich sichtbar und Fahrzeuge können vollständig dahinter verschwinden.
+    addBox(parent, [6.45, 2.34, 0.18], materials.shingle,
+        [0, 3.73, GABLE_Z - 0.10]);
+    const openingHalfWidth = 0.88;
+    let cursor = -3.225;
+    [-2.08, 0, 2.08].forEach((centerX) => {
+        const openingStart = centerX - openingHalfWidth;
+        const segmentWidth = openingStart - cursor;
+        if (segmentWidth > 0.01)
+            addBox(parent, [segmentWidth, 2.56, 0.18], materials.shingle,
+                [cursor + segmentWidth / 2, 1.28, GABLE_Z - 0.10]);
+        cursor = centerX + openingHalfWidth;
+    });
+    const finalWidth = 3.225 - cursor;
+    if (finalWidth > 0.01)
+        addBox(parent, [finalWidth, 2.56, 0.18], materials.shingle,
+            [cursor + finalWidth / 2, 1.28, GABLE_Z - 0.10]);
     const shape = new THREE.Shape();
     shape.moveTo(-3.22, 0);
     shape.lineTo(0, 2.15);
@@ -2371,7 +2458,8 @@ function createHouse() {
     // Die linke Längswand wird aus dem großen Hauskörper entfernt und danach
     // mit einer echten Aussparung für die Stalltür wieder aufgebaut.
     const houseShellGeometry = new THREE.BoxGeometry(HOUSE_WIDTH, 4.9, HOUSE_LENGTH);
-    houseShellGeometry.groups = houseShellGeometry.groups.filter((group) => group.materialIndex !== 1);
+    houseShellGeometry.groups = houseShellGeometry.groups.filter((group) =>
+        group.materialIndex !== 1 && group.materialIndex !== 4);
     // Eine Materialliste ist hier zwingend: Mit nur einem Material ignoriert
     // Three.js die Geometriegruppen und zeichnet trotz gelöschter Gruppe die
     // komplette linke Wand. Erst das Array macht die Stalltür physisch offen.
@@ -5053,7 +5141,7 @@ function createDogActions(mixer, animations) {
     return actions;
 }
 
-function setDogAnimation(dogState, name, fadeSeconds = 0.22) {
+function setDogAnimation(dogState, name, fadeSeconds = 0.36) {
     const next = dogState.actions?.[name] || dogState.actions?.idle;
     if (!next || dogState.currentAction === next)
         return;
@@ -5077,12 +5165,25 @@ function installDetailedRottweiler(dogState, gltf, assetKind) {
     // Das neue fotorealistische Modell ist ohne lange Rute vermessen und wird
     // deshalb etwas kompakter skaliert. Die älteren Fallbacks behalten ihre
     // bisherige Länge im Verhältnis zu Audi, Pferd und Futterstation.
-    const targetLength = assetKind === "meshy-m2m-rigged" ? 1.12 : 1.24;
+    const targetLength = assetKind === "meshy-m2m-rigged" ? 1.20 : 1.24;
     model.scale.setScalar(targetLength / horizontalLength);
     model.updateMatrixWorld(true);
     bounds = new THREE.Box3().setFromObject(model);
+    let scaledSize = bounds.getSize(new THREE.Vector3());
+    // Ein Rottweiler ist kompakt, breitbrüstig und deutlich höher als ein
+    // Dackel. Das KI-Modell wird auf realistische rund 78 cm Gesamthöhe
+    // korrigiert, ohne es in der Länge überzuvergrößern.
+    if (assetKind === "meshy-m2m-rigged") {
+        const targetHeight = 0.78;
+        const heightCorrection = THREE.MathUtils.clamp(
+            targetHeight / Math.max(scaledSize.y, 0.001), 1.05, 1.34
+        );
+        model.scale.y *= heightCorrection;
+        model.updateMatrixWorld(true);
+        bounds = new THREE.Box3().setFromObject(model);
+        scaledSize = bounds.getSize(new THREE.Vector3());
+    }
     const center = bounds.getCenter(new THREE.Vector3());
-    const scaledSize = bounds.getSize(new THREE.Vector3());
     const bodyPivotY = scaledSize.y * 0.43;
     model.position.x -= center.x;
     model.position.y -= bounds.min.y + bodyPivotY;
@@ -5104,8 +5205,10 @@ function installDetailedRottweiler(dogState, gltf, assetKind) {
         if (!object.isBone)
             return;
         const name = object.name?.toLowerCase() || "";
-        if (name === "head" || name === "hals" || name === "kiefer" || name.startsWith("tail"))
+        if (name === "head" || name === "hals" || name === "kiefer" || name.startsWith("tail")) {
+            object.userData.dogBaseRotationX = object.rotation.x;
             dogState.detailedBones[name] = object;
+        }
     });
     dogState.assetLoaded = true;
     setDogAnimation(dogState, "idle", 0);
@@ -5240,6 +5343,7 @@ function createRottweiler() {
         navigation: "patrol",
         travelled: 0,
         pendingMeal: false,
+        nextFoodVisitAt: 0,
         nextDrinkAt: animalDemoMode ? 14 : 65 + random() * 80,
         nextSleepAt: animalDemoMode ? 24 : 160 + random() * 220,
         nextCasualBarkAt: animalDemoMode ? 7 : 14 + random() * 20,
@@ -5322,7 +5426,9 @@ function groundedBirdForDog(dogState) {
 
 function startNextDogActivity(dogState, seconds) {
     dogState.chaseBird = null;
-    if (animalResources.dogHungry || dogState.pendingMeal) {
+    if ((animalResources.dogHungry || dogState.pendingMeal) &&
+        seconds >= dogState.nextFoodVisitAt) {
+        dogState.nextFoodVisitAt = seconds + 34 + dogState.random() * 28;
         setDogRoute(dogState, new THREE.Vector3(...DOG_CARE_STATIONS.foodTarget),
             "dog-food", false);
         return;
@@ -5375,6 +5481,9 @@ function animateRottweilerPose(dogState, seconds, delta, moving, running) {
         moving ? Math.abs(Math.sin(dogState.travelled * 8.2)) * (running ? 0.034 : 0.022) : 0;
     dogState.visualRoot.position.y = THREE.MathUtils.damp(
         dogState.visualRoot.position.y, bodyY, 7, delta);
+    if (!moving && loweringHead)
+        dogState.group.rotation.y = shortestYaw(
+            dogState.group.rotation.y, Math.PI / 2, Math.min(1, delta * 3.2));
 
     if (dogState.detailedModel) {
         const standY = dogState.detailedRig.userData.standY || 0.30;
@@ -5388,14 +5497,20 @@ function animateRottweilerPose(dogState, seconds, delta, moving, running) {
             const head = dogState.detailedBones.head;
             const neck = dogState.detailedBones.hals;
             const jaw = dogState.detailedBones.kiefer;
-            if (loweringHead) {
-                if (neck)
-                    neck.rotation.x += 0.52;
-                if (head)
-                    head.rotation.x += 0.46 + Math.sin(seconds * 4.8) * 0.05;
-                if (jaw)
-                    jaw.rotation.x += 0.08 + Math.max(0, Math.sin(seconds * 5.6)) * 0.07;
-            }
+            // Absolute Zielwinkel statt fortlaufendem "+=": Die alte Variante
+            // addierte bei jedem Frame erneut und ließ Kopf und Körper am Napf
+            // schließlich unkontrolliert rotieren.
+            const setCareBone = (bone, offset) => {
+                if (!bone)
+                    return;
+                const base = bone.userData.dogBaseRotationX ?? 0;
+                bone.rotation.x = THREE.MathUtils.damp(
+                    bone.rotation.x, base + offset, 10, delta);
+            };
+            setCareBone(neck, loweringHead ? 0.52 : 0);
+            setCareBone(head, loweringHead ? 0.46 + Math.sin(seconds * 4.8) * 0.05 : 0);
+            setCareBone(jaw, loweringHead ?
+                0.08 + Math.max(0, Math.sin(seconds * 5.6)) * 0.07 : 0);
         }
         dogState.detailedRig.position.y = THREE.MathUtils.damp(
             dogState.detailedRig.position.y,
@@ -5449,8 +5564,8 @@ function animateDog(seconds, delta) {
         animateRottweilerPose(dog, seconds, delta, false, false);
         return;
     }
-    if (animalResources.dogHungry && !["walking", "running", "waiting-food", "eating"]
-        .includes(dog.mode))
+    if (animalResources.dogHungry && seconds >= dog.nextFoodVisitAt &&
+        !["walking", "running", "waiting-food", "eating"].includes(dog.mode))
         setDogRoute(dog, new THREE.Vector3(...DOG_CARE_STATIONS.foodTarget), "dog-food");
     if (dog.mode === "waiting-food") {
         if (!animalResources.dogHungry) {
@@ -5461,6 +5576,11 @@ function animateDog(seconds, delta) {
         else if (seconds - dog.lastHungryBarkAt >= 5.2) {
             dog.lastHungryBarkAt = seconds;
             playDogBark(true);
+        }
+        if (animalResources.dogHungry && seconds >= dog.modeUntil) {
+            dog.nextFoodVisitAt = seconds + 30 + dog.random() * 26;
+            dog.mode = "idle";
+            dog.modeUntil = seconds + 0.1;
         }
     }
     if (dog.mode === "sleeping" || dog.mode === "jumping" ||
@@ -5500,13 +5620,12 @@ function animateDog(seconds, delta) {
             dog.target = dog.path.shift();
         }
         else if (dog.navigation === "dog-food") {
-            dog.group.rotation.y = Math.PI / 2;
             dog.mode = animalResources.dogHungry ? "waiting-food" : "eating";
-            dog.modeUntil = seconds + 8.5;
+            dog.modeUntil = seconds + (animalResources.dogHungry ? 7.0 : 8.5);
+            dog.nextFoodVisitAt = seconds + 34 + dog.random() * 28;
             dog.pendingMeal = false;
         }
         else if (dog.navigation === "dog-water") {
-            dog.group.rotation.y = Math.PI / 2;
             dog.mode = "drinking";
             dog.modeUntil = seconds + 7.5;
         }
@@ -9574,7 +9693,10 @@ function createDomesticVehicleController(id, label, slot, home, options = {}) {
         slot,
         home: { ...home },
         garageDoor: options.garageDoor || null,
-        garageZ: options.garageZ ?? (GABLE_Z - 1.35),
+        // Der Mittelpunkt eines knapp vier Meter langen Fahrzeugs muss rund
+        // drei Meter hinter der Torfläche stehen. Zuvor blieb das Heck in der
+        // geschlossenen Tür beziehungsweise Außenwand sichtbar.
+        garageZ: options.garageZ ?? (GABLE_Z - 3.02),
         location: "home",
         motion: "idle",
         route: null,
@@ -9668,9 +9790,13 @@ function domesticReturnRoute(controller) {
 function domesticGarageRoute(controller, entering) {
     const { x, z, yaw } = controller.home;
     const inside = routePose(controller, x, controller.garageZ, yaw, entering ? "forward" : "reverse");
-    const threshold = routePose(controller, x, GABLE_Z + 0.45, yaw, entering ? "forward" : "reverse");
+    const innerThreshold = routePose(controller, x, GABLE_Z - 0.72, yaw,
+        entering ? "forward" : "reverse");
+    const threshold = routePose(controller, x, GABLE_Z + 0.62, yaw,
+        entering ? "forward" : "reverse");
     const outside = routePose(controller, x, z, yaw, entering ? "forward" : "reverse");
-    return entering ? [outside, threshold, inside] : [inside, threshold, outside];
+    return entering ? [outside, threshold, innerThreshold, inside] :
+        [inside, innerThreshold, threshold, outside];
 }
 
 function setGarageDoorTarget(key, open) {
@@ -10693,7 +10819,6 @@ Object.entries(sceneActionDefinitions).forEach(([id, definition]) => {
     marker.type = "button";
     marker.className = "house-click-marker";
     marker.dataset.actionTarget = id;
-    marker.textContent = "i";
     marker.setAttribute("aria-label", definition.label + " auswählen");
     marker.addEventListener("click", (event) => {
         event.stopPropagation();

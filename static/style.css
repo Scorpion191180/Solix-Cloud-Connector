@@ -413,35 +413,58 @@ header p{
     transition:filter .2s ease,opacity .2s ease,border-color .2s ease;
 }
 
-/* In der ruhenden Szene bleiben nur dezente, gut antippbare Info-Punkte.
-   Die eigentliche Karte wird erst nach Auswahl des 3D-Objekts sichtbar. */
+@keyframes scene-click-sparkle{
+    0%,100%{opacity:.28;transform:translate(-50%,-50%) scale(.64) rotate(0deg);}
+    48%{opacity:1;transform:translate(-50%,-50%) scale(1.12) rotate(18deg);}
+    72%{opacity:.52;transform:translate(-50%,-50%) scale(.82) rotate(32deg);}
+}
+@keyframes scene-click-halo{
+    0%,100%{opacity:0;transform:translate(-50%,-50%) scale(.45);}
+    45%{opacity:.62;transform:translate(-50%,-50%) scale(1.45);}
+    78%{opacity:0;transform:translate(-50%,-50%) scale(1.9);}
+}
+
+/* In der ruhenden Szene markiert nur ein kleines, atmendes Lichtteilchen die
+   anklickbare Stelle. Die unsichtbare 34-px-Fläche bleibt gut antippbar. */
 .house-scene-label:not(.expanded){
     display:block;
-    width:24px;
-    min-width:24px;
-    height:24px;
+    width:34px;
+    min-width:34px;
+    height:34px;
     padding:0;
     overflow:visible;
-    border:1px solid color-mix(in srgb,var(--scene-color,#5eead4) 74%,white 12%);
-    border-radius:50%;
-    background:rgba(7,15,27,.66);
-    box-shadow:0 0 0 4px color-mix(in srgb,var(--scene-color,#5eead4) 15%,transparent),
-        0 0 12px color-mix(in srgb,var(--scene-color,#5eead4) 45%,transparent);
+    border:0;
+    border-radius:0;
+    background:transparent;
+    box-shadow:none;
     transform:translate(-50%,-50%) scale(var(--scene-label-scale,1));
     transform-origin:center;
 }
 
 .house-scene-label:not(.expanded) > *{display:none!important;}
 .house-scene-label:not(.expanded)::before{
-    display:grid;
     position:absolute;
-    inset:0;
-    place-items:center;
-    color:#fff;
-    content:"i";
-    font:900 13px/1 system-ui,sans-serif;
+    left:50%;
+    top:50%;
+    color:color-mix(in srgb,var(--scene-color,#5eead4) 80%,white 20%);
+    content:"✦";
+    font:900 15px/1 system-ui,sans-serif;
+    text-shadow:0 0 5px currentColor,0 0 11px currentColor;
+    animation:scene-click-sparkle 2.15s ease-in-out infinite;
 }
-.house-scene-label:not(.expanded)::after{display:none;}
+.house-scene-label:not(.expanded)::after{
+    display:block;
+    position:absolute;
+    left:50%;
+    top:50%;
+    width:9px;
+    height:9px;
+    border:1px solid color-mix(in srgb,var(--scene-color,#5eead4) 72%,transparent);
+    border-radius:50%;
+    content:"";
+    filter:blur(.4px);
+    animation:scene-click-halo 2.15s ease-out infinite;
+}
 
 .animal-resource-label{
     position:absolute;
@@ -526,19 +549,22 @@ header p{
     opacity:.78;
 }
 
-/* Futter-, Wasser- und Reinigungsfenster erscheinen erst nach Auswahl. Im
-   Ruhezustand bleibt nur ein kleiner, farbcodierter i-Punkt am 3D-Objekt. */
+/* Futter-, Wasser- und Reinigungsfenster erscheinen erst nach Auswahl. */
 .animal-resource-label:not(.expanded),
 .animal-clean-label:not(.expanded){
     display:block;
     box-sizing:border-box;
-    width:24px!important;
-    min-width:24px;
-    height:24px;
-    min-height:24px;
+    width:34px!important;
+    min-width:34px;
+    height:34px;
+    min-height:34px;
     padding:0!important;
-    overflow:hidden;
-    border-radius:50%;
+    overflow:visible;
+    border:0!important;
+    border-radius:0;
+    background:transparent!important;
+    box-shadow:none!important;
+    animation:none!important;
     opacity:.88!important;
     pointer-events:auto!important;
     cursor:pointer;
@@ -548,14 +574,19 @@ header p{
 
 .animal-resource-label:not(.expanded)::before,
 .animal-clean-label:not(.expanded)::before{
-    content:"i";
+    content:"✦";
     position:absolute;
-    inset:0;
-    display:grid;
-    place-items:center;
-    color:#f8fafc;
-    font:900 13px/1 system-ui,sans-serif;
+    left:50%;
+    top:50%;
+    color:var(--animal-sparkle-color,#5eead4);
+    font:900 15px/1 system-ui,sans-serif;
+    text-shadow:0 0 5px currentColor,0 0 11px currentColor;
+    animation:scene-click-sparkle 2.15s ease-in-out infinite;
 }
+
+.animal-resource-label.warning:not(.expanded){--animal-sparkle-color:#facc15;}
+.animal-resource-label.critical:not(.expanded){--animal-sparkle-color:#ef4444;}
+.animal-resource-label.refill:not(.expanded){--animal-sparkle-color:#34d399;}
 
 .animal-resource-label:not(.expanded)>*,
 .animal-clean-label:not(.expanded)>*{
@@ -1001,25 +1032,27 @@ header p{
 }
 
 .house-string-label:not(.expanded){
-    width:22px;
-    height:22px;
+    width:34px;
+    height:34px;
     padding:0;
-    overflow:hidden;
-    border-radius:50%;
-    background:rgba(7,15,27,.68);
-    box-shadow:0 0 0 4px rgba(250,204,21,.13),0 0 11px rgba(250,204,21,.42);
+    overflow:visible;
+    border:0;
+    border-radius:0;
+    background:transparent;
+    box-shadow:none;
     color:transparent;
     font-size:0;
 }
 .house-string-label:not(.expanded) > *{display:none!important;}
 .house-string-label:not(.expanded)::before{
-    display:grid;
     position:absolute;
-    inset:0;
-    place-items:center;
+    left:50%;
+    top:50%;
     color:#fff7a3;
-    content:"i";
-    font:900 12px/1 system-ui,sans-serif;
+    content:"✦";
+    font:900 15px/1 system-ui,sans-serif;
+    text-shadow:0 0 5px currentColor,0 0 11px currentColor;
+    animation:scene-click-sparkle 2.15s ease-in-out infinite;
 }
 
 .house-scene-label[data-component="pv"]{
@@ -1115,19 +1148,41 @@ header p{
     position:absolute;
     z-index:11;
     display:grid;
-    width:25px;
-    height:25px;
+    width:34px;
+    height:34px;
     padding:0;
     place-items:center;
-    border:1px solid rgba(94,234,212,.82);
-    border-radius:50%;
-    background:rgba(7,15,27,.68);
-    box-shadow:0 0 0 4px rgba(45,212,191,.13),0 0 13px rgba(45,212,191,.48);
-    color:#ecfeff;
-    font:900 13px/1 system-ui,sans-serif;
+    overflow:visible;
+    border:0;
+    border-radius:0;
+    background:transparent;
+    box-shadow:none;
+    color:transparent;
+    font-size:0;
     cursor:pointer;
     transform:translate(-50%,-50%) scale(var(--click-marker-scale,1));
     transition:opacity .18s ease,transform .18s ease;
+}
+.house-click-marker::before{
+    position:absolute;
+    left:50%;
+    top:50%;
+    color:#6fffe9;
+    content:"✦";
+    font:900 15px/1 system-ui,sans-serif;
+    text-shadow:0 0 5px currentColor,0 0 12px currentColor;
+    animation:scene-click-sparkle 2.15s ease-in-out infinite;
+}
+.house-click-marker::after{
+    position:absolute;
+    left:50%;
+    top:50%;
+    width:9px;
+    height:9px;
+    border:1px solid rgba(94,234,212,.68);
+    border-radius:50%;
+    content:"";
+    animation:scene-click-halo 2.15s ease-out infinite;
 }
 .house-click-marker.selected{opacity:0;pointer-events:none;}
 .house-click-marker.behind{opacity:.58;}
