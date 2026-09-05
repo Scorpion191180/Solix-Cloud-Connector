@@ -21,8 +21,8 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260905-121", dashboard)
-        self.assertIn("house.js?v=20260905-121", dashboard)
+        self.assertIn("style.css?v=20260905-126", dashboard)
+        self.assertIn("house.js?v=20260905-126", dashboard)
         self.assertIn("app.js?v=20260821-96", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
@@ -623,8 +623,8 @@ class DashboardSchematicTests(unittest.TestCase):
         ):
             self.assertIn(f'id="{element_id}"', dashboard)
 
-        self.assertIn('const APP_BUILD_VERSION = "121"', script)
-        self.assertIn("Version 121", dashboard)
+        self.assertIn('const APP_BUILD_VERSION = "126"', script)
+        self.assertIn("Version 126", dashboard)
 
         self.assertIn('targetFps: 30, pixelRatio: 1.15', script)
         self.assertIn('targetFps: 24, pixelRatio: 1', script)
@@ -711,6 +711,32 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertNotIn(".house-stage.is-interacting .house-scene-label", stylesheet)
         self.assertIn("rgba(7,15,27,.58)", stylesheet)
         self.assertIn("rgba(7,15,27,.50)", stylesheet)
+
+    def test_garages_domestic_fleet_and_on_demand_cards_are_available(self) -> None:
+        dashboard = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "static" / "house.js").read_text(encoding="utf-8")
+        stylesheet = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
+
+        self.assertIn("function createGarageDoors", script)
+        self.assertIn("const domesticFleet", script)
+        self.assertIn("function domesticAwayRoute", script)
+        self.assertIn("function domesticReturnRoute", script)
+        self.assertIn("function domesticGarageRoute", script)
+        self.assertIn('createDomesticVehicleController("yeti"', script)
+        self.assertIn('createDomesticVehicleController("karoq"', script)
+        self.assertIn('createDomesticVehicleController("fox"', script)
+        self.assertIn('garageDoor: "middle"', script)
+        self.assertIn('garageDoor: "left"', script)
+        self.assertIn('fetch("/api/garage"', script)
+        self.assertIn('fetch("/api/garage/middle"', script)
+        self.assertIn("window.confirm(question)", script)
+        self.assertIn("house-click-marker", script)
+        self.assertIn("expandedAnimalResource", script)
+        self.assertIn(".house-scene-label:not(.expanded)", stylesheet)
+        self.assertIn(".animal-resource-label:not(.expanded)", stylesheet)
+        self.assertIn(".house-component-legend[hidden]", stylesheet)
+        self.assertIn('class="house-component-legend"', dashboard)
+        self.assertIn('aria-label="Komponenten im virtuellen Haus" hidden', dashboard)
 
     def test_vehicle_assets_are_web_optimized_and_attributed(self) -> None:
         dashboard = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")

@@ -44,3 +44,23 @@ services:
         value: "false"
       - key: SMARTPLUG_CONTROL_TOKEN
         sync: false
+      - key: GARAGE_CONTROL_ENABLED
+        value: "false"
+      - key: GARAGE_CONTROL_TOKEN
+        sync: false
+      - key: TUYA_API_ENDPOINT
+        value: https://openapi.tuyaeu.com
+      - key: TUYA_ACCESS_ID
+        sync: false
+      - key: TUYA_ACCESS_SECRET
+        sync: false
+      - key: TUYA_GARAGE_MIDDLE_DEVICE_ID
+        sync: false
+      - key: TUYA_GARAGE_MIDDLE_COMMAND_CODE
+        sync: false
+      - key: TUYA_GARAGE_MIDDLE_STATUS_CODE
+        sync: false
+      - key: TUYA_GARAGE_MIDDLE_OPEN_VALUE
+        sync: false
+      - key: TUYA_GARAGE_MIDDLE_CLOSE_VALUE
+        sync: false

@@ -69,7 +69,7 @@ const sceneLoaderBar = document.getElementById("sceneLoaderBar");
 const sceneLoaderStatus = document.getElementById("sceneLoaderStatus");
 const sceneLoaderPercent = document.getElementById("sceneLoaderPercent");
 const sceneLoaderVersion = document.getElementById("sceneLoaderVersion");
-const APP_BUILD_VERSION = "121";
+const APP_BUILD_VERSION = "126";
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const INTERIOR_VIEW_ENABLED = false;
 
@@ -287,9 +287,11 @@ const MAX_PITCH = 0.32;
 const PANEL_AZIMUTH_FALLBACK_DEGREES = 157.5;
 
 const state = {
-    selected: "battery",
+    selected: null,
     expandedComponent: null,
     expandedPanel: null,
+    expandedAnimalResource: null,
+    actionTarget: null,
     data: window.solixDashboardState || { solix: {}, automation: {}, audi: {}, weather: {} },
     pointers: new Map(),
     pointerStartX: 0,
@@ -575,6 +577,10 @@ function registerAnimalResourceLabel(id, icon, label, resourceKey, anchorObject,
     const element = document.createElement("div");
     element.className = "animal-resource-label healthy";
     element.dataset.resource = resourceKey;
+    element.dataset.resourceId = id;
+    element.setAttribute("role", "button");
+    element.setAttribute("tabindex", "0");
+    element.setAttribute("aria-label", `${label} auswählen`);
     if (resourceKey === "dogFood" || resourceKey === "dogWater")
         element.classList.add("dog-care");
     element.innerHTML = `<span>${icon} ${label}</span><strong>100 %</strong>` +
@@ -582,6 +588,25 @@ function registerAnimalResourceLabel(id, icon, label, resourceKey, anchorObject,
         `<button type="button" data-animal-action="refill_resource" ` +
         `data-animal-resource="${ANIMAL_RESOURCE_API_KEYS[resourceKey]}" ` +
         `aria-label="${buttonLabel}: ${label}">${buttonLabel}</button>`;
+    const selectResource = (event) => {
+        if (event.target.closest("[data-animal-action]"))
+            return;
+        event.stopPropagation();
+        state.selected = null;
+        state.expandedComponent = null;
+        state.expandedPanel = null;
+        state.actionTarget = null;
+        state.expandedAnimalResource = id;
+        updateAnimalResourceVisuals();
+        updateLiveUi();
+    };
+    element.addEventListener("click", selectResource);
+    element.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            selectResource(event);
+        }
+    });
     stage.appendChild(element);
     animalResourceLabelElements[id] = element;
     animalResourceLabelAnchors[id] = {
@@ -592,10 +617,32 @@ function registerAnimalResourceLabel(id, icon, label, resourceKey, anchorObject,
 }
 const animalCleanLabel = document.createElement("div");
 animalCleanLabel.className = "animal-clean-label outside";
+animalCleanLabel.setAttribute("role", "button");
+animalCleanLabel.setAttribute("tabindex", "0");
+animalCleanLabel.setAttribute("aria-label", "Hinterlassenschaften auswählen");
 animalCleanLabel.innerHTML = '<span>🧹 HINTERLASSENSCHAFTEN</span>' +
     '<strong>Grundstück sauber</strong>' +
     '<button type="button" data-animal-action="clean">Reinigen</button>';
 stage.appendChild(animalCleanLabel);
+function selectAnimalCleanup(event) {
+    if (event.target.closest("[data-animal-action]"))
+        return;
+    event.stopPropagation();
+    state.selected = null;
+    state.expandedComponent = null;
+    state.expandedPanel = null;
+    state.actionTarget = null;
+    state.expandedAnimalResource = "clean";
+    animalCleanLabel.classList.add("expanded");
+    updateLiveUi();
+}
+animalCleanLabel.addEventListener("click", selectAnimalCleanup);
+animalCleanLabel.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        selectAnimalCleanup(event);
+    }
+});
 const houseWindowLights = [];
 let streetLampLight = null;
 let streetLampBulb = null;
@@ -1772,18 +1819,33 @@ function createRoof(parent) {
 
 function createGarageDoors(parent) {
     const doorWidth = 1.72;
+    const doors = {};
+    const doorNames = ["left", "middle", "right"];
     const garagePierMaterial = new THREE.MeshStandardMaterial({
         color: 0xb9a36d,
         roughness: 0.82,
         envMapIntensity: 0.18
     });
     [-2.08, 0, 2.08].forEach((x, index) => {
+        const key = doorNames[index];
+        const bay = new THREE.Group();
+        bay.position.set(x, 0, GABLE_Z);
+        bay.userData.interactiveId = `garage-${key}`;
+        parent.add(bay);
+        const interiorMaterial = new THREE.MeshStandardMaterial({
+            color: 0x111418,
+            roughness: 0.96,
+            metalness: 0.02
+        });
+        addBox(bay, [doorWidth - 0.10, 2.18, 0.10], interiorMaterial,
+            [0, 1.42, -0.09], { castShadow: false });
         const garagePhoto = makePhotoMaterial(INDIVIDUAL_OPENINGS.garage.door, {
             roughness: 0.36,
             clearcoat: 0.36
         });
-        const door = addBox(parent, [doorWidth, 2.26, 0.15], garagePhoto || materials.garageRed,
-            [x, 1.42, GABLE_Z], { radius: 0.018, castShadow: false });
+        const door = addBox(bay, [doorWidth, 2.26, 0.15], garagePhoto || materials.garageRed,
+            [0, 1.42, 0], { radius: 0.018, castShadow: false });
+        door.userData.interactiveId = `garage-${key}`;
         if (!garagePhoto) {
             for (let row = -4; row <= 4; row += 1)
                 addBox(door, [doorWidth * 0.95, 0.018, 0.025], materials.darkTrim, [0, row * 0.205, 0.085], { castShadow: false });
@@ -1791,12 +1853,23 @@ function createGarageDoors(parent) {
             [-0.44, 0, 0.44].forEach((offset) =>
                 addBox(door, [0.028, 0.58, 0.04], materials.garageRed, [offset, 0.61, 0.115], { castShadow: false }));
         }
+        doors[key] = {
+            key,
+            bay,
+            door,
+            open: false,
+            progress: 0,
+            target: 0,
+            baseY: 1.42,
+            height: 2.26
+        };
     });
     // Die vier schmalen Putzpfeiler entsprechen den echten Trennungen der
     // drei Tore. Die Schindelwand bleibt dazwischen vollständig sichtbar.
     [-3.12, -1.04, 1.04, 3.12].forEach((x) =>
         addBox(parent, [0.22, 2.46, 0.17], garagePierMaterial,
             [x, 1.43, GABLE_Z + 0.015], { castShadow: false }));
+    return doors;
 }
 
 function createGable(parent) {
@@ -2318,7 +2391,7 @@ function createHouse() {
         [-HOUSE_WIDTH / 2, 0.12, stableOpeningCenterZ]);
     addBox(house, [HOUSE_WIDTH + 0.15, 0.62, HOUSE_LENGTH + 0.12], new THREE.MeshStandardMaterial({ color: 0x89755d, roughness: 0.94 }), [0, 0.31, 0]);
     createRoof(house);
-    createGarageDoors(house);
+    house.userData.garageDoors = createGarageDoors(house);
     createGable(house);
 
     // Lange Balkonfassade aus IMG_7376/7377: Fenstergruppen und je eine Balkontür.
@@ -4723,7 +4796,14 @@ function updateAnimalResourceVisuals() {
         element.classList.toggle("refill", value <= 50 && value > 20 && !hungryDog);
         element.classList.toggle("warning", (value <= 20 && value > 10) || hungryDog);
         element.classList.toggle("critical", value <= 10);
+        element.classList.toggle("expanded", state.expandedAnimalResource === id);
+        element.setAttribute("aria-expanded",
+            state.expandedAnimalResource === id ? "true" : "false");
     });
+    animalCleanLabel.classList.toggle("expanded",
+        state.expandedAnimalResource === "clean");
+    animalCleanLabel.setAttribute("aria-expanded",
+        state.expandedAnimalResource === "clean" ? "true" : "false");
 }
 
 // Je eine Kamelstation liegt hinter dem Pool und an der Pergola. Jede physische
@@ -6464,6 +6544,16 @@ function animateGardenBirds(seconds, delta) {
     birdAudioWasRunning = birdAudioRunning;
     let activeBirds = gardenBirds.filter((bird) => bird.state !== "away").length;
     gardenBirds.forEach((bird) => {
+        // Ein abgebrochener Take-off-Clip darf keinen ungültigen Zwischenwert
+        // bis in die nächste Render-Runde tragen. Lieber plant dieser Besucher
+        // einen sauberen neuen Anflug, statt die gesamte 3D-Schleife zu bremsen.
+        if (typeof bird.state !== "string") {
+            bird.state = "away";
+            bird.group.visible = false;
+            bird.nextVisitAt = seconds + 5 + bird.random() * 12;
+            bird.pendingFlightState = null;
+            return;
+        }
         if (bird.state === "away") {
             if (seconds >= bird.nextVisitAt && activeBirds < activeBirdVisitorLimit &&
                 birdVisitsThisSeason(bird)) {
@@ -6487,7 +6577,8 @@ function animateGardenBirds(seconds, delta) {
         bird.manualBeakBottomOffset = 0;
         bird.mixer.update(delta);
         if (bird.state === "taking-off" && seconds >= bird.stateUntil) {
-            bird.state = bird.pendingFlightState;
+            bird.state = typeof bird.pendingFlightState === "string" ?
+                bird.pendingFlightState : "flying-out";
             bird.target.copy(bird.pendingTarget);
             bird.stateUntil = seconds + 42;
             setBirdAnimation(bird, "fly", 0.12);
@@ -9140,6 +9231,7 @@ const vehicleModels = createVehicles();
 audiModel = vehicleModels.audi.slot;
 audiBatteryVisual = vehicleModels.audi.battery;
 loadDetailedVehicles(vehicleModels);
+const garageDoors = exteriorHouse.userData.garageDoors || {};
 const gridBoxModel = createGridBox();
 const chargingConnection = createAudiChargeConnection();
 const houseBuilder = createHouseBuilder();
@@ -9460,6 +9552,225 @@ function updateAudiPresenceMotion(time) {
         setAudiPose(motion.targetHome ? AUDI_HOME_POSE : AUDI_OFFSCREEN_POSE);
         audiModel.visible = motion.targetHome && !cutawayVisible;
         setAudiConnectionForPresence(motion.targetHome ? "home" : "away");
+    }
+}
+
+// Die drei schwarzen Fahrzeuge teilen sich einen einzelnen Fahrkorridor. So
+// kollidieren zufällige Abfahrten nicht miteinander. Yeti und Karoq kennen
+// zusätzlich ihren echten Garagenplatz; der Fox bleibt Außenparker.
+const domesticFleet = {
+    active: null,
+    // Nach dem Öffnen bleibt die Hofansicht erst einmal ruhig. Zufallsfahrten
+    // beginnen erst nach einigen Minuten und wirken dadurch wie echte Termine
+    // statt wie eine ständig wiederholte Demo.
+    nextEventAt: performance.now() + 210000 + Math.random() * 240000,
+    vehicles: {}
+};
+
+function createDomesticVehicleController(id, label, slot, home, options = {}) {
+    const controller = {
+        id,
+        label,
+        slot,
+        home: { ...home },
+        garageDoor: options.garageDoor || null,
+        garageZ: options.garageZ ?? (GABLE_Z - 1.35),
+        location: "home",
+        motion: "idle",
+        route: null,
+        routeStartedAt: 0,
+        routeDuration: 0,
+        destination: null,
+        returnAt: 0
+    };
+    slot.userData.interactiveId = `vehicle-${id}`;
+    domesticFleet.vehicles[id] = controller;
+    return controller;
+}
+
+const yetiController = createDomesticVehicleController("yeti", "Skoda Yeti",
+    vehicleModels.yeti.slot, { x: 0, z: 8.72, yaw: 0 }, { garageDoor: "middle" });
+const karoqController = createDomesticVehicleController("karoq", "Skoda Karoq",
+    vehicleModels.karoq.slot, { x: -2.10, z: 8.72, yaw: 0 }, { garageDoor: "left" });
+const foxController = createDomesticVehicleController("fox", "VW Fox",
+    vehicleModels.fox.slot, { x: 2.10, z: 8.45, yaw: Math.PI });
+
+function shortestYaw(from, to, amount) {
+    return from + Math.atan2(Math.sin(to - from), Math.cos(to - from)) * amount;
+}
+
+function routePose(controller, x, z, yaw = controller.home.yaw, motion = "forward") {
+    return { x, z, yaw, motion };
+}
+
+function beginDomesticRoute(controller, route, destination, duration = 10500) {
+    if (domesticFleet.active || controller.motion !== "idle")
+        return false;
+    return activateDomesticRoute(controller, route, destination, duration);
+}
+
+function reserveDomesticRoute(controller) {
+    if (domesticFleet.active || controller.motion !== "idle")
+        return false;
+    controller.motion = "preparing";
+    domesticFleet.active = controller;
+    return true;
+}
+
+function releaseDomesticRoute(controller) {
+    if (domesticFleet.active === controller)
+        domesticFleet.active = null;
+    if (controller.motion === "preparing")
+        controller.motion = "idle";
+}
+
+function activateDomesticRoute(controller, route, destination, duration = 10500) {
+    if (domesticFleet.active && domesticFleet.active !== controller)
+        return false;
+    if (!domesticFleet.active && controller.motion !== "idle")
+        return false;
+    controller.route = route;
+    controller.destination = destination;
+    controller.routeStartedAt = performance.now();
+    controller.routeDuration = reduceMotion ? 50 : duration;
+    controller.motion = "driving";
+    controller.slot.visible = !cutawayVisible;
+    domesticFleet.active = controller;
+    return true;
+}
+
+function domesticAwayRoute(controller) {
+    const { x, z, yaw } = controller.home;
+    return [
+        routePose(controller, x, z, yaw, "reverse"),
+        routePose(controller, x, 11.75, yaw, "reverse"),
+        routePose(controller, x + 0.45, 13.15, yaw - 0.35, "reverse"),
+        routePose(controller, 4.75, 14.05, Math.PI / 2, "forward"),
+        routePose(controller, 8.35, 13.40, 2.05, "forward"),
+        routePose(controller, 10.35, 9.10, Math.PI, "forward"),
+        routePose(controller, 10.35, -18.50, Math.PI, "forward")
+    ];
+}
+
+function domesticReturnRoute(controller) {
+    const { x, z, yaw } = controller.home;
+    return [
+        routePose(controller, 9.35, -18.50, 0, "forward"),
+        routePose(controller, 9.35, 8.60, 0, "forward"),
+        routePose(controller, 8.65, 11.70, -0.46, "forward"),
+        routePose(controller, 6.70, 13.35, -1.05, "forward"),
+        routePose(controller, 4.35, 13.70, -1.58, "forward"),
+        routePose(controller, x + 0.35, 11.60, yaw, "reverse"),
+        routePose(controller, x, z, yaw, "reverse")
+    ];
+}
+
+function domesticGarageRoute(controller, entering) {
+    const { x, z, yaw } = controller.home;
+    const inside = routePose(controller, x, controller.garageZ, yaw, entering ? "forward" : "reverse");
+    const threshold = routePose(controller, x, GABLE_Z + 0.45, yaw, entering ? "forward" : "reverse");
+    const outside = routePose(controller, x, z, yaw, entering ? "forward" : "reverse");
+    return entering ? [outside, threshold, inside] : [inside, threshold, outside];
+}
+
+function setGarageDoorTarget(key, open) {
+    const door = garageDoors[key];
+    if (!door)
+        return;
+    door.target = open ? 1 : 0;
+    door.open = open;
+    if (state.actionTarget === `garage-${key}`)
+        updateSceneActionCard();
+}
+
+function updateGarageDoors(delta) {
+    Object.values(garageDoors).forEach((door) => {
+        door.progress = THREE.MathUtils.damp(door.progress, door.target, 7.5, delta);
+        if (Math.abs(door.progress - door.target) < 0.002)
+            door.progress = door.target;
+        const remaining = Math.max(0.012, 1 - door.progress);
+        door.door.scale.y = remaining;
+        door.door.position.y = door.baseY + door.height * door.progress * 0.5;
+    });
+}
+
+function updateDomesticFleet(time) {
+    const controller = domesticFleet.active;
+    if (controller && controller.route) {
+        const raw = THREE.MathUtils.clamp(
+            (time - controller.routeStartedAt) / controller.routeDuration, 0, 1
+        );
+        const segments = controller.route.length - 1;
+        const scaled = raw * segments;
+        const index = Math.min(segments - 1, Math.floor(scaled));
+        const local = THREE.MathUtils.smoothstep(scaled - index, 0, 1);
+        const from = controller.route[index];
+        const to = controller.route[index + 1];
+        controller.slot.position.set(
+            THREE.MathUtils.lerp(from.x, to.x, local),
+            0.02,
+            THREE.MathUtils.lerp(from.z, to.z, local)
+        );
+        controller.slot.rotation.y = shortestYaw(from.yaw, to.yaw, local);
+        if (raw >= 1) {
+            controller.location = controller.destination;
+            controller.motion = "idle";
+            controller.route = null;
+            controller.slot.visible = controller.location !== "away" && !cutawayVisible;
+            if (controller.location === "away")
+                controller.returnAt = time + 70000 + Math.random() * 90000;
+            domesticFleet.active = null;
+            if (controller.location === "garage" && controller.garageDoor &&
+                (controller.garageDoor !== "middle" || garageCloudState.configured !== true))
+                window.setTimeout(() => setGarageDoorTarget(controller.garageDoor, false), 1100);
+            if (controller.location === "home" && controller.garageDoor &&
+                (controller.garageDoor !== "middle" || garageCloudState.configured !== true))
+                window.setTimeout(() => setGarageDoorTarget(controller.garageDoor, false), 1100);
+            updateSceneActionCard();
+        }
+    }
+
+    if (domesticFleet.active)
+        return;
+    const awayVehicle = Object.values(domesticFleet.vehicles).find((vehicle) =>
+        vehicle.location === "away" && time >= vehicle.returnAt
+    );
+    if (awayVehicle) {
+        beginDomesticRoute(awayVehicle, domesticReturnRoute(awayVehicle), "home", 12500);
+        return;
+    }
+    if (time < domesticFleet.nextEventAt)
+        return;
+    domesticFleet.nextEventAt = time + 210000 + Math.random() * 240000;
+    if (karoqController.location === "garage" && karoqController.motion === "idle") {
+        if (reserveDomesticRoute(karoqController)) {
+            setGarageDoorTarget("left", true);
+            window.setTimeout(() => {
+                activateDomesticRoute(karoqController,
+                    domesticGarageRoute(karoqController, false), "home", 5200);
+                updateSceneActionCard();
+            }, 950);
+        }
+        return;
+    }
+    const candidates = [yetiController, karoqController, foxController].filter((vehicle) =>
+        vehicle.location === "home" && vehicle.motion === "idle"
+    );
+    if (!candidates.length)
+        return;
+    const vehicle = candidates[Math.floor(Math.random() * candidates.length)];
+    // Der Karoq nutzt gelegentlich statt einer Abfahrt die linke Garage.
+    if (vehicle === karoqController && Math.random() < 0.38) {
+        if (reserveDomesticRoute(vehicle)) {
+            setGarageDoorTarget("left", true);
+            window.setTimeout(() => {
+                activateDomesticRoute(vehicle, domesticGarageRoute(vehicle, true), "garage", 5200);
+                updateSceneActionCard();
+            }, 950);
+        }
+    }
+    else {
+        beginDomesticRoute(vehicle, domesticAwayRoute(vehicle), "away", 12000);
     }
 }
 
@@ -10244,10 +10555,13 @@ const labelElements = {};
     button.type = "button";
     button.className = "house-scene-label";
     button.dataset.component = id;
-    button.addEventListener("click", () => {
+    button.addEventListener("click", (event) => {
+        event.stopPropagation();
         state.selected = id;
         state.expandedPanel = null;
-        state.expandedComponent = state.expandedComponent === id ? null : id;
+        state.expandedComponent = id;
+        state.expandedAnimalResource = null;
+        state.actionTarget = null;
         updateLiveUi();
     });
     stage.appendChild(button);
@@ -10265,9 +10579,12 @@ pvPanelAnchors.forEach((panel, index) => {
         '<span class="panel-close-detail">Anteil aktuell · --</span>' +
         '<span class="panel-expanded-detail">Tagesdaten werden aufgebaut</span>' +
         '<span class="house-string-more">Details öffnen</span>';
-    label.addEventListener("click", () => {
+    label.addEventListener("click", (event) => {
+        event.stopPropagation();
         state.expandedComponent = null;
-        state.expandedPanel = state.expandedPanel === panel.id ? null : panel.id;
+        state.expandedPanel = panel.id;
+        state.expandedAnimalResource = null;
+        state.actionTarget = null;
         updateLiveUi();
     });
     stage.appendChild(label);
@@ -10283,9 +10600,12 @@ secondaryPvPanelAnchors.forEach((panel, index) => {
         '<span class="panel-close-detail">Solarbank 3 · --</span>' +
         '<span class="panel-expanded-detail">Live-Daten werden verbunden</span>' +
         '<span class="house-string-more">Details öffnen</span>';
-    label.addEventListener("click", () => {
+    label.addEventListener("click", (event) => {
+        event.stopPropagation();
         state.expandedComponent = null;
-        state.expandedPanel = state.expandedPanel === panel.id ? null : panel.id;
+        state.expandedPanel = panel.id;
+        state.expandedAnimalResource = null;
+        state.actionTarget = null;
         updateLiveUi();
     });
     stage.appendChild(label);
@@ -10311,6 +10631,298 @@ Object.keys(objectBatteryAnchors).forEach((id) => {
     stage.appendChild(indicator);
     objectBatteryElements[id] = indicator;
 });
+
+const interactionRaycaster = new THREE.Raycaster();
+const interactionPointer = new THREE.Vector2();
+const interactionTargets = [];
+const transparentHitMaterial = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    colorWrite: false
+});
+
+function markInteractive(object, id) {
+    if (!object)
+        return;
+    object.userData.interactiveId = id;
+    interactionTargets.push(object);
+}
+
+function addInteractionProxy(parent, id, size, position = [0, 0, 0]) {
+    const proxy = new THREE.Mesh(new THREE.BoxGeometry(...size), transparentHitMaterial);
+    proxy.position.set(...position);
+    proxy.userData.interactiveId = id;
+    proxy.castShadow = false;
+    proxy.receiveShadow = false;
+    parent.add(proxy);
+    interactionTargets.push(proxy);
+    return proxy;
+}
+
+markInteractive(solarBankModel, "battery");
+markInteractive(secondarySolarBankModel, "battery3");
+markInteractive(gridBoxModel, "grid");
+addInteractionProxy(vehicleModels.audi.slot, "audi", [2.05, 1.45, 4.10], [0, 0.72, 0]);
+addInteractionProxy(vehicleModels.yeti.slot, "vehicle-yeti", [1.95, 1.55, 3.90], [0, 0.76, 0]);
+addInteractionProxy(vehicleModels.karoq.slot, "vehicle-karoq", [2.00, 1.55, 4.08], [0, 0.76, 0]);
+addInteractionProxy(vehicleModels.fox.slot, "vehicle-fox", [1.84, 1.48, 3.55], [0, 0.72, 0]);
+Object.values(garageDoors).forEach((door) => markInteractive(door.bay, `garage-${door.key}`));
+
+[...pvPanelAnchors, ...secondaryPvPanelAnchors].forEach((panel) => {
+    const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.72, 10, 8), transparentHitMaterial);
+    proxy.position.copy(panel.anchor);
+    proxy.userData.interactiveId = panel.id;
+    world.add(proxy);
+    interactionTargets.push(proxy);
+});
+
+const sceneActionDefinitions = {
+    "garage-left": { label: "Linke Garage", anchor: () => new THREE.Vector3(-2.08, 2.78, GABLE_Z + 0.14) },
+    "garage-middle": { label: "Mittlere Garage", anchor: () => new THREE.Vector3(0, 2.78, GABLE_Z + 0.14) },
+    "vehicle-yeti": { label: "Skoda Yeti", anchor: () => new THREE.Vector3(
+        yetiController.slot.position.x, 1.62, yetiController.slot.position.z) },
+    "vehicle-karoq": { label: "Skoda Karoq", anchor: () => new THREE.Vector3(
+        karoqController.slot.position.x, 1.62, karoqController.slot.position.z) },
+    "vehicle-fox": { label: "VW Fox", anchor: () => new THREE.Vector3(
+        foxController.slot.position.x, 1.52, foxController.slot.position.z) }
+};
+const sceneActionMarkers = {};
+Object.entries(sceneActionDefinitions).forEach(([id, definition]) => {
+    const marker = document.createElement("button");
+    marker.type = "button";
+    marker.className = "house-click-marker";
+    marker.dataset.actionTarget = id;
+    marker.textContent = "i";
+    marker.setAttribute("aria-label", definition.label + " auswählen");
+    marker.addEventListener("click", (event) => {
+        event.stopPropagation();
+        selectSceneTarget(id);
+    });
+    stage.appendChild(marker);
+    sceneActionMarkers[id] = marker;
+});
+
+const sceneActionCard = document.createElement("section");
+sceneActionCard.className = "house-action-card";
+sceneActionCard.hidden = true;
+sceneActionCard.setAttribute("role", "dialog");
+sceneActionCard.setAttribute("aria-live", "polite");
+stage.appendChild(sceneActionCard);
+
+let garageCloudState = {
+    configured: false,
+    middle: { configured: false, status: "unknown" },
+    left: { configured: false, status: "visual_only" }
+};
+
+async function refreshGarageCloudState() {
+    try {
+        const response = await fetch("/api/garage", { cache: "no-store" });
+        if (response.ok)
+            garageCloudState = await response.json();
+    }
+    catch (_error) {
+        garageCloudState.temporarily_unavailable = true;
+    }
+    updateSceneActionCard();
+}
+
+function controllerForGarage(key) {
+    return key === "middle" ? yetiController : key === "left" ? karoqController : null;
+}
+
+function fleetLocationText(controller) {
+    if (controller.motion !== "idle")
+        return "fährt gerade";
+    if (controller.location === "garage")
+        return "in der Garage";
+    if (controller.location === "away")
+        return "unterwegs";
+    return "vor der Garage";
+}
+
+function updateSceneActionCard(message = "") {
+    const id = state.actionTarget;
+    if (!id || !sceneActionDefinitions[id]) {
+        sceneActionCard.hidden = true;
+        return;
+    }
+    const isGarage = id.startsWith("garage-");
+    const key = isGarage ? id.replace("garage-", "") : null;
+    const controller = isGarage ? controllerForGarage(key) :
+        domesticFleet.vehicles[id.replace("vehicle-", "")];
+    if (!controller) {
+        sceneActionCard.hidden = true;
+        return;
+    }
+    const door = key ? garageDoors[key] : null;
+    const cloudControlled = key === "middle" && garageCloudState.configured === true;
+    const title = isGarage ? sceneActionDefinitions[id].label : controller.label;
+    let action = "";
+    if (isGarage) {
+        const opening = door?.target < 0.5;
+        action = controller.motion !== "idle" || controller.location === "away" ? "" :
+            `<button type="button" data-garage-action="${key}" data-open="${opening ? "true" : "false"}">` +
+            (opening ? `Tor öffnen & ${controller.location === "garage" ? "ausparken" : "einparken"}` : "Tor schließen") +
+            "</button>";
+    }
+    else if (controller.motion === "idle") {
+        action = controller.location === "away" ? "" :
+            `<button type="button" data-vehicle-action="${controller.id}">` +
+            (controller.location === "garage" ? "Aus Garage fahren" :
+                controller.garageDoor ? "In Garage fahren" : "Abfahrt zeigen") + "</button>";
+    }
+    sceneActionCard.innerHTML = `<small>INTERAKTIV</small><strong>${title}</strong>` +
+        `<span>${fleetLocationText(controller)}</span>` +
+        (isGarage ? `<span>${cloudControlled ? "Smart Life verbunden" : "3D-Simulation · Smart Life noch nicht eingerichtet"}</span>` : "") +
+        (message ? `<em>${message}</em>` : "") + action;
+    sceneActionCard.hidden = false;
+}
+
+async function sendMiddleGarageCommand(open) {
+    if (!garageCloudState.configured)
+        return { ok: true, visualOnly: true };
+    let token = document.getElementById("menuControlToken")?.value.trim() || "";
+    if (!token)
+        token = window.prompt("Steuer-Code für das Garagentor eingeben:") || "";
+    if (!token)
+        return { ok: false, cancelled: true };
+    const response = await fetch("/api/garage/middle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Control-Token": token },
+        body: JSON.stringify({ open })
+    });
+    if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.detail || "Garagentor konnte nicht geschaltet werden");
+    }
+    return await response.json();
+}
+
+async function runGarageAction(key, open) {
+    const door = garageDoors[key];
+    const controller = controllerForGarage(key);
+    if (!door || !controller || controller.motion !== "idle")
+        return;
+    const movement = controller.location === "garage" ? "aus der Garage fahren" :
+        controller.location === "home" ? "in die Garage fahren" : "nicht bewegt werden";
+    const question = open ?
+        `${sceneActionDefinitions[`garage-${key}`].label} öffnen und ${controller.label} ${movement}?` :
+        `${sceneActionDefinitions[`garage-${key}`].label} schließen?`;
+    if (!window.confirm(question))
+        return;
+    const willMove = open && ["home", "garage"].includes(controller.location);
+    if (willMove && !reserveDomesticRoute(controller))
+        return updateSceneActionCard("Fahrweg ist gerade belegt");
+    try {
+        updateSceneActionCard("Befehl wird gesendet …");
+        if (key === "middle") {
+            const result = await sendMiddleGarageCommand(open);
+            if (!result.ok) {
+                releaseDomesticRoute(controller);
+                return updateSceneActionCard("Abgebrochen");
+            }
+        }
+        setGarageDoorTarget(key, open);
+        if (willMove) {
+            const entering = controller.location === "home";
+            window.setTimeout(() => {
+                activateDomesticRoute(controller, domesticGarageRoute(controller, entering),
+                    entering ? "garage" : "home", 5400);
+                updateSceneActionCard();
+            }, 850);
+        }
+        updateSceneActionCard(open ? "Tor öffnet …" : "Tor schließt …");
+    }
+    catch (error) {
+        releaseDomesticRoute(controller);
+        updateSceneActionCard(error.message);
+    }
+}
+
+function runVehicleAction(id) {
+    const controller = domesticFleet.vehicles[id];
+    if (!controller || controller.motion !== "idle" || controller.location === "away")
+        return;
+    if (controller.garageDoor) {
+        if (!reserveDomesticRoute(controller))
+            return;
+        setGarageDoorTarget(controller.garageDoor, true);
+        const entering = controller.location === "home";
+        window.setTimeout(() => {
+            activateDomesticRoute(controller, domesticGarageRoute(controller, entering),
+                entering ? "garage" : "home", 5400);
+            updateSceneActionCard();
+        }, 850);
+    }
+    else {
+        beginDomesticRoute(controller, domesticAwayRoute(controller), "away", 12000);
+    }
+    updateSceneActionCard();
+}
+
+sceneActionCard.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const garageButton = event.target.closest("[data-garage-action]");
+    if (garageButton)
+        runGarageAction(garageButton.dataset.garageAction, garageButton.dataset.open === "true");
+    const vehicleButton = event.target.closest("[data-vehicle-action]");
+    if (vehicleButton)
+        runVehicleAction(vehicleButton.dataset.vehicleAction);
+});
+
+function closeSceneCards() {
+    state.selected = null;
+    state.expandedComponent = null;
+    state.expandedPanel = null;
+    state.expandedAnimalResource = null;
+    state.actionTarget = null;
+    updateSceneActionCard();
+    updateAnimalResourceVisuals();
+    updateLiveUi();
+}
+
+function selectSceneTarget(id) {
+    state.expandedAnimalResource = null;
+    if (["battery", "battery3", "grid", "audi"].includes(id)) {
+        state.selected = id;
+        state.expandedComponent = id;
+        state.expandedPanel = null;
+        state.actionTarget = null;
+    }
+    else if (/^(pv|sb3pv)\d+$/.test(id)) {
+        state.selected = null;
+        state.expandedComponent = null;
+        state.expandedPanel = id;
+        state.actionTarget = null;
+    }
+    else if (sceneActionDefinitions[id]) {
+        state.selected = null;
+        state.expandedComponent = null;
+        state.expandedPanel = null;
+        state.actionTarget = id;
+        updateSceneActionCard();
+    }
+    updateLiveUi();
+}
+
+function interactionIdAtPointer(event) {
+    const rect = canvas.getBoundingClientRect();
+    interactionPointer.set(
+        ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1,
+        -((event.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1
+    );
+    interactionRaycaster.setFromCamera(interactionPointer, camera);
+    const hit = interactionRaycaster.intersectObjects(interactionTargets, true)[0];
+    let object = hit?.object || null;
+    while (object && !object.userData.interactiveId)
+        object = object.parent;
+    return object?.userData.interactiveId || null;
+}
+
+refreshGarageCloudState();
+window.setInterval(refreshGarageCloudState, 60000);
 
 function setObjectBattery(id, percent, flowMode, powerWatts = null, secondaryDetail = "") {
     const indicator = objectBatteryElements[id];
@@ -11287,6 +11899,31 @@ function updateLabelPositions() {
         element.classList.toggle("outside", rawX < -45 || rawX > rect.width + 45 || rawY < -30 || rawY > rect.height + 30);
     });
 
+    Object.entries(sceneActionDefinitions).forEach(([id, definition]) => {
+        const localAnchor = definition.anchor();
+        const anchor = world.localToWorld(localAnchor.clone());
+        const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
+        const projected = anchor.project(camera);
+        const rawX = (projected.x * 0.5 + 0.5) * rect.width;
+        const rawY = (-projected.y * 0.5 + 0.5) * rect.height;
+        const marker = sceneActionMarkers[id];
+        const vehicle = id.startsWith("vehicle-") ?
+            domesticFleet.vehicles[id.replace("vehicle-", "")] : null;
+        const outside = rawX < -40 || rawX > rect.width + 40 || rawY < -40 || rawY > rect.height + 40;
+        marker.style.left = THREE.MathUtils.clamp(rawX, 18, rect.width - 18) + "px";
+        marker.style.top = THREE.MathUtils.clamp(rawY, 18, rect.height - 18) + "px";
+        marker.classList.toggle("selected", state.actionTarget === id);
+        marker.classList.toggle("behind", cameraSpace.z > rootPosition.z);
+        marker.classList.toggle("outside", outside || vehicle?.location === "away");
+        marker.style.setProperty("--click-marker-scale", THREE.MathUtils.clamp(
+            0.84 + state.zoom * 0.12, 0.92, 1.20
+        ));
+        if (state.actionTarget === id && !sceneActionCard.hidden) {
+            sceneActionCard.style.left = THREE.MathUtils.clamp(rawX, 112, rect.width - 112) + "px";
+            sceneActionCard.style.top = THREE.MathUtils.clamp(rawY - 24, 130, rect.height - 34) + "px";
+        }
+    });
+
     Object.entries(objectBatteryAnchors).forEach(([id, localAnchor]) => {
         const anchor = world.localToWorld(localAnchor.clone());
         const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
@@ -11514,6 +12151,8 @@ function finishPointer(event) {
     const handledBuilderPointer = houseBuilder.endPointer(event.type === "pointercancel");
     const placeBuilderPart = houseBuilder.active && state.pointers.size === 1 &&
         !handledBuilderPointer && !state.pointerMoved && event.button === 0 && event.type === "pointerup";
+    const selectScenePart = !houseBuilder.active && state.pointers.size === 1 &&
+        !state.pointerMoved && event.button === 0 && event.type === "pointerup";
     if (canvas.hasPointerCapture(event.pointerId))
         canvas.releasePointerCapture(event.pointerId);
     state.pointers.delete(event.pointerId);
@@ -11534,6 +12173,13 @@ function finishPointer(event) {
     }
     if (placeBuilderPart)
         houseBuilder.placeAtPointer(event);
+    else if (selectScenePart) {
+        const id = interactionIdAtPointer(event);
+        if (id)
+            selectSceneTarget(id);
+        else
+            closeSceneCards();
+    }
 }
 
 canvas.addEventListener("pointerup", finishPointer);
@@ -11594,9 +12240,13 @@ resetButton.addEventListener("click", () => {
     state.targetPanX = DEFAULT_VIEW.panX;
     state.targetPanY = DEFAULT_VIEW.panY;
     state.targetZoom = DEFAULT_VIEW.zoom;
-    state.selected = "battery";
+    state.selected = null;
     state.expandedComponent = null;
     state.expandedPanel = null;
+    state.expandedAnimalResource = null;
+    state.actionTarget = null;
+    updateSceneActionCard();
+    updateAnimalResourceVisuals();
     updateLiveUi();
 });
 
@@ -11609,8 +12259,13 @@ function setMenuOpen(open) {
 menuToggle.addEventListener("click", () => setMenuOpen(menuPanel.hidden));
 menuClose.addEventListener("click", () => setMenuOpen(false));
 menuCollapse.addEventListener("click", () => {
+    state.selected = null;
     state.expandedComponent = null;
     state.expandedPanel = null;
+    state.expandedAnimalResource = null;
+    state.actionTarget = null;
+    updateSceneActionCard();
+    updateAnimalResourceVisuals();
     updateLiveUi();
     setMenuOpen(false);
 });
@@ -11704,6 +12359,14 @@ function animate(time) {
         houseBuilder.updateSelectionToolsPosition();
     updateCutawayMode(delta);
     updateAudiPresenceMotion(time);
+    updateGarageDoors(delta);
+    updateDomesticFleet(time);
+    stage.dataset.garageLeft = garageDoors.left?.target >= 0.5 ? "open" : "closed";
+    stage.dataset.garageMiddle = garageDoors.middle?.target >= 0.5 ? "open" : "closed";
+    stage.dataset.yetiLocation = yetiController.location;
+    stage.dataset.karoqLocation = karoqController.location;
+    stage.dataset.foxLocation = foxController.location;
+    stage.dataset.fleetMotion = domesticFleet.active?.id || "idle";
 
     if (Math.floor(seconds) !== Math.floor(seconds - delta))
         updatePanelDetails();

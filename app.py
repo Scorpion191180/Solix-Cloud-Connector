@@ -12,6 +12,7 @@ from animal.state import AnimalStateStore
 from audi.client import AudiClient
 from automation.controller import ChargingAutomation
 from solix.client import SolixClient
+from smartlife.client import SmartLifeGarageClient
 from weather.client import WeatherClient
 
 client = SolixClient()
@@ -19,10 +20,15 @@ audi_client = AudiClient()
 charging_automation = ChargingAutomation(client, audi_client)
 weather_client = WeatherClient()
 animal_state = AnimalStateStore()
+garage_client = SmartLifeGarageClient()
 
 
 class ManualSmartPlugCommand(BaseModel):
     enabled: bool
+
+
+class GarageDoorCommand(BaseModel):
+    open: bool
 
 
 class AutomationSettingsUpdate(BaseModel):
@@ -83,6 +89,19 @@ def _authorize_manual_control(provided_token: str | None) -> None:
         raise HTTPException(status_code=401, detail="Steuer-Code ist nicht korrekt")
 
 
+def _authorize_garage_control(provided_token: str | None) -> None:
+    expected_token = (
+        os.getenv("GARAGE_CONTROL_TOKEN", "").strip()
+        or os.getenv("SMARTPLUG_CONTROL_TOKEN", "").strip()
+    )
+    if not garage_client.configured or not expected_token:
+        raise HTTPException(status_code=503, detail="Smart-Life-Garagentor ist nicht eingerichtet")
+    if not provided_token or not hmac.compare_digest(
+        provided_token.encode("utf-8"), expected_token.encode("utf-8")
+    ):
+        raise HTTPException(status_code=401, detail="Steuer-Code ist nicht korrekt")
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     await audi_client.start()
@@ -93,6 +112,7 @@ async def lifespan(_app: FastAPI):
     await audi_client.close()
     await client.close()
     await weather_client.close()
+    await garage_client.close()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -146,6 +166,33 @@ async def audi():
 async def weather():
     """Return cached live weather for the configured house coordinates."""
     return await weather_client.get_live()
+
+
+@app.get("/api/garage")
+async def garage_status():
+    """Return only non-secret Smart Life setup and door status information."""
+    try:
+        return await garage_client.get_middle_status()
+    except Exception:
+        result = garage_client.public_status()
+        result["temporarily_unavailable"] = True
+        return result
+
+
+@app.post("/api/garage/middle")
+async def garage_middle(
+    command: GarageDoorCommand,
+    x_control_token: str | None = Header(default=None),
+):
+    """Send one authenticated, device-specific command to the middle door."""
+    _authorize_garage_control(x_control_token)
+    try:
+        return await garage_client.set_middle_open(command.open)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Smart-Life-Garagentor konnte nicht geschaltet werden; Details stehen im Render-Log",
+        ) from exc
 
 
 @app.get("/api/animals")

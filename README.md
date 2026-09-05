@@ -85,6 +85,20 @@ Meter-Raster setzen, drehen und rückgängig machen. Der Entwurf wird vorerst
 lokal im jeweiligen Browser gespeichert. Diese erste Ausbaustufe greift nicht
 in die bestehende Live-Grundstücksansicht oder die Ladeautomatik ein.
 
+## Optionales Smart-Life-Garagentor
+
+Das mittlere Garagentor kann über die offizielle Tuya-Cloudschnittstelle eines
+Smart-Life-Geräts angebunden werden. Ohne vollständige Konfiguration bleibt die
+Torbedienung eine deutlich gekennzeichnete 3D-Simulation; es wird kein externer
+Befehl gesendet. Vor jedem echten Befehl fragt die Oberfläche nach Bestätigung
+und dem geschützten Steuer-Code.
+
+Der Datenpunkt eines Garagentormoduls ist nicht allgemein festgelegt. Deshalb
+müssen `TUYA_GARAGE_MIDDLE_COMMAND_CODE` sowie Öffnen-/Schließen-Wert exakt aus
+den Gerätefunktionen des eigenen Tuya-Cloudprojekts übernommen werden. Die App
+rät diese sicherheitsrelevanten Werte nicht. Der Karoq nutzt die linke Garage
+rein visuell; Yeti, Karoq und Fox können unabhängig wegfahren und zurückkehren.
+
 ## Render-Konfiguration
 
 Unter **Environment** des Render-Web-Service setzen:
@@ -114,6 +128,17 @@ AUTOMATION_OFF_SOC=10
 AUTOMATION_INTERVAL_SECONDS=60
 SMARTPLUG_MANUAL_CONTROL=true
 SMARTPLUG_CONTROL_TOKEN=langer-zufaelliger-test-code
+# Erst nach Prüfung der Gerätefunktion aktivieren:
+GARAGE_CONTROL_ENABLED=false
+GARAGE_CONTROL_TOKEN=anderer-langer-zufaelliger-code
+TUYA_API_ENDPOINT=https://openapi.tuyaeu.com
+TUYA_ACCESS_ID=access-id-des-tuya-cloudprojekts
+TUYA_ACCESS_SECRET=access-secret-des-tuya-cloudprojekts
+TUYA_GARAGE_MIDDLE_DEVICE_ID=geraete-id-des-mittleren-tors
+TUYA_GARAGE_MIDDLE_COMMAND_CODE=exakter-befehlscode-des-moduls
+TUYA_GARAGE_MIDDLE_STATUS_CODE=optionaler-statuscode
+TUYA_GARAGE_MIDDLE_OPEN_VALUE=true
+TUYA_GARAGE_MIDDLE_CLOSE_VALUE=false
 ```
 
 Optional:

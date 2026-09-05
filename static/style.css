@@ -413,6 +413,36 @@ header p{
     transition:filter .2s ease,opacity .2s ease,border-color .2s ease;
 }
 
+/* In der ruhenden Szene bleiben nur dezente, gut antippbare Info-Punkte.
+   Die eigentliche Karte wird erst nach Auswahl des 3D-Objekts sichtbar. */
+.house-scene-label:not(.expanded){
+    display:block;
+    width:24px;
+    min-width:24px;
+    height:24px;
+    padding:0;
+    overflow:visible;
+    border:1px solid color-mix(in srgb,var(--scene-color,#5eead4) 74%,white 12%);
+    border-radius:50%;
+    background:rgba(7,15,27,.66);
+    box-shadow:0 0 0 4px color-mix(in srgb,var(--scene-color,#5eead4) 15%,transparent),
+        0 0 12px color-mix(in srgb,var(--scene-color,#5eead4) 45%,transparent);
+    transform:translate(-50%,-50%) scale(var(--scene-label-scale,1));
+    transform-origin:center;
+}
+
+.house-scene-label:not(.expanded) > *{display:none!important;}
+.house-scene-label:not(.expanded)::before{
+    display:grid;
+    position:absolute;
+    inset:0;
+    place-items:center;
+    color:#fff;
+    content:"i";
+    font:900 13px/1 system-ui,sans-serif;
+}
+.house-scene-label:not(.expanded)::after{display:none;}
+
 .animal-resource-label{
     position:absolute;
     z-index:16;
@@ -494,6 +524,53 @@ header p{
 
 .animal-resource-label.dog-care.behind:not(.healthy){
     opacity:.78;
+}
+
+/* Futter-, Wasser- und Reinigungsfenster erscheinen erst nach Auswahl. Im
+   Ruhezustand bleibt nur ein kleiner, farbcodierter i-Punkt am 3D-Objekt. */
+.animal-resource-label:not(.expanded),
+.animal-clean-label:not(.expanded){
+    display:block;
+    box-sizing:border-box;
+    width:24px!important;
+    min-width:24px;
+    height:24px;
+    min-height:24px;
+    padding:0!important;
+    overflow:hidden;
+    border-radius:50%;
+    opacity:.88!important;
+    pointer-events:auto!important;
+    cursor:pointer;
+    color:transparent;
+    font-size:0;
+}
+
+.animal-resource-label:not(.expanded)::before,
+.animal-clean-label:not(.expanded)::before{
+    content:"i";
+    position:absolute;
+    inset:0;
+    display:grid;
+    place-items:center;
+    color:#f8fafc;
+    font:900 13px/1 system-ui,sans-serif;
+}
+
+.animal-resource-label:not(.expanded)>*,
+.animal-clean-label:not(.expanded)>*{
+    display:none!important;
+}
+
+.animal-resource-label.expanded.healthy{
+    opacity:.96;
+    pointer-events:auto;
+}
+
+.animal-resource-label.outside,
+.animal-clean-label.outside{
+    opacity:0!important;
+    pointer-events:none!important;
 }
 
 .animal-resource-label button,
@@ -923,6 +1000,28 @@ header p{
     transition:opacity .2s ease,filter .2s ease;
 }
 
+.house-string-label:not(.expanded){
+    width:22px;
+    height:22px;
+    padding:0;
+    overflow:hidden;
+    border-radius:50%;
+    background:rgba(7,15,27,.68);
+    box-shadow:0 0 0 4px rgba(250,204,21,.13),0 0 11px rgba(250,204,21,.42);
+    color:transparent;
+    font-size:0;
+}
+.house-string-label:not(.expanded) > *{display:none!important;}
+.house-string-label:not(.expanded)::before{
+    display:grid;
+    position:absolute;
+    inset:0;
+    place-items:center;
+    color:#fff7a3;
+    content:"i";
+    font:900 12px/1 system-ui,sans-serif;
+}
+
 .house-scene-label[data-component="pv"]{
     display:none!important;
 }
@@ -1010,8 +1109,61 @@ header p{
     opacity:0;
 }
 
-.house-stage[data-detail-level="overview"] .house-string-label{
-    display:none;
+.house-stage[data-detail-level="overview"] .house-string-label{display:block;}
+
+.house-click-marker{
+    position:absolute;
+    z-index:11;
+    display:grid;
+    width:25px;
+    height:25px;
+    padding:0;
+    place-items:center;
+    border:1px solid rgba(94,234,212,.82);
+    border-radius:50%;
+    background:rgba(7,15,27,.68);
+    box-shadow:0 0 0 4px rgba(45,212,191,.13),0 0 13px rgba(45,212,191,.48);
+    color:#ecfeff;
+    font:900 13px/1 system-ui,sans-serif;
+    cursor:pointer;
+    transform:translate(-50%,-50%) scale(var(--click-marker-scale,1));
+    transition:opacity .18s ease,transform .18s ease;
+}
+.house-click-marker.selected{opacity:0;pointer-events:none;}
+.house-click-marker.behind{opacity:.58;}
+.house-click-marker.outside{opacity:0;pointer-events:none;}
+
+.house-action-card{
+    position:absolute;
+    z-index:19;
+    display:grid;
+    width:min(222px,calc(100vw - 32px));
+    gap:5px;
+    padding:11px 12px;
+    border:1px solid rgba(94,234,212,.58);
+    border-radius:13px;
+    background:linear-gradient(135deg,rgba(7,15,27,.82),rgba(15,23,42,.70));
+    box-shadow:0 12px 34px rgba(2,6,23,.58),0 0 16px rgba(45,212,191,.24);
+    backdrop-filter:blur(9px) saturate(1.12);
+    -webkit-backdrop-filter:blur(9px) saturate(1.12);
+    color:#f8fafc;
+    transform:translate(-50%,-100%);
+}
+.house-action-card[hidden]{display:none;}
+.house-action-card small{color:#5eead4;font-size:8px;font-weight:950;letter-spacing:.12em;}
+.house-action-card strong{font-size:17px;}
+.house-action-card span{color:#dbeafe;font-size:11px;font-weight:750;}
+.house-action-card em{color:#fbbf24;font-size:10px;font-style:normal;font-weight:850;}
+.house-action-card button{
+    min-height:36px;
+    margin-top:3px;
+    padding:8px 10px;
+    border:1px solid rgba(94,234,212,.66);
+    border-radius:999px;
+    background:rgba(13,148,136,.30);
+    color:#f0fdfa;
+    font:900 10px/1.15 system-ui,sans-serif;
+    cursor:pointer;
 }
 
 .house-object-battery{
@@ -1854,6 +2006,9 @@ header p{
     border-radius:16px;
     background:rgba(15,23,42,.64);
 }
+
+.house-inspector,
+.house-component-legend{display:none;}
 
 .house-inspector-icon{
     display:grid;
@@ -2867,6 +3022,13 @@ body{
     cursor:grabbing;
 }
 
+/* Das hidden-Attribut muss auch spätere responsive display-Regeln sicher
+   überstimmen; die Werte erscheinen ausschließlich nach Objekt-Auswahl. */
+.house-inspector[hidden],
+.house-component-legend[hidden]{
+    display:none!important;
+}
+
 .animal-resource-label{
     width:116px;
 }
@@ -3055,4 +3217,11 @@ body{
         animation:none;
         opacity:.8;
     }
+}
+
+/* Globaler Abschluss: spätere Desktop- und Mobilregeln dürfen verborgene
+   Übersichtsflächen nicht wieder einblenden. */
+.house-inspector[hidden],
+.house-component-legend[hidden]{
+    display:none!important;
 }
