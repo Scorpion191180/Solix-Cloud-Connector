@@ -1188,6 +1188,33 @@ header p{
 .house-click-marker.behind{opacity:.58;}
 .house-click-marker.outside{opacity:0;pointer-events:none;}
 
+/* HTML-Overlays besitzen keinen WebGL-Tiefentest. Markierungen auf der
+   abgewandten Hausseite werden daher explizit ausgeblendet. */
+.house-scene-label.occluded,
+.house-string-label.occluded,
+.animal-resource-label.occluded,
+.animal-clean-label.occluded,
+.house-click-marker.occluded,
+.house-object-battery.occluded,
+.house-device-label.occluded{
+    visibility:hidden;
+    opacity:0!important;
+    pointer-events:none!important;
+}
+
+/* Im Baumodus gehört die gesamte Fläche dem Entwurf; Live-Markierungen der
+   ausgeblendeten Energieszene dürfen dort weder stören noch anklickbar sein. */
+.house-stage.is-building .house-scene-label,
+.house-stage.is-building .house-string-label,
+.house-stage.is-building .animal-resource-label,
+.house-stage.is-building .animal-clean-label,
+.house-stage.is-building .house-click-marker,
+.house-stage.is-building .house-object-battery,
+.house-stage.is-building .house-device-label,
+.house-stage.is-building .house-action-card{
+    display:none!important;
+}
+
 .house-action-card{
     position:absolute;
     z-index:19;

@@ -69,7 +69,7 @@ const sceneLoaderBar = document.getElementById("sceneLoaderBar");
 const sceneLoaderStatus = document.getElementById("sceneLoaderStatus");
 const sceneLoaderPercent = document.getElementById("sceneLoaderPercent");
 const sceneLoaderVersion = document.getElementById("sceneLoaderVersion");
-const APP_BUILD_VERSION = "128";
+const APP_BUILD_VERSION = "129";
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const INTERIOR_VIEW_ENABLED = false;
 
@@ -7938,7 +7938,9 @@ function createBuilderPart(item) {
             roughness: variant.style === "metal" ? 0.42 : 0.94,
             metalness: variant.style === "metal" ? 0.72 : 0
         });
-        const length = variant.length;
+        // Zäune werden wie Wände frei aufgezogen. Gespeicherte ältere Zäune
+        // ohne eigene Länge behalten weiterhin die Länge ihrer Variante.
+        const length = THREE.MathUtils.clamp(item.length || variant.length, 0.5, 28.25);
         const height = variant.height;
         const postWidth = variant.style === "metal" ? 0.09 : 0.14;
         [-length / 2, length / 2].forEach((x) =>
@@ -7952,7 +7954,7 @@ function createBuilderPart(item) {
             addBox(part, [0.13, height, 0.13], detailMaterial, [0, height / 2, 0], { radius: 0.018 });
         }
         else if (variant.style === "privacy") {
-            const slatCount = 15;
+            const slatCount = Math.max(3, Math.round(length / 0.20));
             for (let index = 0; index < slatCount; index += 1) {
                 const x = -length / 2 + (index + 0.5) * length / slatCount;
                 addBox(part, [length / slatCount * 0.88, height - 0.12, 0.075], fenceMaterial,
@@ -7964,7 +7966,7 @@ function createBuilderPart(item) {
                 [0, height + 0.02, 0], { radius: 0.018 });
         }
         else if (variant.style === "metal") {
-            const barCount = 13;
+            const barCount = Math.max(3, Math.round(length / 0.25) + 1);
             for (let index = 1; index < barCount - 1; index += 1) {
                 const x = -length / 2 + index * length / (barCount - 1);
                 addBox(part, [0.035, height - 0.10, 0.035], fenceMaterial,
@@ -7978,7 +7980,7 @@ function createBuilderPart(item) {
             [0.34, 0.76].forEach((ratio) =>
                 addBox(part, [length, 0.09, 0.11], detailMaterial,
                     [0, height * ratio, -0.035], { radius: 0.014 }));
-            const slatCount = 12;
+            const slatCount = Math.max(3, Math.round(length / 0.25));
             for (let index = 0; index < slatCount; index += 1) {
                 const x = -length / 2 + (index + 0.5) * length / slatCount;
                 const slatHeight = height - (index % 2) * 0.08;
@@ -8099,6 +8101,10 @@ function createHouseBuilder() {
     drawPreview.visible = false;
     drawPreview.renderOrder = 19;
     root.add(drawPreview);
+    const fenceDrawPreview = new THREE.Group();
+    fenceDrawPreview.name = "Zaun-Zeichenvorschau";
+    fenceDrawPreview.visible = false;
+    root.add(fenceDrawPreview);
     const builderLight = new THREE.DirectionalLight(0xfff1d7, 3.1);
     builderLight.position.set(-8, 14, 10);
     builderLight.castShadow = true;
@@ -8115,7 +8121,8 @@ function createHouseBuilder() {
         items: safeBuilderItems(), objects: new Map(), previousView: null,
         selectedId: null, selectionHelper: null, draggingId: null,
         dragStartClient: null, dragMoved: false,
-        drawing: false, drawStart: null, drawEnd: null, drawPreview,
+        drawing: false, drawType: null, drawStart: null, drawEnd: null,
+        drawPreview, fenceDrawPreview, fencePreviewSignature: "",
         drawStartSnapped: false, drawEndSnapped: false,
         placementPreview: null, placementPreviewHelper: null,
         previewSnap: null, lastHoverPointer: null, placementEnabled: true,
@@ -8171,7 +8178,10 @@ function createHouseBuilder() {
     function clearSelectionHelper() {
         if (!builder.selectionHelper)
             return;
-        builder.root.remove(builder.selectionHelper);
+        // BoxHelper berechnet seine Punkte in Weltkoordinaten. Als Kind der
+        // Baugruppe wurde deren Transform ein zweites Mal angewandt und der
+        // gelbe Rahmen stand deshalb neben dem ausgewählten Objekt.
+        scene.remove(builder.selectionHelper);
         builder.selectionHelper.geometry?.dispose?.();
         builder.selectionHelper.material?.dispose?.();
         builder.selectionHelper = null;
@@ -8211,13 +8221,14 @@ function createHouseBuilder() {
             builderSelectionTools.hidden = true;
             return;
         }
+        object.updateWorldMatrix(true, true);
         builder.selectionHelper = new THREE.BoxHelper(object, 0xfacc15);
         builder.selectionHelper.name = "Ausgewähltes Bauteil";
         builder.selectionHelper.material.depthTest = false;
         builder.selectionHelper.material.transparent = true;
         builder.selectionHelper.material.opacity = 0.96;
         builder.selectionHelper.renderOrder = 20;
-        builder.root.add(builder.selectionHelper);
+        scene.add(builder.selectionHelper);
         updateSelectionToolsPosition();
     }
 
@@ -8259,8 +8270,8 @@ function createHouseBuilder() {
 
     function startNewPart() {
         setPlacementEnabled(true);
-        selectItem(null, builderPartType.value === "wall" ?
-            "Neue Wand: Start- und Endpunkt auf dem Raster ziehen." :
+        selectItem(null, ["wall", "fence"].includes(builderPartType.value) ?
+            `${builderPartType.value === "fence" ? "Neuen Zaun" : "Neue Wand"}: Start- und Endpunkt auf dem Raster ziehen.` :
             ["window", "door"].includes(builderPartType.value) ?
                 "Neues Fenster oder neue Tür direkt auf eine Wand tippen." :
                 `${builderTypeLabel(builderPartType.value)} auf einer freien Fläche platzieren.`);
@@ -8314,7 +8325,8 @@ function createHouseBuilder() {
         refreshSelectionHelper();
         updateStatus(message || (item ?
             `${builderTypeLabel(item.type)} ausgewählt: ziehen zum Verschieben, Symbole direkt am Objekt zum Drehen oder Löschen.` :
-            builderPartType.value === "wall" ? "Neue Wand: Start- und Endpunkt auf dem Raster ziehen." :
+            ["wall", "fence"].includes(builderPartType.value) ?
+                `${builderPartType.value === "fence" ? "Neuen Zaun" : "Neue Wand"}: Start- und Endpunkt auf dem Raster ziehen.` :
                 ["window", "door"].includes(builderPartType.value) ?
                     "Fenster oder Tür wählen und direkt auf eine Wand tippen." :
                     `${builderTypeLabel(builderPartType.value)} auf einer freien Fläche platzieren.`));
@@ -8438,6 +8450,7 @@ function createHouseBuilder() {
             return;
         object.position.set(item.x, 0, item.z);
         object.rotation.y = THREE.MathUtils.degToRad(item.rotation);
+        object.updateWorldMatrix(true, true);
     }
 
     function positionOpeningOnWall(item) {
@@ -8575,6 +8588,64 @@ function createHouseBuilder() {
         return variants.find((variant) => variant.id === builderVariant.value) || variants[0];
     }
 
+    function clearFenceDrawPreview() {
+        const materials = new Set();
+        builder.fenceDrawPreview.children.slice().forEach((child) => {
+            builder.fenceDrawPreview.remove(child);
+            child.traverse((part) => {
+                part.geometry?.dispose?.();
+                const partMaterials = Array.isArray(part.material) ? part.material : [part.material];
+                partMaterials.filter(Boolean).forEach((material) => materials.add(material));
+            });
+        });
+        materials.forEach((material) => material.dispose?.());
+        builder.fenceDrawPreview.visible = false;
+        builder.fencePreviewSignature = "";
+    }
+
+    function showFenceDrawPreview(length, center, rotation) {
+        // Viertelmeter-Schritte halten die Vorschau auf dem iPhone flüssig,
+        // zeigen aber trotzdem schon beim Ziehen den gewählten echten Zaun.
+        const previewLength = THREE.MathUtils.clamp(Math.round(length * 4) / 4, 0.5, 28.25);
+        const variant = selectedVariant();
+        const signature = `${variant.id}:${builderColor.value}:${previewLength}`;
+        if (builder.fencePreviewSignature !== signature) {
+            clearFenceDrawPreview();
+            const preview = createBuilderPart({
+                id: "builder-fence-draw-preview",
+                type: "fence",
+                variant: variant.id,
+                color: builderColor.value,
+                length: previewLength,
+                rotation: 0,
+                x: 0,
+                z: 0
+            });
+            preview.traverse((child) => {
+                if (!child.isMesh)
+                    return;
+                child.castShadow = false;
+                child.receiveShadow = false;
+                child.renderOrder = 19;
+                const childMaterials = Array.isArray(child.material) ? child.material : [child.material];
+                childMaterials.filter(Boolean).forEach((material) => {
+                    material.transparent = true;
+                    material.opacity = Math.min(material.opacity ?? 1, 0.72);
+                    material.depthWrite = false;
+                    if (material.emissive) {
+                        material.emissive.set(0x0f766e);
+                        material.emissiveIntensity = 0.42;
+                    }
+                });
+            });
+            builder.fenceDrawPreview.add(preview);
+            builder.fencePreviewSignature = signature;
+        }
+        builder.fenceDrawPreview.position.set(center.x, 0, center.z);
+        builder.fenceDrawPreview.rotation.y = THREE.MathUtils.degToRad(rotation);
+        builder.fenceDrawPreview.visible = true;
+    }
+
     function disposePlacementPreview() {
         if (builder.placementPreview) {
             builder.root.remove(builder.placementPreview);
@@ -8610,7 +8681,7 @@ function createHouseBuilder() {
             x: 0,
             z: 0
         };
-        if (type === "wall")
+        if (["wall", "fence"].includes(type))
             previewItem.length = 0.5;
         const preview = createBuilderPart(previewItem);
         preview.name = `${builderTypeLabel(type)}-Platzierungsvorschau`;
@@ -8808,8 +8879,13 @@ function createHouseBuilder() {
         if (!builder.drawing || !builder.drawStart)
             return false;
         disposePlacementPreview();
+        const drawType = builder.drawType || "wall";
         const constrainedPoint = orthogonalWallPoint(builder.drawStart, point);
-        const candidateSnap = snapWallPoint(constrainedPoint);
+        const candidateSnap = drawType === "wall" ? snapWallPoint(constrainedPoint) : {
+            point: constrainedPoint,
+            snapped: false,
+            wallId: null
+        };
         const axisAlignedSnap = candidateSnap.snapped &&
             (Math.abs(candidateSnap.point.x - builder.drawStart.x) < 0.001 ||
                 Math.abs(candidateSnap.point.z - builder.drawStart.z) < 0.001);
@@ -8825,17 +8901,25 @@ function createHouseBuilder() {
         const length = THREE.MathUtils.clamp(Math.hypot(dx, dz), 0.01, 28.25);
         const variant = selectedVariant();
         const rotation = THREE.MathUtils.radToDeg(Math.atan2(-dz, dx));
-        builder.drawPreview.position.set(
+        const center = new THREE.Vector3(
             (builder.drawStart.x + builder.drawEnd.x) / 2,
-            variant.height / 2,
+            0,
             (builder.drawStart.z + builder.drawEnd.z) / 2
         );
-        builder.drawPreview.rotation.y = THREE.MathUtils.degToRad(rotation);
-        builder.drawPreview.scale.set(length, variant.height, 0.20);
-        builder.drawPreview.visible = true;
+        if (drawType === "fence") {
+            builder.drawPreview.visible = false;
+            showFenceDrawPreview(length, center, rotation);
+        }
+        else {
+            clearFenceDrawPreview();
+            builder.drawPreview.position.set(center.x, variant.height / 2, center.z);
+            builder.drawPreview.rotation.y = THREE.MathUtils.degToRad(rotation);
+            builder.drawPreview.scale.set(length, variant.height, 0.20);
+            builder.drawPreview.visible = true;
+        }
         setRotation(rotation);
-        setWallLengthControls({ type: "wall", variant: variant.id, length });
-        updateStatus(`Wandlänge: ${length.toLocaleString("de-DE", {
+        setWallLengthControls(drawType === "wall" ? { type: "wall", variant: variant.id, length } : null);
+        updateStatus(`${drawType === "fence" ? "Zaun" : "Wand"}länge: ${length.toLocaleString("de-DE", {
             minimumFractionDigits: 2, maximumFractionDigits: 2
         })} m${endpointSnap.snapped ? " · Ecke eingerastet" : ""} · loslassen zum Setzen.`);
         return true;
@@ -8846,23 +8930,27 @@ function createHouseBuilder() {
             return false;
         const start = builder.drawStart;
         const end = builder.drawEnd || builder.drawStart;
+        const drawType = builder.drawType || "wall";
         const length = Math.hypot(end.x - start.x, end.z - start.z);
         const connectedCorners = Number(builder.drawStartSnapped) + Number(builder.drawEndSnapped);
         builder.drawing = false;
+        builder.drawType = null;
         builder.drawStart = null;
         builder.drawEnd = null;
         builder.drawStartSnapped = false;
         builder.drawEndSnapped = false;
         builder.drawPreview.visible = false;
+        clearFenceDrawPreview();
         if (cancelled || length < 0.5) {
             setWallLengthControls(null);
-            updateStatus(cancelled ? "Wandzeichnung abgebrochen." : "Wand mindestens 0,50 m lang ziehen.");
+            const label = drawType === "fence" ? "Zaun" : "Wand";
+            updateStatus(cancelled ? `${label}zeichnung abgebrochen.` : `${label} mindestens 0,50 m lang ziehen.`);
             return true;
         }
         const variant = selectedVariant();
         const item = {
             id: globalThis.crypto?.randomUUID?.() || `part-${Date.now()}-${builder.items.length}`,
-            type: "wall", variant: variant.id, color: builderColor.value,
+            type: drawType, variant: variant.id, color: builderColor.value,
             length: Math.round(Math.min(length, 28.25) * 100) / 100,
             rotation: ((Math.round(THREE.MathUtils.radToDeg(Math.atan2(-(end.z - start.z), end.x - start.x)) /
                 BUILDER_ROTATION_STEP) * BUILDER_ROTATION_STEP % 360) + 360) % 360,
@@ -8872,9 +8960,10 @@ function createHouseBuilder() {
         builder.items.push(item);
         addItemObject(item);
         save();
-        selectItem(item.id, connectedCorners ?
+        const itemLabel = drawType === "fence" ? "Zaun" : "Wand";
+        selectItem(item.id, drawType === "wall" && connectedCorners ?
             `Wand mit ${item.length.toLocaleString("de-DE")} m Länge und ${connectedCorners} eingerasteten ${connectedCorners === 1 ? "Ecke" : "Ecken"} gesetzt.` :
-            `Freie Wand mit ${item.length.toLocaleString("de-DE")} m Länge gesetzt.`);
+            `${drawType === "wall" ? "Freie " : ""}${itemLabel} mit ${item.length.toLocaleString("de-DE")} m Länge gesetzt.`);
         renderer.shadowMap.needsUpdate = true;
         return true;
     }
@@ -8910,8 +8999,8 @@ function createHouseBuilder() {
         const selectedType = builderPartType.value;
         const openingType = ["window", "door"].includes(selectedType);
         const openingPlacement = openingType ? openingPlacementAtPointer(event) : null;
-        if (selectedType === "wall") {
-            updateStatus("Eine Wand wird durch Ziehen vom Start- bis zum Endpunkt erstellt.");
+        if (["wall", "fence"].includes(selectedType)) {
+            updateStatus(`${selectedType === "fence" ? "Ein Zaun" : "Eine Wand"} wird durch Ziehen vom Start- bis zum Endpunkt erstellt.`);
             return false;
         }
         if (openingType && !openingPlacement?.snap) {
@@ -8959,15 +9048,23 @@ function createHouseBuilder() {
             return false;
         const hit = builderItemHitAtPointer(event);
         const id = hit?.id || null;
-        if (builder.placementEnabled && builderPartType.value === "wall") {
+        const drawType = builderPartType.value;
+        if (builder.placementEnabled && ["wall", "fence"].includes(drawType)) {
             const point = pointerOnGround(event);
             if (!point)
                 return false;
-            const startSnap = snappedWallOrGridPoint(hit?.point || point);
+            const rawPoint = hit?.point || point;
+            const startSnap = drawType === "wall" ? snappedWallOrGridPoint(rawPoint) : {
+                point: snappedGroundPoint(rawPoint),
+                snapped: false,
+                wallId: null
+            };
             const hitItem = itemById(id);
-            const startsAtWallEnd = startSnap.snapped && hitItem?.type === "wall" && startSnap.wallId === hitItem.id;
+            const startsAtWallEnd = drawType === "wall" && startSnap.snapped &&
+                hitItem?.type === "wall" && startSnap.wallId === hitItem.id;
             if (!id || startsAtWallEnd) {
                 builder.drawing = true;
+                builder.drawType = drawType;
                 builder.drawStart = startSnap.point;
                 builder.drawEnd = builder.drawStart.clone();
                 builder.drawStartSnapped = startSnap.snapped;
@@ -9086,11 +9183,15 @@ function createHouseBuilder() {
         if (!active) {
             builder.cameraNavigation = false;
             builderSelectionTools.hidden = true;
+            if (builder.selectionHelper)
+                builder.selectionHelper.visible = false;
             leavePlacementPreview();
             houseInstructions.textContent = "Ziehen: drehen · Zwei Finger/Rechtsklick: verschieben · Zoom: Details";
         }
         if (active) {
             builder.cameraNavigation = false;
+            if (builder.selectionHelper)
+                builder.selectionHelper.visible = true;
             builder.previousView = {
                 yaw: state.targetYaw, pitch: state.targetPitch,
                 panX: state.targetPanX, panY: state.targetPanY, zoom: state.targetZoom
@@ -9167,8 +9268,8 @@ function createHouseBuilder() {
         refreshVariants();
         setWallLengthControls(null);
         refreshPlacementPreview();
-        updateStatus(builderPartType.value === "wall" ?
-            "Neue Wand: auf dem Raster vom Start- bis zum Endpunkt ziehen." :
+        updateStatus(["wall", "fence"].includes(builderPartType.value) ?
+            `${builderPartType.value === "fence" ? "Neuen Zaun" : "Neue Wand"}: auf dem Raster vom Start- bis zum Endpunkt ziehen.` :
             ["window", "door"].includes(builderPartType.value) ?
                 `${builderTypeLabel(builderPartType.value)}: direkt auf eine Wand tippen.` :
                 `${builderTypeLabel(builderPartType.value)}: freie Stelle auf dem Grundstück antippen.`);
@@ -11921,6 +12022,34 @@ function updateCutawayMode(delta = 0.016) {
     stage.dataset.detailLevel = detailLevel;
 }
 
+// DOM-Markierungen werden nicht von WebGL verdeckt. Ein günstiger Sichttest
+// gegen den geschlossenen Hauskörper verhindert deshalb, dass Lichtpunkte der
+// abgewandten Grundstücksseite durch Wände und Dach hindurchscheinen.
+const markerHouseBox = new THREE.Box3(
+    new THREE.Vector3(-HOUSE_WIDTH / 2 - 0.15, 0.12, -HOUSE_LENGTH / 2 - 0.15),
+    new THREE.Vector3(HOUSE_WIDTH / 2 + 0.15, 7.10, HOUSE_LENGTH / 2 + 0.15)
+);
+const markerOcclusionRay = new THREE.Ray();
+const markerOcclusionCamera = new THREE.Vector3();
+const markerOcclusionAnchor = new THREE.Vector3();
+const markerOcclusionHit = new THREE.Vector3();
+
+function markerHiddenByHouse(worldAnchor) {
+    world.updateWorldMatrix(true, false);
+    markerOcclusionCamera.copy(camera.position);
+    world.worldToLocal(markerOcclusionCamera);
+    markerOcclusionAnchor.copy(worldAnchor);
+    world.worldToLocal(markerOcclusionAnchor);
+    const anchorDistance = markerOcclusionCamera.distanceTo(markerOcclusionAnchor);
+    if (anchorDistance < 0.35)
+        return false;
+    markerOcclusionRay.origin.copy(markerOcclusionCamera);
+    markerOcclusionRay.direction.copy(markerOcclusionAnchor)
+        .sub(markerOcclusionCamera).normalize();
+    const hit = markerOcclusionRay.intersectBox(markerHouseBox, markerOcclusionHit);
+    return Boolean(hit && markerOcclusionCamera.distanceTo(hit) < anchorDistance - 0.30);
+}
+
 function updateLabelPositions() {
     const rect = stage.getBoundingClientRect();
     const rootPosition = new THREE.Vector3();
@@ -11932,6 +12061,7 @@ function updateLabelPositions() {
     Object.entries(animalResourceLabelAnchors).forEach(([id, anchorInfo]) => {
         const anchor = anchorInfo.object.localToWorld(anchorInfo.offset.clone());
         const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
+        const occluded = markerHiddenByHouse(anchor);
         const projected = anchor.project(camera);
         const rawX = (projected.x * 0.5 + 0.5) * rect.width;
         const rawY = (-projected.y * 0.5 + 0.5) * rect.height;
@@ -11942,6 +12072,7 @@ function updateLabelPositions() {
             0.72 + state.zoom * 0.25, 0.90, 1.34
         ));
         element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
+        element.classList.toggle("occluded", occluded);
         element.classList.toggle("outside", rawX < -60 || rawX > rect.width + 60 ||
             rawY < -50 || rawY > rect.height + 50);
     });
@@ -11952,6 +12083,7 @@ function updateLabelPositions() {
         droppingAnchor.y = 0.82;
         const anchor = world.localToWorld(droppingAnchor);
         const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
+        const occluded = markerHiddenByHouse(anchor);
         const projected = anchor.project(camera);
         const rawX = (projected.x * 0.5 + 0.5) * rect.width;
         const rawY = (-projected.y * 0.5 + 0.5) * rect.height;
@@ -11961,12 +12093,14 @@ function updateLabelPositions() {
             0.72 + state.zoom * 0.25, 0.90, 1.34
         ));
         animalCleanLabel.classList.toggle("behind", cameraSpace.z > rootPosition.z);
+        animalCleanLabel.classList.toggle("occluded", occluded);
         animalCleanLabel.classList.toggle("outside", rawX < -70 || rawX > rect.width + 70 ||
             rawY < -55 || rawY > rect.height + 55);
     }
     Object.entries(labelAnchors).forEach(([id, localAnchor]) => {
         const anchor = world.localToWorld(localAnchor.clone());
         const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
+        const occluded = markerHiddenByHouse(anchor);
         const projected = anchor.project(camera);
         const rawX = (projected.x * 0.5 + 0.5) * rect.width;
         const rawY = (-projected.y * 0.5 + 0.5) * rect.height;
@@ -11983,6 +12117,7 @@ function updateLabelPositions() {
         element.style.left = x + "px";
         element.style.top = y + "px";
         element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
+        element.classList.toggle("occluded", occluded);
         element.classList.toggle("outside", rawX < -110 || rawX > rect.width + 110 || rawY < -70 || rawY > rect.height + 70);
         // In der Übersicht bleiben die Karten kompakt. Ab dem Nahzoom wächst
         // dagegen die komplette Anzeige samt Status- und Detailzeilen deutlich
@@ -12004,6 +12139,7 @@ function updateLabelPositions() {
     [...pvPanelAnchors, ...secondaryPvPanelAnchors].forEach((panel) => {
         const anchor = world.localToWorld(panel.anchor.clone());
         const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
+        const occluded = markerHiddenByHouse(anchor);
         const projected = anchor.project(camera);
         const rawX = (projected.x * 0.5 + 0.5) * rect.width;
         const rawY = (-projected.y * 0.5 + 0.5) * rect.height;
@@ -12021,6 +12157,7 @@ function updateLabelPositions() {
             expanded ? 1.14 : 1.65
         ));
         element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
+        element.classList.toggle("occluded", occluded);
         element.classList.toggle("outside", rawX < -45 || rawX > rect.width + 45 || rawY < -30 || rawY > rect.height + 30);
     });
 
@@ -12028,6 +12165,7 @@ function updateLabelPositions() {
         const localAnchor = definition.anchor();
         const anchor = world.localToWorld(localAnchor.clone());
         const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
+        const occluded = markerHiddenByHouse(anchor);
         const projected = anchor.project(camera);
         const rawX = (projected.x * 0.5 + 0.5) * rect.width;
         const rawY = (-projected.y * 0.5 + 0.5) * rect.height;
@@ -12039,6 +12177,7 @@ function updateLabelPositions() {
         marker.style.top = THREE.MathUtils.clamp(rawY, 18, rect.height - 18) + "px";
         marker.classList.toggle("selected", state.actionTarget === id);
         marker.classList.toggle("behind", cameraSpace.z > rootPosition.z);
+        marker.classList.toggle("occluded", occluded);
         marker.classList.toggle("outside", outside || vehicle?.location === "away");
         marker.style.setProperty("--click-marker-scale", THREE.MathUtils.clamp(
             0.84 + state.zoom * 0.12, 0.92, 1.20
@@ -12052,6 +12191,7 @@ function updateLabelPositions() {
     Object.entries(objectBatteryAnchors).forEach(([id, localAnchor]) => {
         const anchor = world.localToWorld(localAnchor.clone());
         const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
+        const occluded = markerHiddenByHouse(anchor);
         const projected = anchor.project(camera);
         const x = THREE.MathUtils.clamp((projected.x * 0.5 + 0.5) * rect.width, 26, rect.width - 26);
         const y = THREE.MathUtils.clamp((-projected.y * 0.5 + 0.5) * rect.height, 38, rect.height - 48);
@@ -12060,11 +12200,13 @@ function updateLabelPositions() {
         element.style.top = y + "px";
         element.style.setProperty("--object-battery-scale", THREE.MathUtils.clamp(0.74 + state.zoom * 0.20, 0.94, 1.22));
         element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
+        element.classList.toggle("occluded", occluded);
     });
 
     interiorHouse.devices.forEach((device) => {
         const anchor = world.localToWorld(device.anchor.clone());
         const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
+        const occluded = markerHiddenByHouse(anchor);
         const projected = anchor.project(camera);
         const element = interiorDeviceElements[device.id];
         element.style.left = THREE.MathUtils.clamp(
@@ -12075,6 +12217,7 @@ function updateLabelPositions() {
         ) + "px";
         element.style.setProperty("--device-label-scale", THREE.MathUtils.clamp(0.60 + state.zoom * 0.34, 1.02, 1.58));
         element.classList.toggle("behind", cameraSpace.z > rootPosition.z);
+        element.classList.toggle("occluded", occluded);
     });
 }
 
@@ -12475,8 +12618,10 @@ function animate(time) {
     state.panX = THREE.MathUtils.damp(state.panX, state.targetPanX, 10, delta);
     state.panY = THREE.MathUtils.damp(state.panY, state.targetPanY, 10, delta);
     state.zoom = THREE.MathUtils.damp(state.zoom, state.targetZoom, 10, delta);
-    if (houseBuilder.active)
+    if (houseBuilder.active) {
         houseBuilder.root.rotation.y = state.yaw;
+        houseBuilder.selectionHelper?.update();
+    }
     else
         world.rotation.y = state.yaw;
     updateCameraTransform();

@@ -21,8 +21,8 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260905-128", dashboard)
-        self.assertIn("house.js?v=20260905-128", dashboard)
+        self.assertIn("style.css?v=20260906-129", dashboard)
+        self.assertIn("house.js?v=20260906-129", dashboard)
         self.assertIn("app.js?v=20260821-96", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
@@ -627,8 +627,8 @@ class DashboardSchematicTests(unittest.TestCase):
         ):
             self.assertIn(f'id="{element_id}"', dashboard)
 
-        self.assertIn('const APP_BUILD_VERSION = "128"', script)
-        self.assertIn("Version 128", dashboard)
+        self.assertIn('const APP_BUILD_VERSION = "129"', script)
+        self.assertIn("Version 129", dashboard)
 
         self.assertIn('targetFps: 30, pixelRatio: 1.15', script)
         self.assertIn('targetFps: 24, pixelRatio: 1', script)
@@ -659,6 +659,10 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('function snapOpeningToWall(item, rawX, rawZ, onlyWallId = null)', script)
         self.assertIn('function updateWallPreview(point)', script)
         self.assertIn('function finishWallDrawing(cancelled = false)', script)
+        self.assertIn('fenceDrawPreview.name = "Zaun-Zeichenvorschau"', script)
+        self.assertIn('function showFenceDrawPreview(length, center, rotation)', script)
+        self.assertIn('["wall", "fence"].includes(drawType)', script)
+        self.assertIn('builder.drawType = drawType', script)
         self.assertIn('function positionOpeningOnWall(item)', script)
         self.assertIn('function updateAttachedOpenings(wallId)', script)
         self.assertIn('id: "wall-custom-standard"', script)
@@ -683,6 +687,8 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('function beginPointer(event)', script)
         self.assertIn('function movePointer(event)', script)
         self.assertIn('builder.selectionHelper = new THREE.BoxHelper', script)
+        self.assertIn('scene.add(builder.selectionHelper)', script)
+        self.assertIn('scene.remove(builder.selectionHelper)', script)
         self.assertIn('function updateSelectionToolsPosition()', script)
         self.assertIn('builderSelectionDelete.addEventListener("click", deleteSelection)', script)
         self.assertIn('window.solixHouseBuilder', script)
@@ -715,6 +721,10 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertNotIn(".house-stage.is-interacting .house-scene-label", stylesheet)
         self.assertIn("rgba(7,15,27,.58)", stylesheet)
         self.assertIn("rgba(7,15,27,.50)", stylesheet)
+        self.assertIn('function markerHiddenByHouse(worldAnchor)', script)
+        self.assertIn('classList.toggle("occluded", occluded)', script)
+        self.assertIn('.house-click-marker.occluded', stylesheet)
+        self.assertIn('.house-stage.is-building .house-click-marker', stylesheet)
 
     def test_garages_domestic_fleet_and_on_demand_cards_are_available(self) -> None:
         dashboard = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
