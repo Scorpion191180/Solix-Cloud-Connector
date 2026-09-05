@@ -69,7 +69,7 @@ const sceneLoaderBar = document.getElementById("sceneLoaderBar");
 const sceneLoaderStatus = document.getElementById("sceneLoaderStatus");
 const sceneLoaderPercent = document.getElementById("sceneLoaderPercent");
 const sceneLoaderVersion = document.getElementById("sceneLoaderVersion");
-const APP_BUILD_VERSION = "120";
+const APP_BUILD_VERSION = "121";
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const INTERIOR_VIEW_ENABLED = false;
 
@@ -4883,7 +4883,7 @@ function createRottweilerLeg(parent, x, z, phase, black, tan) {
     return { rig, lowerRig, upper, paw, phase };
 }
 
-function tuneRottweilerMaterials(model) {
+function tuneRottweilerMaterials(model, preserveTexturedPalette = false) {
     const palette = {
         "material": 0x171312,
         "dark": 0x050505,
@@ -4909,13 +4909,20 @@ function tuneRottweilerMaterials(model) {
         const tuned = sourceMaterials.map((source) => {
             const material = source.clone();
             const name = (material.name || "").toLowerCase();
-            if (palette[name] != null)
+            if (!preserveTexturedPalette && palette[name] != null)
                 material.color.setHex(palette[name]);
-            material.metalness = 0;
-            material.roughness = name === "material.003" ? 0.28 :
-                name === "material.005" ? 0.64 :
-                    ["fell", "hair2"].includes(name) ? 0.56 :
-                        ["schnauze", "ear"].includes(name) ? 0.66 : 0.76;
+            if (preserveTexturedPalette && material.map) {
+                material.metalness = Math.min(material.metalness ?? 0, 0.08);
+                material.roughness = THREE.MathUtils.clamp(
+                    material.roughness ?? 0.72, 0.48, 0.86);
+            }
+            else {
+                material.metalness = 0;
+                material.roughness = name === "material.003" ? 0.28 :
+                    name === "material.005" ? 0.64 :
+                        ["fell", "hair2"].includes(name) ? 0.56 :
+                            ["schnauze", "ear"].includes(name) ? 0.66 : 0.76;
+            }
             material.transparent = false;
             material.opacity = 1;
             material.depthWrite = true;
@@ -4941,7 +4948,7 @@ function createDogActions(mixer, animations) {
         idle: dogClipByWords(animations, ["idle1", "idle ear", "idle"]),
         walk: dogClipByWords(animations, ["walkcycle", "walk", "run"]),
         run: dogClipByWords(animations, ["runcycle", "run"]),
-        sleep: dogClipByWords(animations, ["idle liedown", "laydown", "lie", "die"]),
+        sleep: dogClipByWords(animations, ["idle liedown", "laydown", "lie", "sit", "rest_pose", "rest pose", "die"]),
         bark: dogClipByWords(animations, ["bark", "attack"]),
         jump: dogClipByWords(animations, ["jump", "attack2"]),
         flinch: dogClipByWords(animations, ["flinch"])
@@ -4987,9 +4994,11 @@ function installDetailedRottweiler(dogState, gltf, assetKind) {
     let bounds = new THREE.Box3().setFromObject(model);
     const size = bounds.getSize(new THREE.Vector3());
     const horizontalLength = Math.max(size.x, size.z, 0.001);
-    // Etwa 1,24 m von Rute bis Schnauze: kräftig, aber weiterhin im
-    // korrekten Verhältnis zu Audi, Pferd und Futterstation.
-    model.scale.setScalar(1.24 / horizontalLength);
+    // Das neue fotorealistische Modell ist ohne lange Rute vermessen und wird
+    // deshalb etwas kompakter skaliert. Die älteren Fallbacks behalten ihre
+    // bisherige Länge im Verhältnis zu Audi, Pferd und Futterstation.
+    const targetLength = assetKind === "meshy-m2m-rigged" ? 1.12 : 1.24;
+    model.scale.setScalar(targetLength / horizontalLength);
     model.updateMatrixWorld(true);
     bounds = new THREE.Box3().setFromObject(model);
     const center = bounds.getCenter(new THREE.Vector3());
@@ -4998,7 +5007,7 @@ function installDetailedRottweiler(dogState, gltf, assetKind) {
     model.position.x -= center.x;
     model.position.y -= bounds.min.y + bodyPivotY;
     model.position.z -= center.z;
-    tuneRottweilerMaterials(model);
+    tuneRottweilerMaterials(model, assetKind === "meshy-m2m-rigged");
     // Das neue Ausgangsmodell ist bereits ein echter, kompakter Rottweiler.
     // Seine Proportionen bleiben deshalb unangetastet; nur die Gesamtlänge
     // wird an Grundstück, Fahrzeuge und Futterstationen angeglichen.
@@ -5022,7 +5031,7 @@ function installDetailedRottweiler(dogState, gltf, assetKind) {
     setDogAnimation(dogState, "idle", 0);
 }
 
-function loadDetailedRottweilerFallback(dogState) {
+function loadStaticRottweilerFallback(dogState) {
     vehicleLoader.load("/static/models/rottweiler/scene.gltf?v=108", (gltf) => {
         installDetailedRottweiler(dogState, gltf, "static-fallback");
     }, undefined, () => {
@@ -5032,12 +5041,21 @@ function loadDetailedRottweilerFallback(dogState) {
     });
 }
 
-function loadDetailedRottweiler(dogState) {
+function loadBennyRottweilerFallback(dogState) {
     vehicleLoader.load(
         "/static/models/rottweiler-benny/rottweiler-animated.glb?v=112",
         (gltf) => installDetailedRottweiler(dogState, gltf, "benny-rigged"),
         undefined,
-        () => loadDetailedRottweilerFallback(dogState)
+        () => loadStaticRottweilerFallback(dogState)
+    );
+}
+
+function loadDetailedRottweiler(dogState) {
+    vehicleLoader.load(
+        "/static/models/rottweiler-meshy/rottweiler-realistic-animated.glb?v=121",
+        (gltf) => installDetailedRottweiler(dogState, gltf, "meshy-m2m-rigged"),
+        undefined,
+        () => loadBennyRottweilerFallback(dogState)
     );
 }
 
@@ -5281,7 +5299,8 @@ function animateRottweilerPose(dogState, seconds, delta, moving, running) {
     if (dogState.detailedModel) {
         const standY = dogState.detailedRig.userData.standY || 0.30;
         const gait = moving ? Math.sin(dogState.travelled * (running ? 12.2 : 8.6)) : 0;
-        const rigged = dogState.assetKind === "benny-rigged" && dogState.mixer;
+        const rigged = ["meshy-m2m-rigged", "benny-rigged"].includes(dogState.assetKind) &&
+            dogState.mixer;
         if (rigged) {
             setDogAnimation(dogState, sleeping ? "sleep" : jumping ? "jump" :
                 barking ? "bark" : moving ? (running ? "run" : "walk") : "idle");

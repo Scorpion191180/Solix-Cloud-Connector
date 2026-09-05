@@ -1,0 +1,17 @@
+Asset: Realistic animated Rottweiler
+Meshy task: 01a06e2e-271e-70f3-a151-7326ae4876e0
+Created: 2026-09-05
+Model license: Creative Commons Attribution 4.0 International (CC BY 4.0)
+License URL: https://creativecommons.org/licenses/by/4.0/
+
+The textured source mesh was generated with Meshy AI from an AI-created
+black-and-tan Rottweiler turnaround. It does not contain a texture copied from
+a private photograph.
+
+The rig and animation clips were added with Mesh2Motion. Mesh2Motion's rig and
+animation assets are dedicated to the public domain under CC0 1.0:
+https://creativecommons.org/publicdomain/zero/1.0/
+https://github.com/Mesh2Motion/mesh2motion-app
+
+For this web application the mesh was simplified, its textures were resized,
+and geometry and animation data were compressed with meshoptimizer.

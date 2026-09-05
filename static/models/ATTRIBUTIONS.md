@@ -39,13 +39,19 @@ original downloads.
   ACTG, dedicated to the public domain under
   [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The active
   adult asset contains separate idle, walking and flying clips.
-- **Animated Rottweiler** — the active rigged model is based on
-  [“Stylized Low Poly German Shepherd”](https://sketchfab.com/3d-models/stylized-low-poly-german-shepherd-18d8fbe184c5448283762893b6ea9752)
-  by [DreamNoms](https://sketchfab.com/DreamNoms), licensed under
-  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The app retains
-  the original idle, walk, run and lying-down animation clips and adjusts the
-  proportions and material palette toward a compact black-and-tan Rottweiler.
-  The lightweight loading fallback is based on
+- **Animated Rottweiler** — the active model was generated with Meshy AI from
+  an AI-created black-and-tan Rottweiler turnaround (Meshy task
+  `01a06e2e-271e-70f3-a151-7326ae4876e0`) and is licensed under
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Rigging and the
+  idle, walk, run, sit, bark and other animation clips are derived from the
+  [Mesh2Motion assets](https://github.com/Mesh2Motion/mesh2motion-app),
+  dedicated to the public domain under
+  [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The model was
+  simplified, texture-resized and meshopt-compressed for mobile devices. The
+  first animated fallback is “Benny, the Rottweiler” by umask007 from
+  [OpenGameArt](https://opengameart.org/content/benny-the-rottweiler), licensed
+  under [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/). The
+  final lightweight fallback is based on
   [“Rottweiler Low Poly”](https://sketchfab.com/3d-models/rottweiler-low-poly-d541f1198f1241d6a466dc49eca084a3)
   by [toofball](https://sketchfab.com/picklecobra), licensed under
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).

@@ -21,8 +21,8 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260904-120", dashboard)
-        self.assertIn("house.js?v=20260904-120", dashboard)
+        self.assertIn("style.css?v=20260905-121", dashboard)
+        self.assertIn("house.js?v=20260905-121", dashboard)
         self.assertIn("app.js?v=20260821-96", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
@@ -549,6 +549,9 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("function animateDog", script)
         self.assertIn("function playDogBark", script)
         self.assertIn("function loadDetailedRottweiler", script)
+        self.assertIn('rottweiler-meshy/rottweiler-realistic-animated.glb?v=121', script)
+        self.assertIn('"meshy-m2m-rigged"', script)
+        self.assertIn('tuneRottweilerMaterials(model, assetKind === "meshy-m2m-rigged")', script)
         self.assertIn('rottweiler-benny/rottweiler-animated.glb?v=112', script)
         self.assertIn('rottweiler/scene.gltf?v=108', script)
         self.assertIn('new Audio("/static/sounds/rottweiler-barking.ogg?v=108")', script)
@@ -582,6 +585,13 @@ class DashboardSchematicTests(unittest.TestCase):
                                "rottweiler-benny" / "rottweiler-animated.glb")
         self.assertTrue(animated_rottweiler.exists())
         self.assertLess(animated_rottweiler.stat().st_size, 400_000)
+        realistic_rottweiler = (ROOT / "static" / "models" /
+                                "rottweiler-meshy" /
+                                "rottweiler-realistic-animated.glb")
+        self.assertTrue(realistic_rottweiler.exists())
+        self.assertLess(realistic_rottweiler.stat().st_size, 1_000_000)
+        self.assertTrue((ROOT / "static" / "models" /
+                         "rottweiler-meshy" / "LICENSE.txt").exists())
         self.assertIn("Benny, the Rottweiler", (ROOT / "THIRD_PARTY_NOTICES.md").read_text())
         self.assertIn("Benny, the Rottweiler", (ROOT / "templates" / "index.html").read_text())
         self.assertNotIn('bird-swamphen-nestling.glb?v=', script)
@@ -613,8 +623,8 @@ class DashboardSchematicTests(unittest.TestCase):
         ):
             self.assertIn(f'id="{element_id}"', dashboard)
 
-        self.assertIn('const APP_BUILD_VERSION = "120"', script)
-        self.assertIn("Version 120", dashboard)
+        self.assertIn('const APP_BUILD_VERSION = "121"', script)
+        self.assertIn("Version 121", dashboard)
 
         self.assertIn('targetFps: 30, pixelRatio: 1.15', script)
         self.assertIn('targetFps: 24, pixelRatio: 1', script)

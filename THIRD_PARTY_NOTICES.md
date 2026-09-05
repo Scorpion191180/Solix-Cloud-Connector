@@ -32,10 +32,27 @@ for the sparrow-sized garden visitors:
 - License: Creative Commons Attribution 4.0 (CC BY 4.0)
 - License text: https://creativecommons.org/licenses/by/4.0/
 
+## Realistic animated Rottweiler
+
+The primary courtyard-dog model in
+`static/models/rottweiler-meshy/rottweiler-realistic-animated.glb` was
+generated with Meshy AI from an AI-created Rottweiler turnaround:
+
+- Meshy task: `01a06e2e-271e-70f3-a151-7326ae4876e0`
+- Model license: Creative Commons Attribution 4.0 (CC BY 4.0)
+- License text: https://creativecommons.org/licenses/by/4.0/
+- Rig and animations: Mesh2Motion, CC0 1.0
+- Mesh2Motion source: https://github.com/Mesh2Motion/mesh2motion-app
+
+The model was simplified, texture-resized and meshopt-compressed for mobile
+rendering. Its bundled rig contains idle, walk, run, sit, bark, jump and other
+animation clips.
+
 ## Rottweiler Low Poly
 
-The Rottweiler model in `static/models/rottweiler/` is used for the courtyard
-dog and is recolored and procedurally animated by the web application:
+The Rottweiler model in `static/models/rottweiler/` is retained as the final
+lightweight loading fallback and is recolored and procedurally animated by the
+web application:
 
 - Author: toofball
 - Source: https://sketchfab.com/3d-models/rottweiler-low-poly-d541f1198f1241d6a466dc49eca084a3
@@ -44,7 +61,7 @@ dog and is recolored and procedurally animated by the web application:
 
 ## Benny, the Rottweiler
 
-The primary animated Rottweiler model in
+The first animated fallback in
 `static/models/rottweiler-benny/rottweiler-animated.glb` is based on:
 
 - Author: umask007
