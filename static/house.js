@@ -69,7 +69,7 @@ const sceneLoaderBar = document.getElementById("sceneLoaderBar");
 const sceneLoaderStatus = document.getElementById("sceneLoaderStatus");
 const sceneLoaderPercent = document.getElementById("sceneLoaderPercent");
 const sceneLoaderVersion = document.getElementById("sceneLoaderVersion");
-const APP_BUILD_VERSION = "126";
+const APP_BUILD_VERSION = "127";
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const INTERIOR_VIEW_ENABLED = false;
 

@@ -356,7 +356,7 @@ class WeatherClient:
                     "stale": True,
                     "timezone": self.timezone,
                     "error": "Hauskoordinaten für Wetter sind nicht eingerichtet",
-                    "source": data.get("_source") or "Open-Meteo",
+                    "source": "Open-Meteo / Bright Sky (DWD)",
                 }
             now = time.monotonic()
             if (
@@ -386,7 +386,7 @@ class WeatherClient:
                     "wind_direction_deg": current.get("wind_direction_10m"),
                     "sunrise": (daily.get("sunrise") or [None])[0],
                     "sunset": (daily.get("sunset") or [None])[0],
-                    "source": "Open-Meteo",
+                    "source": data.get("_source") or "Open-Meteo",
                     "error": None,
                 }
                 self._last_payload = payload

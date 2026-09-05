@@ -50,6 +50,33 @@ class CelestialSnapshotTests(unittest.TestCase):
 
 
 class WeatherFallbackTests(unittest.IsolatedAsyncioTestCase):
+    async def test_missing_coordinates_return_a_safe_unavailable_payload(self):
+        client = WeatherClient()
+        client.latitude = None
+        client.longitude = None
+
+        data = await client.get_live()
+
+        self.assertFalse(data["available"])
+        self.assertTrue(data["stale"])
+        self.assertIn("nicht eingerichtet", data["error"])
+
+    async def test_get_live_keeps_the_fallback_provider_name(self):
+        client = WeatherClient()
+        client.latitude = 48.46991
+        client.longitude = 8.44543
+        fallback = {
+            "_source": "Bright Sky (DWD)",
+            "timezone": "Europe/Berlin",
+            "current": {"temperature_2m": 20.9},
+            "daily": {},
+        }
+        with patch.object(client, "_fetch_data", AsyncMock(return_value=fallback)):
+            data = await client.get_live()
+
+        self.assertTrue(data["available"])
+        self.assertEqual(data["source"], "Bright Sky (DWD)")
+
     async def test_httpx_fallback_returns_weather_if_aiohttp_fails(self):
         client = WeatherClient()
         client.latitude = 48.46991
