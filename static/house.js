@@ -69,7 +69,7 @@ const sceneLoaderBar = document.getElementById("sceneLoaderBar");
 const sceneLoaderStatus = document.getElementById("sceneLoaderStatus");
 const sceneLoaderPercent = document.getElementById("sceneLoaderPercent");
 const sceneLoaderVersion = document.getElementById("sceneLoaderVersion");
-const APP_BUILD_VERSION = "129";
+const APP_BUILD_VERSION = "132";
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const INTERIOR_VIEW_ENABLED = false;
 
@@ -396,6 +396,8 @@ const animalDroppings = [];
 const urinePatches = [];
 const animalDemoMode = new URLSearchParams(window.location.search).get("animal_demo") === "1";
 const animalFocusMode = new URLSearchParams(window.location.search).get("animal_focus");
+const dogDemoMode = new URLSearchParams(window.location.search).get("dog_demo");
+const dogHeadDemoAxis = new URLSearchParams(window.location.search).get("dog_head_axis");
 let nextCamelHerdRestAt = animalDemoMode ? 10 : 160;
 let camelHerdRestSerial = 0;
 let camelHerdRestDeadline = 0;
@@ -802,9 +804,14 @@ function applySharedAnimalMotion(motion) {
             return;
         incomingIds.add(pose.id);
         const previous = animalMotionTargets.get(pose.id);
+        const dogStateUnchanged = pose.id === "dog" && previous &&
+            previous.state === pose.state && previous.animation === pose.animation &&
+            Math.abs(safeMotionNumber(previous.target_x) - safeMotionNumber(pose.target_x)) < 0.08 &&
+            Math.abs(safeMotionNumber(previous.target_z) - safeMotionNumber(pose.target_z)) < 0.08;
         animalMotionTargets.set(pose.id, {
             ...pose,
-            snap: !previous
+            snap: !previous,
+            dogStateApplied: dogStateUnchanged ? previous.dogStateApplied : false
         });
     });
     for (const id of animalMotionTargets.keys()) {
@@ -873,15 +880,16 @@ function reconcileSharedAnimalMotion(delta) {
             if (pose.animation)
                 setBirdAnimation(animal.value, pose.animation, 0.16);
         }
-        else if (animal.kind === "dog" && pose.state) {
+        else if (animal.kind === "dog" && pose.state && !pose.dogStateApplied) {
             animal.value.mode = String(pose.state);
             animal.value.modeUntil = performance.now() / 1000 +
-                Math.max(0, safeMotionNumber(pose.state_remaining));
+                Math.max(0, safeMotionNumber(pose.state_remaining) - sampleAge);
             if (pose.target_x != null)
                 animal.value.target.set(
                     safeMotionNumber(pose.target_x), 0,
                     safeMotionNumber(pose.target_z)
                 );
+            pose.dogStateApplied = true;
         }
     });
 }
@@ -3898,7 +3906,7 @@ function createGoldfishPond() {
     }
 }
 
-function horseCanStandAt(x, z) {
+function horseCanStandAt(x, z, ignoreDogStations = false) {
     if (!pointInPolygon(x, z, PROPERTY_BOUNDARY))
         return false;
     const inStablePassage = x > -4.45 && x < -0.32 && Math.abs(z + 1.58) < 0.78;
@@ -3938,7 +3946,8 @@ function horseCanStandAt(x, z) {
     ];
     const atLandscape = landscapeObstacles.some(([obstacleX, obstacleZ, radius]) =>
         Math.hypot(x - obstacleX, z - obstacleZ) < radius + 0.72);
-    const atCareStation = animalCareStationBlocksAnimal(x, z, 0.42, true);
+    const atCareStation = animalCareStationBlocksAnimal(
+        x, z, 0.42, true, !ignoreDogStations);
     return !(onHouse || atPool || atPond || atPergola || atAudi || atParkedCars ||
         atLandscape || atCareStation);
 }
@@ -4794,8 +4803,10 @@ const DOG_CARE_STATIONS = Object.freeze({
     // Direkt neben der braunen Haustür auf der Pool-/Hofseite.
     food: [-4.02, 0, 0.92],
     water: [-4.02, 0, 2.74],
-    foodTarget: [-5.02, 0, 0.92],
-    waterTarget: [-5.02, 0, 2.74]
+    // So nah, dass die Schnauze tatsächlich bis in den Napf reicht, der
+    // Körper den Napf aber weiterhin nicht berührt.
+    foodTarget: [-4.78, 0, 0.92],
+    waterTarget: [-4.78, 0, 2.74]
 });
 
 function createDogBowl(position, resourceKey, stationId, food = false) {
@@ -4952,13 +4963,15 @@ function pointInRotatedStation(x, z, position, rotation, clearance = 0) {
     return Math.abs(localX) < 0.72 + clearance && Math.abs(localZ) < 0.56 + clearance;
 }
 
-function animalCareStationBlocksAnimal(x, z, clearance = 0, includeHorseStations = false) {
+function animalCareStationBlocksAnimal(x, z, clearance = 0, includeHorseStations = false,
+    includeDogStations = true) {
     const camelStation = [...CAMEL_CARE_STATIONS.water, ...CAMEL_CARE_STATIONS.hay]
         .some((station) => pointInRotatedStation(x, z, station.model, station.rotation, clearance));
     if (camelStation)
         return true;
-    const dogStation = [DOG_CARE_STATIONS.food, DOG_CARE_STATIONS.water]
-        .some((station) => Math.hypot(x - station[0], z - station[2]) < 0.38 + clearance);
+    const dogStation = includeDogStations &&
+        [DOG_CARE_STATIONS.food, DOG_CARE_STATIONS.water]
+            .some((station) => Math.hypot(x - station[0], z - station[2]) < 0.38 + clearance);
     if (dogStation)
         return true;
     if (!includeHorseStations)
@@ -5103,13 +5116,43 @@ function tuneRottweilerMaterials(model, preserveTexturedPalette = false) {
 
 function dogClipByWords(animations, words) {
     const loweredWords = words.map((word) => word.toLowerCase());
-    return animations.find((clip) => {
-        const name = (clip.name || "").toLowerCase();
-        return loweredWords.some((word) => name === word || name.includes(word));
-    }) || null;
+    // Die Reihenfolge der Wunschbegriffe ist wichtig: Zuerst wird z. B. exakt
+    // "Walk" gesucht. Zuvor traf die Suche beim Gehen bereits auf "Run", weil
+    // dieser Clip in der Datei vor "Walk" steht. Dadurch sah normales Laufen
+    // wie ein verlangsamter Galopp aus.
+    for (const word of loweredWords) {
+        const exact = animations.find((clip) =>
+            (clip.name || "").toLowerCase() === word);
+        if (exact)
+            return exact;
+    }
+    for (const word of loweredWords) {
+        const partial = animations.find((clip) =>
+            (clip.name || "").toLowerCase().includes(word));
+        if (partial)
+            return partial;
+    }
+    return null;
 }
 
-function createDogActions(mixer, animations) {
+function prepareDogClip(sourceClip, name, assetKind, walkUsesRun) {
+    const needsOwnClip = walkUsesRun || assetKind === "meshy-m2m-rigged";
+    const clip = needsOwnClip ? sourceClip.clone() : sourceClip;
+    if (assetKind === "meshy-m2m-rigged") {
+        // Die automatisch erzeugte Skelettanimation klappt die vier Ohrknochen
+        // in einzelnen Frames extrem weit auf. Die natürliche Ohrform des
+        // Ausgangsmodells bleibt stabiler, wenn nur diese Tracks entfallen.
+        clip.tracks = clip.tracks.filter((track) =>
+            !/(^|[.])Ear(?:_Tip)?_[LR][.]/i.test(track.name || ""));
+    }
+    if (walkUsesRun)
+        clip.name = `${sourceClip.name}-walk`;
+    else if (clip !== sourceClip)
+        clip.name = `${sourceClip.name}-${name}-stable`;
+    return clip;
+}
+
+function createDogActions(mixer, animations, assetKind) {
     if (!mixer || !animations?.length)
         return {};
     const clips = {
@@ -5125,12 +5168,8 @@ function createDogActions(mixer, animations) {
     Object.entries(clips).forEach(([name, sourceClip]) => {
         if (!sourceClip)
             return;
-        // Benny besitzt nur einen Laufclip. Für das Gehen wird deshalb eine
-        // eigene, langsam abgespielte Kopie verwendet, damit ein Wechsel zum
-        // Rennen nicht dieselbe AnimationAction mit falschem Tempo wiederverwendet.
-        const clip = name === "walk" && sourceClip === clips.run ? sourceClip.clone() : sourceClip;
-        if (clip !== sourceClip)
-            clip.name = `${sourceClip.name}-walk`;
+        const walkUsesRun = name === "walk" && sourceClip === clips.run;
+        const clip = prepareDogClip(sourceClip, name, assetKind, walkUsesRun);
         const action = mixer.clipAction(clip);
         if (["sleep", "jump"].includes(name)) {
             action.setLoop(THREE.LoopOnce, 1);
@@ -5147,7 +5186,7 @@ function setDogAnimation(dogState, name, fadeSeconds = 0.36) {
         return;
     if (dogState.currentAction)
         dogState.currentAction.fadeOut(fadeSeconds);
-    const timeScale = name === "walk" ? 0.56 : name === "run" ? 1.12 :
+    const timeScale = name === "walk" ? 0.92 : name === "run" ? 1.04 :
         name === "sleep" ? 0.74 : name === "jump" ? 0.92 : 1;
     next.reset().setEffectiveTimeScale(timeScale).setEffectiveWeight(1)
         .fadeIn(fadeSeconds).play();
@@ -5165,16 +5204,16 @@ function installDetailedRottweiler(dogState, gltf, assetKind) {
     // Das neue fotorealistische Modell ist ohne lange Rute vermessen und wird
     // deshalb etwas kompakter skaliert. Die älteren Fallbacks behalten ihre
     // bisherige Länge im Verhältnis zu Audi, Pferd und Futterstation.
-    const targetLength = assetKind === "meshy-m2m-rigged" ? 1.20 : 1.24;
+    const targetLength = assetKind === "meshy-m2m-rigged" ? 1.38 : 1.30;
     model.scale.setScalar(targetLength / horizontalLength);
     model.updateMatrixWorld(true);
     bounds = new THREE.Box3().setFromObject(model);
     let scaledSize = bounds.getSize(new THREE.Vector3());
     // Ein Rottweiler ist kompakt, breitbrüstig und deutlich höher als ein
-    // Dackel. Das KI-Modell wird auf realistische rund 78 cm Gesamthöhe
+    // Dackel. Das KI-Modell wird auf rund 86 cm sichtbare Gesamthöhe
     // korrigiert, ohne es in der Länge überzuvergrößern.
     if (assetKind === "meshy-m2m-rigged") {
-        const targetHeight = 0.78;
+        const targetHeight = 0.86;
         const heightCorrection = THREE.MathUtils.clamp(
             targetHeight / Math.max(scaledSize.y, 0.001), 1.05, 1.34
         );
@@ -5199,14 +5238,24 @@ function installDetailedRottweiler(dogState, gltf, assetKind) {
     dogState.detailedModel = model;
     dogState.assetKind = assetKind;
     dogState.mixer = gltf.animations?.length ? new THREE.AnimationMixer(model) : null;
-    dogState.actions = createDogActions(dogState.mixer, gltf.animations || []);
+    dogState.actions = createDogActions(dogState.mixer, gltf.animations || [], assetKind);
     dogState.detailedBones = {};
     model.traverse((object) => {
         if (!object.isBone)
             return;
         const name = object.name?.toLowerCase() || "";
-        if (name === "head" || name === "hals" || name === "kiefer" || name.startsWith("tail")) {
+        if (name.startsWith("ear_") && !name.startsWith("ear_tip_")) {
+            // Das KI-Modell besitzt für einen Rottweiler etwas zu dominante
+            // Stehohren. Ein kleinerer, dauerhaft stabiler Knochenmaßstab lässt
+            // sie wie kompakte, anliegende Rottweilerohren wirken.
+            object.scale.multiplyScalar(0.78);
+        }
+        if (name === "head" || name === "hals" || name === "kiefer" ||
+            name.startsWith("tail") || name.startsWith("ear_")) {
             object.userData.dogBaseRotationX = object.rotation.x;
+            object.userData.dogBaseRotationY = object.rotation.y;
+            object.userData.dogBaseRotationZ = object.rotation.z;
+            object.userData.dogBasePositionY = object.position.y;
             dogState.detailedBones[name] = object;
         }
     });
@@ -5367,7 +5416,7 @@ function createRottweiler() {
 }
 
 function dogCanStandAt(x, z, allowCareTarget = false) {
-    if (!horseCanStandAt(x, z))
+    if (!horseCanStandAt(x, z, allowCareTarget))
         return false;
     if (!allowCareTarget && [DOG_CARE_STATIONS.food, DOG_CARE_STATIONS.water]
         .some((station) => Math.hypot(x - station[0], z - station[2]) < 0.58))
@@ -5426,9 +5475,21 @@ function groundedBirdForDog(dogState) {
 
 function startNextDogActivity(dogState, seconds) {
     dogState.chaseBird = null;
+    if (["dog-food", "dog-water"].includes(dogState.navigation)) {
+        // Nach Fressen, Trinken oder Warten zuerst sichtbar vom Napf weggehen.
+        // So bleibt der Hund nicht direkt davor stehen und dreht dort auch
+        // nicht auf der Stelle in Richtung eines neuen Zufallsziels.
+        const exitTarget = new THREE.Vector3(
+            -6.15, 0,
+            dogState.navigation === "dog-food" ? DOG_CARE_STATIONS.foodTarget[2] :
+                DOG_CARE_STATIONS.waterTarget[2]
+        );
+        if (setDogRoute(dogState, exitTarget, "leaving-care", false))
+            return;
+    }
     if ((animalResources.dogHungry || dogState.pendingMeal) &&
         seconds >= dogState.nextFoodVisitAt) {
-        dogState.nextFoodVisitAt = seconds + 34 + dogState.random() * 28;
+        dogState.nextFoodVisitAt = seconds + 105 + dogState.random() * 75;
         setDogRoute(dogState, new THREE.Vector3(...DOG_CARE_STATIONS.foodTarget),
             "dog-food", false);
         return;
@@ -5476,14 +5537,23 @@ function animateRottweilerPose(dogState, seconds, delta, moving, running) {
         1 - Math.max(0, dogState.modeUntil - seconds) / 1.15, 0, 1
     ) : 0;
     const jumpLift = jumping ? Math.sin(jumpProgress * Math.PI) * 0.24 : 0;
+    const importedGait = dogState.detailedModel && dogState.mixer;
     const bodyY = sleeping ? (dogState.detailedModel ? 0.015 : -0.27) :
         jumping ? jumpLift :
-        moving ? Math.abs(Math.sin(dogState.travelled * 8.2)) * (running ? 0.034 : 0.022) : 0;
+        moving && !importedGait ?
+            Math.abs(Math.sin(dogState.travelled * 8.2)) * (running ? 0.034 : 0.022) : 0;
     dogState.visualRoot.position.y = THREE.MathUtils.damp(
         dogState.visualRoot.position.y, bodyY, 7, delta);
-    if (!moving && loweringHead)
+    if (!moving && loweringHead) {
+        const station = dogState.navigation === "dog-water" ?
+            DOG_CARE_STATIONS.water : DOG_CARE_STATIONS.food;
+        const careYaw = Math.atan2(
+            station[0] - dogState.group.position.x,
+            station[2] - dogState.group.position.z
+        );
         dogState.group.rotation.y = shortestYaw(
-            dogState.group.rotation.y, Math.PI / 2, Math.min(1, delta * 3.2));
+            dogState.group.rotation.y, careYaw, Math.min(1, delta * 2.4));
+    }
 
     if (dogState.detailedModel) {
         const standY = dogState.detailedRig.userData.standY || 0.30;
@@ -5500,15 +5570,32 @@ function animateRottweilerPose(dogState, seconds, delta, moving, running) {
             // Absolute Zielwinkel statt fortlaufendem "+=": Die alte Variante
             // addierte bei jedem Frame erneut und ließ Kopf und Körper am Napf
             // schließlich unkontrolliert rotieren.
-            const setCareBone = (bone, offset) => {
+            const setCareBone = (bone, offset, preferredAxis = "x") => {
                 if (!bone)
                     return;
-                const base = bone.userData.dogBaseRotationX ?? 0;
-                bone.rotation.x = THREE.MathUtils.damp(
-                    bone.rotation.x, base + offset, 10, delta);
+                const requestedAxis = preferredAxis || "x";
+                const axis = requestedAxis.replace("-", "");
+                const direction = requestedAxis.startsWith("-") ? -1 : 1;
+                const property = axis === "y" ? "y" : axis === "z" ? "z" : "x";
+                const baseKey = property === "y" ? "dogBaseRotationY" :
+                    property === "z" ? "dogBaseRotationZ" : "dogBaseRotationX";
+                const base = bone.userData[baseKey] ?? 0;
+                bone.rotation[property] = THREE.MathUtils.damp(
+                    bone.rotation[property], base + offset * direction, 10, delta);
             };
             setCareBone(neck, loweringHead ? 0.52 : 0);
-            setCareBone(head, loweringHead ? 0.46 + Math.sin(seconds * 4.8) * 0.05 : 0);
+            setCareBone(head,
+                loweringHead ? 0.90 + Math.sin(seconds * 4.8) * 0.035 : 0,
+                dogHeadDemoAxis || "z");
+            if (head) {
+                const baseHeadY = head.userData.dogBasePositionY ?? head.position.y;
+                head.position.y = THREE.MathUtils.damp(
+                    head.position.y,
+                    baseHeadY - (loweringHead ? 0.24 : 0),
+                    9,
+                    delta
+                );
+            }
             setCareBone(jaw, loweringHead ?
                 0.08 + Math.max(0, Math.sin(seconds * 5.6)) * 0.07 : 0);
         }
@@ -5520,7 +5607,7 @@ function animateRottweilerPose(dogState, seconds, delta, moving, running) {
             rigged ? 0 : sleeping ? -1.32 : gait * (running ? 0.052 : 0.032), 8, delta);
         dogState.detailedRig.rotation.x = THREE.MathUtils.damp(
             dogState.detailedRig.rotation.x,
-            rigged ? (loweringHead ? 0.10 : barking ? -0.035 : jumping ? -0.08 : 0) :
+            rigged ? (barking ? -0.035 : jumping ? -0.08 : 0) :
                 sleeping ? 0.06 : loweringHead ? 0.22 : barking ? -0.08 :
                 moving ? gait * 0.018 : 0, 9, delta);
         const breathing = sleeping ? Math.sin(seconds * 2.1) * 0.012 :
@@ -5578,7 +5665,7 @@ function animateDog(seconds, delta) {
             playDogBark(true);
         }
         if (animalResources.dogHungry && seconds >= dog.modeUntil) {
-            dog.nextFoodVisitAt = seconds + 30 + dog.random() * 26;
+            dog.nextFoodVisitAt = seconds + 105 + dog.random() * 75;
             dog.mode = "idle";
             dog.modeUntil = seconds + 0.1;
         }
@@ -5619,10 +5706,19 @@ function animateDog(seconds, delta) {
         if (dog.path.length) {
             dog.target = dog.path.shift();
         }
+        else if (dog.navigation === "demo") {
+            dog.demoDirection = (dog.demoDirection || -1) * -1;
+            dog.target.set(
+                dog.demoDirection > 0 ? -5.10 : -6.05,
+                0,
+                dog.demoDirection > 0 ? 4.85 : 6.25
+            );
+            dog.mode = dogDemoMode === "run" ? "running" : "walking";
+        }
         else if (dog.navigation === "dog-food") {
             dog.mode = animalResources.dogHungry ? "waiting-food" : "eating";
-            dog.modeUntil = seconds + (animalResources.dogHungry ? 7.0 : 8.5);
-            dog.nextFoodVisitAt = seconds + 34 + dog.random() * 28;
+            dog.modeUntil = seconds + (animalResources.dogHungry ? 6.0 : 8.5);
+            dog.nextFoodVisitAt = seconds + 105 + dog.random() * 75;
             dog.pendingMeal = false;
         }
         else if (dog.navigation === "dog-water") {
@@ -5639,14 +5735,20 @@ function animateDog(seconds, delta) {
     const targetYaw = Math.atan2(dx, dz);
     const yawDelta = Math.atan2(Math.sin(targetYaw - dog.group.rotation.y),
         Math.cos(targetYaw - dog.group.rotation.y));
-    dog.group.rotation.y += yawDelta * Math.min(1, delta * (running ? 5.0 : 3.5));
+    dog.group.rotation.y += yawDelta * (1 - Math.exp(-delta * (running ? 4.8 : 3.2)));
     const speed = running ? 2.05 : 0.82;
-    const nextX = dog.group.position.x + Math.sin(dog.group.rotation.y) * speed * delta;
-    const nextZ = dog.group.position.z + Math.cos(dog.group.rotation.y) * speed * delta;
+    // Erst sauber in Laufrichtung drehen, dann beschleunigen. Das verhindert
+    // enge Kreise und das Hin-und-her-Schaukeln direkt vor den Näpfen.
+    const alignment = THREE.MathUtils.clamp(
+        1 - Math.abs(yawDelta) / (Math.PI * 0.46), 0, 1
+    );
+    const travelStep = Math.min(distance, speed * alignment * delta);
+    const nextX = dog.group.position.x + dx / Math.max(distance, 0.001) * travelStep;
+    const nextZ = dog.group.position.z + dz / Math.max(distance, 0.001) * travelStep;
     if (dogCanStandAt(nextX, nextZ, true)) {
         dog.group.position.x = nextX;
         dog.group.position.z = nextZ;
-        dog.travelled += speed * delta;
+        dog.travelled += travelStep;
     }
     else {
         startNextDogActivity(dog, seconds);
@@ -5657,7 +5759,7 @@ function animateDog(seconds, delta) {
         dog.modeUntil = seconds + 1.6;
         playDogBark(false);
     }
-    animateRottweilerPose(dog, seconds, delta, true, running);
+    animateRottweilerPose(dog, seconds, delta, travelStep > 0.002, running);
 }
 
 function distanceToPastureBoundary(x, z) {
@@ -9477,11 +9579,29 @@ if (animalDemoMode) {
             focusAnimal.modeUntil = Number.POSITIVE_INFINITY;
         }
         else if (animalFocusMode === "dog") {
+            state.zoom = state.targetZoom = 1.32;
             dog.path = [];
             dog.target.copy(dog.group.position);
             dog.navigation = null;
             dog.mode = "idle";
             dog.modeUntil = Number.POSITIVE_INFINITY;
+            if (["walk", "run"].includes(dogDemoMode)) {
+                dog.group.position.set(-5.10, 0, 4.85);
+                dog.target.set(-6.05, 0, 6.25);
+                dog.demoDirection = -1;
+                dog.navigation = "demo";
+                dog.mode = dogDemoMode === "run" ? "running" : "walking";
+            }
+            else if (["eat", "drink"].includes(dogDemoMode)) {
+                const drinking = dogDemoMode === "drink";
+                const target = drinking ? DOG_CARE_STATIONS.waterTarget :
+                    DOG_CARE_STATIONS.foodTarget;
+                dog.group.position.set(...target);
+                dog.target.copy(dog.group.position);
+                dog.navigation = drinking ? "dog-water" : "dog-food";
+                dog.mode = drinking ? "drinking" : "eating";
+                cameraTarget.set(dog.group.position.x, 0.85, dog.group.position.z);
+            }
         }
     }
     // Ausschließlich für die lokale Vorschau: Damit lassen sich seltene
@@ -12674,6 +12794,14 @@ function animate(time) {
         animateCamels(seconds, delta);
         animateDog(seconds, delta);
         reconcileSharedAnimalMotion(delta);
+        if (animalDemoMode && animalFocusMode === "dog" &&
+            ["walk", "run"].includes(dogDemoMode)) {
+            cameraTarget.x = THREE.MathUtils.damp(
+                cameraTarget.x, dog.group.position.x, 7, delta);
+            cameraTarget.z = THREE.MathUtils.damp(
+                cameraTarget.z, dog.group.position.z, 7, delta);
+            updateCameraTransform();
+        }
     }
     if (animalDemoMode) {
         stage.dataset.animalSounds = animalSoundsUnlocked ? "unlocked" : "locked";
@@ -12696,6 +12824,15 @@ function animate(time) {
         stage.dataset.dogMode = dog?.mode || "missing";
         stage.dataset.dogAsset = dog?.assetKind || "fallback";
         stage.dataset.dogAnimation = dog?.currentActionName || "loading";
+        stage.dataset.dogYaw = dog ? dog.group.rotation.y.toFixed(3) : "missing";
+        const dogHeadBone = dog?.detailedBones?.head;
+        stage.dataset.dogHeadBone = dogHeadBone ? [
+            dogHeadBone.position.x, dogHeadBone.position.y, dogHeadBone.position.z,
+            dogHeadBone.rotation.x, dogHeadBone.rotation.y, dogHeadBone.rotation.z
+        ].map((value) => value.toFixed(3)).join(",") : "missing";
+        stage.dataset.dogModelScale = dog?.detailedModel ?
+            dog.detailedModel.scale.toArray().map((value) => value.toFixed(4)).join(",") :
+            "missing";
         stage.dataset.dogHungry = String(animalResources.dogHungry);
         stage.dataset.dogBarkCount = String(dogBarkPlayCount);
         stage.dataset.animalMotionRole = animalMotionRole;
