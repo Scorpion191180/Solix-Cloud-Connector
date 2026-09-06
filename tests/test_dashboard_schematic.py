@@ -21,8 +21,8 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260906-132", dashboard)
-        self.assertIn("house.js?v=20260906-132", dashboard)
+        self.assertIn("style.css?v=20260906-133", dashboard)
+        self.assertIn("house.js?v=20260906-133", dashboard)
         self.assertIn("app.js?v=20260821-96", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
@@ -633,11 +633,17 @@ class DashboardSchematicTests(unittest.TestCase):
             "builderSelectionRotateRight", "builderSelectionDelete",
             "sceneLoader", "sceneLoaderBar", "sceneLoaderStatus", "sceneLoaderPercent",
             "sceneLoaderVersion",
+            "sceneLabelToggle", "houseVersion",
         ):
             self.assertIn(f'id="{element_id}"', dashboard)
 
-        self.assertIn('const APP_BUILD_VERSION = "132"', script)
-        self.assertIn("Version 132", dashboard)
+        self.assertIn('const APP_BUILD_VERSION = "133"', script)
+        self.assertIn("Version 133", dashboard)
+        self.assertIn('localStorage.getItem("solix-scene-labels")', script)
+        self.assertIn('stage.classList.toggle("show-scene-labels"', script)
+        self.assertIn("hasStoredDogPose", script)
+        self.assertIn("DOG_HOUSE_PATROL_LOOP", script)
+        self.assertIn('"house-patrol"', script)
 
         self.assertIn('targetFps: 30, pixelRatio: 1.15', script)
         self.assertIn('targetFps: 24, pixelRatio: 1', script)

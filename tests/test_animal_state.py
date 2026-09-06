@@ -114,6 +114,25 @@ class AnimalStateStoreTests(unittest.TestCase):
                 takeover = store.update_motion("browser-follower", pose)
             self.assertTrue(takeover["motion_write_accepted"])
 
+    def test_motion_position_survives_store_restart(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "animals.json"
+            pose = [{
+                "id": "dog", "x": -5.125, "y": 0, "z": 6.25,
+                "yaw": 1.234, "state": "walking", "target_x": -4.8,
+                "target_y": 0, "target_z": -3.2,
+            }]
+            with patch("animal.state.time.time", return_value=1_000_000):
+                AnimalStateStore(path).update_motion("browser-leader", pose)
+
+            restored = AnimalStateStore(path).get()
+            dog = next(item for item in restored["motion"]["animals"]
+                       if item["id"] == "dog")
+            self.assertEqual(dog["x"], -5.125)
+            self.assertEqual(dog["z"], 6.25)
+            self.assertEqual(dog["yaw"], 1.234)
+            self.assertEqual(dog["state"], "walking")
+
 
 if __name__ == "__main__":
     unittest.main()

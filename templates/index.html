@@ -14,7 +14,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/solix-home-32.png?v=94">
 <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/solix-home-180.png?v=94">
 <link rel="manifest" href="/static/site.webmanifest?v=94">
-<link rel="stylesheet" href="/static/style.css?v=20260906-132">
+<link rel="stylesheet" href="/static/style.css?v=20260906-133">
 
 <script type="importmap">
 {
@@ -36,7 +36,7 @@
 <p id="sceneLoaderStatus">Haus und 3D-Objekte werden vorbereitet …</p>
 <div class="scene-loader-track" aria-hidden="true"><span id="sceneLoaderBar"></span></div>
 <small id="sceneLoaderPercent">0 %</small>
-<small class="scene-loader-version" id="sceneLoaderVersion">Version 132</small>
+<small class="scene-loader-version" id="sceneLoaderVersion">Version 133</small>
 </div>
 </div>
 
@@ -231,6 +231,7 @@ Signalstärke
 <p class="house-menu-clean-status" id="menuThresholdStatus" aria-live="polite">Stopp muss unter Start liegen.</p>
 </div>
 <button class="house-menu-action" id="houseMenuCollapse" type="button">Detailkarten schließen</button>
+<button class="house-menu-action" id="sceneLabelToggle" type="button" aria-pressed="false">▣ Anzeigen: aus</button>
 <button class="house-menu-action" id="animalSoundToggle" type="button" aria-pressed="true">🔊 Tierlaute: an</button>
 <div class="house-menu-quality">
 <label for="renderQualitySelect">Darstellungsqualität</label>
@@ -328,6 +329,7 @@ Dein Browser unterstützt die interaktive Hausansicht nicht.
 <span><strong id="houseWeatherTemp">-- °C</strong><small id="houseWeatherText">Wetter wird geladen</small></span>
 </div>
 <button class="house-reset" id="houseReset" type="button" aria-label="Zur Standardansicht zurückkehren">↺ Standardansicht</button>
+<span class="house-version" id="houseVersion" aria-label="Aktuell geladene Version 133">Version 133</span>
 </div>
 
 <div class="house-inspector" id="houseInspector" aria-live="polite" hidden>
@@ -763,7 +765,7 @@ Einstellungen
 
 </div>
 
-<script type="module" src="/static/house.js?v=20260906-132"></script>
+<script type="module" src="/static/house.js?v=20260906-133"></script>
 <script src="/static/app.js?v=20260821-96"></script>
 
 </body>

@@ -21,6 +21,7 @@ const menuToggle = document.getElementById("houseMenuToggle");
 const menuPanel = document.getElementById("houseMenuPanel");
 const menuClose = document.getElementById("houseMenuClose");
 const menuCollapse = document.getElementById("houseMenuCollapse");
+const sceneLabelToggle = document.getElementById("sceneLabelToggle");
 const animalSoundToggle = document.getElementById("animalSoundToggle");
 const renderQualitySelect = document.getElementById("renderQualitySelect");
 const renderQualityStatus = document.getElementById("renderQualityStatus");
@@ -69,7 +70,7 @@ const sceneLoaderBar = document.getElementById("sceneLoaderBar");
 const sceneLoaderStatus = document.getElementById("sceneLoaderStatus");
 const sceneLoaderPercent = document.getElementById("sceneLoaderPercent");
 const sceneLoaderVersion = document.getElementById("sceneLoaderVersion");
-const APP_BUILD_VERSION = "132";
+const APP_BUILD_VERSION = "133";
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const INTERIOR_VIEW_ENABLED = false;
 
@@ -415,8 +416,10 @@ const animalSoundSources = {
     bird: new Audio("/static/sounds/bird-singing-clear.ogg?v=108")
 };
 let animalSoundsEnabled = true;
+let sceneLabelsVisible = false;
 try {
     animalSoundsEnabled = localStorage.getItem("solix-animal-sounds") !== "off";
+    sceneLabelsVisible = localStorage.getItem("solix-scene-labels") === "on";
 } catch (_error) {
     // Bleibt auch in eingeschraenkten Safari-/Privatmodi nutzbar.
 }
@@ -443,6 +446,14 @@ function updateAnimalSoundButton() {
         return;
     animalSoundToggle.textContent = animalSoundsEnabled ? "🔊 Tierlaute: an" : "🔇 Tierlaute: aus";
     animalSoundToggle.setAttribute("aria-pressed", animalSoundsEnabled ? "true" : "false");
+}
+
+function updateSceneLabelButton() {
+    stage.classList.toggle("show-scene-labels", sceneLabelsVisible);
+    if (!sceneLabelToggle)
+        return;
+    sceneLabelToggle.textContent = sceneLabelsVisible ? "▣ Anzeigen: an" : "▣ Anzeigen: aus";
+    sceneLabelToggle.setAttribute("aria-pressed", sceneLabelsVisible ? "true" : "false");
 }
 
 function unlockAnimalSounds() {
@@ -543,6 +554,18 @@ animalSoundToggle?.addEventListener("click", () => {
         unlockAnimalSounds();
 });
 updateAnimalSoundButton();
+sceneLabelToggle?.addEventListener("click", () => {
+    sceneLabelsVisible = !sceneLabelsVisible;
+    try {
+        // Diese Darstellungswahl ist absichtlich nur auf diesem Gerät bzw. in
+        // diesem Browser gespeichert und verändert keinen gemeinsamen Zustand.
+        localStorage.setItem("solix-scene-labels", sceneLabelsVisible ? "on" : "off");
+    } catch (_error) {
+        // Die Einstellung gilt dann nur fuer die aktuelle Sitzung.
+    }
+    updateSceneLabelButton();
+});
+updateSceneLabelButton();
 const grassCells = [];
 const grassBladeFields = [];
 const gardenBirds = [];
@@ -717,7 +740,13 @@ function applySharedAnimalState(shared, restoreDroppings = false) {
     if (numberValue(shared.server_time) != null)
         animalMotionServerOffset = Number(shared.server_time) - Date.now() / 1000;
     if (shared.motion && animalMotionRole !== "leader") {
-        if (animalMotionRole === "unknown" && shared.motion.leader_active)
+        const hasStoredDogPose = Array.isArray(shared.motion.animals) &&
+            shared.motion.animals.some((pose) => pose?.id === "dog");
+        // Auch nach einem Render-Neustart bzw. ohne momentan aktiven Browser
+        // zuerst die persistierte Hundeposition übernehmen. Erst danach darf
+        // dieser Browser selbst die Bewegungsführung übernehmen.
+        if (animalMotionRole === "unknown" &&
+            (shared.motion.leader_active || hasStoredDogPose))
             animalMotionRole = "follower";
         applySharedAnimalMotion(shared.motion);
     }
@@ -799,6 +828,7 @@ function applySharedAnimalMotion(motion) {
     animalMotionSampledAt = safeMotionNumber(motion.sampled_at);
     animalMotionReceivedAt = performance.now();
     const incomingIds = new Set();
+    const preserveVelocity = motion.leader_active === true;
     motion.animals.forEach((pose) => {
         if (!pose?.id)
             return;
@@ -810,6 +840,9 @@ function applySharedAnimalMotion(motion) {
             Math.abs(safeMotionNumber(previous.target_z) - safeMotionNumber(pose.target_z)) < 0.08;
         animalMotionTargets.set(pose.id, {
             ...pose,
+            vx: preserveVelocity ? pose.vx : 0,
+            vy: preserveVelocity ? pose.vy : 0,
+            vz: preserveVelocity ? pose.vz : 0,
             snap: !previous,
             dogStateApplied: dogStateUnchanged ? previous.dogStateApplied : false
         });
@@ -5001,6 +5034,15 @@ const DOG_PATROL_POINTS = [
     [-4.80, -3.25], [-5.10, 4.85], [-6.05, 6.25], [-6.55, 10.25],
     [-9.20, 8.25], [-10.25, 2.10], [-9.55, -6.80], [-5.15, -8.10]
 ];
+// Eine geschlossene Runde um alle vier Hausseiten. Die Punkte liegen bewusst
+// außerhalb des Gebäudes sowie der festen Auto-Sperrflächen; die vorhandene
+// Wegsuche umfährt zusätzlich Pool, Pergola, Bäume und Näpfe.
+const DOG_HOUSE_PATROL_LOOP = [
+    [-5.15, -8.10], [0.25, -8.05], [5.05, -7.75], [6.72, -5.70],
+    [6.72, -2.35], [6.72, 5.85], [5.15, 6.65], [5.05, 13.95],
+    [3.85, 14.55], [-4.95, 14.40], [-5.65, 12.90], [-5.10, 6.25],
+    [-4.82, -3.20]
+];
 let dogBarkPlayCount = 0;
 
 function playDogBark(hungry = false) {
@@ -5402,6 +5444,8 @@ function createRottweiler() {
         lastAudibleBarkAt: -Infinity,
         chaseBird: null,
         patrolIndex: 0,
+        housePatrolQueue: [],
+        nextHousePatrolAt: animalDemoMode ? 28 : 55 + random() * 80,
         assetLoaded: false,
         assetKind: "procedural-fallback",
         mixer: null,
@@ -5461,6 +5505,33 @@ function chooseDogPatrolTarget(dogState) {
     return dogState.group.position.clone();
 }
 
+function startDogHousePatrol(dogState, seconds) {
+    const waypoints = DOG_HOUSE_PATROL_LOOP
+        .filter(([x, z]) => dogCanStandAt(x, z, true))
+        .map(([x, z]) => new THREE.Vector3(x, 0, z));
+    if (waypoints.length < 4)
+        return false;
+    let nearestIndex = 0;
+    let nearestDistance = Infinity;
+    waypoints.forEach((waypoint, index) => {
+        const distance = dogState.group.position.distanceTo(waypoint);
+        if (distance < nearestDistance) {
+            nearestDistance = distance;
+            nearestIndex = index;
+        }
+    });
+    // Am nächstgelegenen Punkt beginnen und anschließend einmal vollständig
+    // ums Haus laufen, statt nur zufällige kurze Wege im Garten zu wählen.
+    dogState.housePatrolQueue = waypoints.map((_, offset) =>
+        waypoints[(nearestIndex + offset) % waypoints.length].clone());
+    const first = dogState.housePatrolQueue.shift();
+    if (first && setDogRoute(dogState, first, "house-patrol", false))
+        return true;
+    dogState.housePatrolQueue = [];
+    dogState.nextHousePatrolAt = seconds + 75;
+    return false;
+}
+
 function groundedBirdForDog(dogState) {
     const candidates = gardenBirds.filter((bird) => bird.group.visible &&
         !bird.state.startsWith("flying") &&
@@ -5500,6 +5571,9 @@ function startNextDogActivity(dogState, seconds) {
             "dog-water", false);
         return;
     }
+    if (seconds >= dogState.nextHousePatrolAt &&
+        startDogHousePatrol(dogState, seconds))
+        return;
     if (seconds >= dogState.nextChaseAt) {
         dogState.nextChaseAt = seconds + 35 + dogState.random() * 75;
         const bird = groundedBirdForDog(dogState);
@@ -5705,6 +5779,21 @@ function animateDog(seconds, delta) {
     if (distance < 0.18) {
         if (dog.path.length) {
             dog.target = dog.path.shift();
+        }
+        else if (dog.navigation === "house-patrol" && dog.housePatrolQueue.length) {
+            const nextWaypoint = dog.housePatrolQueue.shift();
+            if (!setDogRoute(dog, nextWaypoint, "house-patrol", false)) {
+                dog.housePatrolQueue = [];
+                dog.nextHousePatrolAt = seconds + 75;
+                dog.mode = "idle";
+                dog.modeUntil = seconds + 2;
+            }
+        }
+        else if (dog.navigation === "house-patrol") {
+            dog.housePatrolQueue = [];
+            dog.nextHousePatrolAt = seconds + 180 + dog.random() * 150;
+            dog.mode = "idle";
+            dog.modeUntil = seconds + 3.5;
         }
         else if (dog.navigation === "demo") {
             dog.demoDirection = (dog.demoDirection || -1) * -1;

@@ -31,6 +31,7 @@ RESOURCE_KEYS = (*RESOURCE_DAILY_USE_PERCENT, "dog_food")
 HOUSE_TIMEZONE = ZoneInfo("Europe/Berlin")
 DOG_MEAL_PERCENT = 45.0
 MOTION_LEASE_SECONDS = 6.0
+MOTION_SAVE_INTERVAL_SECONDS = 5.0
 MAX_MOTION_ANIMALS = 56
 
 
@@ -62,6 +63,7 @@ class AnimalStateStore:
                 "leader_id": None,
                 "leader_until": 0.0,
                 "sampled_at": 0.0,
+                "saved_at": 0.0,
                 "revision": 0,
                 "animals": [],
             },
@@ -106,6 +108,7 @@ class AnimalStateStore:
                 "leader_id": str(motion.get("leader_id") or "") or None,
                 "leader_until": float(motion.get("leader_until") or 0),
                 "sampled_at": float(motion.get("sampled_at") or 0),
+                "saved_at": float(motion.get("saved_at") or 0),
                 "revision": int(motion.get("revision") or 0),
                 "animals": animals[-MAX_MOTION_ANIMALS:]
                 if isinstance(animals, list) else [],
@@ -307,6 +310,13 @@ class AnimalStateStore:
                     "revision": int(motion.get("revision") or 0) + 1,
                     "animals": clean_animals,
                 })
+                # Bewegungen kommen etwa alle zwei Sekunden. Persistiert wird
+                # gedrosselt, damit Render nicht bei jedem Frame-Snapshot auf
+                # die Platte schreibt, die letzte Hundeposition aber Neustarts
+                # und den Wechsel auf ein anderes Gerät überlebt.
+                if now - float(motion.get("saved_at") or 0) >= MOTION_SAVE_INTERVAL_SECONDS:
+                    motion["saved_at"] = now
+                    self._save()
             payload = self._payload()
             payload["motion_write_accepted"] = accepted
             return payload
