@@ -220,7 +220,10 @@ privaten Variable `HOUSE_LOCATION_LABEL` wird der Ortsname des Hausstandorts
 oben rechts angezeigt. Über den GPS-Knopf kann der Nutzer dem Browser einmalig
 erlauben, Wetter und Himmelsverlauf für seinen aktuellen Standort zu laden. Die
 GPS-Koordinaten werden dafür per `POST` verarbeitet, nicht dauerhaft gespeichert
-und nicht in der Antwort an den Browser zurückgegeben. Falls Open-Meteo
+und nicht in der Antwort an den Browser zurückgegeben. Der Browser merkt sich
+den zuletzt vom Nutzer bestätigten GPS-Punkt ausschließlich lokal auf diesem
+Gerät und verwendet ihn bei späteren App-Starts weiter, bis der Nutzer den
+GPS-Knopf erneut betätigt. Falls Open-Meteo
 vom Render-Netz vorübergehend nicht erreichbar ist, verwendet die App
 automatisch Bright Sky mit Messwerten des Deutschen Wetterdienstes.
 

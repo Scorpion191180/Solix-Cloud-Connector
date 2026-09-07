@@ -77,7 +77,7 @@ const sceneLoaderBar = document.getElementById("sceneLoaderBar");
 const sceneLoaderStatus = document.getElementById("sceneLoaderStatus");
 const sceneLoaderPercent = document.getElementById("sceneLoaderPercent");
 const sceneLoaderVersion = document.getElementById("sceneLoaderVersion");
-const APP_BUILD_VERSION = "136";
+const APP_BUILD_VERSION = "137";
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const INTERIOR_VIEW_ENABLED = false;
 
@@ -1172,6 +1172,121 @@ function makeTexture(background, ink, mode, repeatX, repeatY) {
                 context.lineTo(x, y + 18);
                 context.stroke();
             }
+        }
+    }
+    else if (mode === "linen" || mode === "carpet" || mode === "concrete") {
+        context.globalAlpha = mode === "carpet" ? 0.32 : 0.15;
+        const count = mode === "carpet" ? 3200 : mode === "concrete" ? 1200 : 1900;
+        for (let index = 0; index < count; index += 1) {
+            const x = random() * 256;
+            const y = random() * 256;
+            const size = mode === "concrete" ? 0.5 + random() * 1.8 : 0.45 + random();
+            context.fillRect(x, y, size, mode === "linen" ? 1.8 + random() * 2.5 : size);
+        }
+        if (mode === "linen") {
+            context.globalAlpha = 0.08;
+            for (let line = 0; line < 256; line += 5) {
+                context.fillRect(line, 0, 0.7, 256);
+                context.fillRect(0, line, 256, 0.45);
+            }
+        }
+    }
+    else if (mode === "wallpaper-stripe") {
+        context.globalAlpha = 0.22;
+        for (let x = 0; x < 256; x += 32) {
+            context.fillRect(x, 0, 6, 256);
+            context.globalAlpha = 0.10;
+            context.fillRect(x + 12, 0, 2, 256);
+            context.globalAlpha = 0.22;
+        }
+    }
+    else if (mode === "wallpaper-geometric") {
+        context.globalAlpha = 0.20;
+        context.lineWidth = 2;
+        for (let y = -24; y < 280; y += 32) {
+            for (let x = -24; x < 280; x += 32) {
+                context.beginPath();
+                context.moveTo(x, y + 16);
+                context.lineTo(x + 16, y);
+                context.lineTo(x + 32, y + 16);
+                context.lineTo(x + 16, y + 32);
+                context.closePath();
+                context.stroke();
+            }
+        }
+    }
+    else if (mode === "wallpaper-botanical") {
+        context.globalAlpha = 0.21;
+        context.lineWidth = 1.8;
+        for (let y = 12; y < 256; y += 42) {
+            for (let x = (Math.floor(y / 42) % 2) * 18; x < 256; x += 36) {
+                context.beginPath();
+                context.moveTo(x, y + 18);
+                context.quadraticCurveTo(x + 6, y + 5, x + 2, y - 8);
+                context.moveTo(x + 3, y + 4);
+                context.ellipse(x + 9, y, 7, 3.2, -0.55, 0, Math.PI * 2);
+                context.moveTo(x + 1, y + 10);
+                context.ellipse(x - 5, y + 7, 7, 3.2, 0.55, 0, Math.PI * 2);
+                context.stroke();
+            }
+        }
+    }
+    else if (mode === "wood-planks") {
+        context.globalAlpha = 0.32;
+        context.lineWidth = 2;
+        for (let x = 0; x < 256; x += 42) {
+            context.beginPath();
+            context.moveTo(x, 0);
+            context.lineTo(x, 256);
+            context.stroke();
+        }
+        context.globalAlpha = 0.16;
+        for (let index = 0; index < 90; index += 1) {
+            const x = random() * 256;
+            const y = random() * 256;
+            context.beginPath();
+            context.ellipse(x, y, 7 + random() * 17, 0.8 + random() * 1.3, 0, 0, Math.PI * 2);
+            context.stroke();
+        }
+    }
+    else if (mode === "herringbone") {
+        context.globalAlpha = 0.30;
+        context.lineWidth = 2;
+        for (let y = -32; y < 288; y += 32) {
+            for (let x = -32; x < 288; x += 32) {
+                context.beginPath();
+                context.moveTo(x, y + 16);
+                context.lineTo(x + 16, y);
+                context.lineTo(x + 32, y + 16);
+                context.moveTo(x, y + 16);
+                context.lineTo(x + 16, y + 32);
+                context.lineTo(x + 32, y + 16);
+                context.stroke();
+            }
+        }
+    }
+    else if (mode === "marble") {
+        context.globalAlpha = 0.20;
+        context.lineWidth = 1.4;
+        for (let vein = 0; vein < 12; vein += 1) {
+            context.beginPath();
+            for (let x = -16; x <= 272; x += 8) {
+                const y = vein * 25 + Math.sin(x * 0.035 + vein) * 12 + (random() - 0.5) * 4;
+                if (x === -16)
+                    context.moveTo(x, y);
+                else
+                    context.lineTo(x, y);
+            }
+            context.stroke();
+        }
+    }
+    else if (mode === "terrazzo") {
+        context.globalAlpha = 0.34;
+        for (let index = 0; index < 900; index += 1) {
+            const size = 0.8 + random() * 3.8;
+            context.beginPath();
+            context.arc(random() * 256, random() * 256, size, 0, Math.PI * 2);
+            context.fill();
         }
     }
     else if (mode === "water") {
@@ -7968,6 +8083,10 @@ const BUILDER_VARIANTS = Object.freeze({
         { id: "wall-custom-standard", label: "Standard · 2,75 m hoch", length: 4.0, height: 2.75 },
         { id: "wall-custom-low", label: "Niedrig · 2,40 m hoch", length: 4.0, height: 2.40 },
         { id: "wall-custom-high", label: "Hoch · 3,10 m hoch", length: 4.0, height: 3.10 },
+        { id: "wall-wallpaper-linen", label: "Tapete · Leinen hell", length: 4.0, height: 2.75, surface: "wallpaper-linen" },
+        { id: "wall-wallpaper-stripe", label: "Tapete · feine Streifen", length: 4.0, height: 2.75, surface: "wallpaper-stripe" },
+        { id: "wall-wallpaper-botanical", label: "Tapete · Blättermuster", length: 4.0, height: 2.75, surface: "wallpaper-botanical" },
+        { id: "wall-wallpaper-geometric", label: "Tapete · geometrisch", length: 4.0, height: 2.75, surface: "wallpaper-geometric" },
         // Unsichtbare Altvarianten halten bereits gespeicherte Entwürfe kompatibel.
         { id: "wall-4m", label: "Gerade Wand · 4 m", length: 4.0, height: 2.75, legacy: true },
         { id: "wall-2m", label: "Kurze Wand · 2 m", length: 2.0, height: 2.75, legacy: true },
@@ -7985,8 +8104,13 @@ const BUILDER_VARIANTS = Object.freeze({
     ],
     floor: [
         { id: "floor-stone", label: "Steinplatten · 1-m-Raster", width: 1, depth: 1, surface: "stone" },
-        { id: "floor-wood", label: "Holzdielen · 1-m-Raster", width: 1, depth: 1, surface: "wood" },
-        { id: "floor-concrete", label: "Beton · 1-m-Raster", width: 1, depth: 1, surface: "concrete" }
+        { id: "floor-wood", label: "Eichendielen · 1-m-Raster", width: 1, depth: 1, surface: "wood" },
+        { id: "floor-herringbone", label: "Fischgrätparkett · 1-m-Raster", width: 1, depth: 1, surface: "herringbone" },
+        { id: "floor-ceramic", label: "Keramikfliesen · 1-m-Raster", width: 1, depth: 1, surface: "ceramic" },
+        { id: "floor-marble", label: "Marmor · 1-m-Raster", width: 1, depth: 1, surface: "marble" },
+        { id: "floor-terrazzo", label: "Terrazzo · 1-m-Raster", width: 1, depth: 1, surface: "terrazzo" },
+        { id: "floor-carpet", label: "Teppich · 1-m-Raster", width: 1, depth: 1, surface: "carpet" },
+        { id: "floor-concrete", label: "Sichtbeton · 1-m-Raster", width: 1, depth: 1, surface: "concrete" }
     ],
     support: [
         { id: "support-square", label: "Massive Stütze · quadratisch", style: "square", width: 0.34 },
@@ -7996,7 +8120,7 @@ const BUILDER_VARIANTS = Object.freeze({
     roof: [
         { id: "roof-gable", label: "Satteldach", style: "gable", pitch: 32 },
         { id: "roof-hip", label: "Walmdach", style: "hip", pitch: 28 },
-        { id: "roof-shed", label: "Pultdach", style: "shed", pitch: 16 },
+        { id: "roof-shed", label: "Pultdach · Gefälle links", style: "shed", pitch: 16 },
         { id: "roof-flat", label: "Flachdach", style: "flat", pitch: 2 }
     ],
     grass: [
@@ -8035,6 +8159,37 @@ const BUILDER_TYPE_LABELS = Object.freeze({
     floor: "Boden", support: "Stütze", roof: "Dach",
     grass: "Grasfläche", fence: "Zaun", tree: "Baum"
 });
+const BUILDER_SURFACE_TEXTURE_CACHE = new Map();
+
+function builderSurfaceTexture(surface, color) {
+    if (!surface)
+        return null;
+    const base = new THREE.Color(color || "#f1eee5");
+    const ink = base.clone().multiplyScalar(0.62);
+    const cacheKey = `${surface}:${base.getHexString()}`;
+    if (BUILDER_SURFACE_TEXTURE_CACHE.has(cacheKey))
+        return BUILDER_SURFACE_TEXTURE_CACHE.get(cacheKey);
+    const modes = {
+        "wallpaper-linen": ["linen", 5, 4],
+        "wallpaper-stripe": ["wallpaper-stripe", 4, 2],
+        "wallpaper-botanical": ["wallpaper-botanical", 3, 2],
+        "wallpaper-geometric": ["wallpaper-geometric", 4, 3],
+        stone: ["tiles", 3, 3],
+        wood: ["wood-planks", 3, 4],
+        herringbone: ["herringbone", 3, 3],
+        ceramic: ["tiles", 4, 4],
+        marble: ["marble", 2, 2],
+        terrazzo: ["terrazzo", 3, 3],
+        carpet: ["carpet", 4, 4],
+        concrete: ["concrete", 3, 3]
+    };
+    const config = modes[surface];
+    if (!config)
+        return null;
+    const texture = makeTexture(base.getStyle(), ink.getStyle(), config[0], config[1], config[2]);
+    BUILDER_SURFACE_TEXTURE_CACHE.set(cacheKey, texture);
+    return texture;
+}
 
 function safeBuilderItems() {
     try {
@@ -8048,6 +8203,17 @@ function safeBuilderItems() {
                 ...item,
                 level: THREE.MathUtils.clamp(Number.isInteger(item.level) ? item.level : 0, 0, BUILDER_MAX_LEVEL)
             }));
+        // Ältere gespeicherte Dächer hatten keine eigene Auflagehöhe. Sie wird
+        // einmalig aus den Wänden derselben Etage rekonstruiert, damit diese
+        // Dächer nicht mehr schweben oder in hohen Wänden stecken.
+        items.filter((item) => item.type === "roof").forEach((roof) => {
+            if (Number.isFinite(roof.baseHeight))
+                return;
+            const wallHeights = items.filter((item) =>
+                item.type === "wall" && item.level === roof.level).map((wall) =>
+                BUILDER_VARIANTS.wall.find((variant) => variant.id === wall.variant)?.height || 2.75);
+            roof.baseHeight = wallHeights.length ? Math.max(...wallHeights) : 2.75;
+        });
         const roofLevels = items.filter((item) => item.type === "roof").map((item) => item.level);
         const firstRoofLevel = roofLevels.length ? Math.min(...roofLevels) : null;
         // Ein Dach ist der feste obere Abschluss. Selbst manipulierte oder alte
@@ -8069,14 +8235,17 @@ function createBuilderPart(item) {
     part.rotation.y = THREE.MathUtils.degToRad(item.rotation);
     part.userData.builderItemId = item.id;
     const color = new THREE.Color(item.color || BUILDER_DEFAULT_COLORS[item.type] || "#f1eee5");
+    const variant = BUILDER_VARIANTS[item.type].find((entry) => entry.id === item.variant) ||
+        BUILDER_VARIANTS[item.type][0];
+    const wallSurface = builderSurfaceTexture(variant.surface, color);
     const wallMaterial = new THREE.MeshStandardMaterial({
-        color, roughness: 0.88, metalness: 0, envMapIntensity: 0.25
+        color: wallSurface ? 0xffffff : color, map: wallSurface,
+        bumpMap: wallSurface, bumpScale: wallSurface ? 0.018 : 0,
+        roughness: 0.88, metalness: 0, envMapIntensity: 0.25
     });
     const frameMaterial = new THREE.MeshStandardMaterial({
         color: color.clone().multiplyScalar(0.54), roughness: 0.58
     });
-    const variant = BUILDER_VARIANTS[item.type].find((entry) => entry.id === item.variant) ||
-        BUILDER_VARIANTS[item.type][0];
 
     if (item.type === "wall") {
         const wallLength = THREE.MathUtils.clamp(item.length || variant.length, 0.5, 28.25);
@@ -8173,8 +8342,13 @@ function createBuilderPart(item) {
             THREE.MathUtils.clamp(Math.round(item.width || variant.width || 1), 1, 20);
         const surfaceDepth = isGrass ? variant.depth :
             THREE.MathUtils.clamp(Math.round(item.depth || variant.depth || 1), 1, 20);
+        const surfaceTexture = isGrass ? null : builderSurfaceTexture(variant.surface, color);
         const surfaceMaterial = new THREE.MeshStandardMaterial({
-            color, roughness: isGrass ? 0.98 : 0.86, metalness: 0
+            color: surfaceTexture ? 0xffffff : color,
+            map: surfaceTexture, bumpMap: surfaceTexture,
+            bumpScale: surfaceTexture ? (variant.surface === "carpet" ? 0.045 : 0.025) : 0,
+            roughness: isGrass ? 0.98 : variant.surface === "marble" ? 0.34 : 0.86,
+            metalness: 0
         });
         addBox(part, [surfaceWidth, isGrass ? 0.07 : 0.10, surfaceDepth], surfaceMaterial,
             [0, isGrass ? 0.025 : 0.045, 0], { castShadow: false });
@@ -8202,8 +8376,14 @@ function createBuilderPart(item) {
         }
     }
     else if (item.type === "roof") {
-        const roofWidth = THREE.MathUtils.clamp(item.width || 6, 1, 20);
-        const roofDepth = THREE.MathUtils.clamp(item.depth || 6, 1, 20);
+        const worldRoofWidth = THREE.MathUtils.clamp(item.width || 6, 1, 20);
+        const worldRoofDepth = THREE.MathUtils.clamp(item.depth || 6, 1, 20);
+        const quarterTurns = ((Math.round((item.rotation || 0) / BUILDER_ROTATION_STEP) % 4) + 4) % 4;
+        // width/depth werden in Weltkoordinaten gespeichert. Bei 90°/270°
+        // müssen die lokalen Abmessungen getauscht werden, damit der Dachrand
+        // nach der Drehung weiterhin exakt über demselben Wandzug liegt.
+        const roofWidth = quarterTurns % 2 ? worldRoofDepth : worldRoofWidth;
+        const roofDepth = quarterTurns % 2 ? worldRoofWidth : worldRoofDepth;
         const overhang = 0.28;
         const pitch = THREE.MathUtils.degToRad(variant.pitch || 28);
         const roofMaterial = new THREE.MeshStandardMaterial({
@@ -8213,12 +8393,17 @@ function createBuilderPart(item) {
         const trimMaterial = new THREE.MeshStandardMaterial({
             color: color.clone().multiplyScalar(0.58), roughness: 0.78
         });
-        const roofBase = BUILDER_STOREY_HEIGHT;
+        const roofBase = THREE.MathUtils.clamp(
+            Number.isFinite(item.baseHeight) ? item.baseHeight : 2.75, 2.2, 3.3);
         if (variant.style === "flat") {
             addBox(part, [roofWidth + overhang * 2, 0.20, roofDepth + overhang * 2], roofMaterial,
                 [0, roofBase + 0.10, 0], { radius: 0.035 });
-            addBox(part, [roofWidth + overhang * 2 + 0.10, 0.15, 0.12], trimMaterial,
-                [0, roofBase + 0.17, roofDepth / 2 + overhang], { radius: 0.02 });
+            [-1, 1].forEach((side) => {
+                addBox(part, [roofWidth + overhang * 2 + 0.10, 0.15, 0.12], trimMaterial,
+                    [0, roofBase + 0.17, side * (roofDepth / 2 + overhang)], { radius: 0.02 });
+                addBox(part, [0.12, 0.15, roofDepth + overhang * 2 + 0.10], trimMaterial,
+                    [side * (roofWidth / 2 + overhang), roofBase + 0.17, 0], { radius: 0.02 });
+            });
         }
         else if (variant.style === "shed") {
             const run = roofWidth + overhang * 2;
@@ -8230,11 +8415,53 @@ function createBuilderPart(item) {
                 [side * run / 2, roofBase + (side > 0 ? rise : 0), 0], { radius: 0.018 }));
         }
         else if (variant.style === "hip") {
-            const rise = Math.min(roofWidth, roofDepth) * 0.5 * Math.tan(pitch);
-            const hip = addMesh(part, new THREE.ConeGeometry(1, rise, 4), roofMaterial,
-                0, roofBase + rise / 2, 0, { rotation: [0, Math.PI / 4, 0] });
-            hip.scale.set((roofWidth + overhang * 2) / Math.SQRT2, 1,
-                (roofDepth + overhang * 2) / Math.SQRT2);
+            const totalWidth = roofWidth + overhang * 2;
+            const totalDepth = roofDepth + overhang * 2;
+            const rise = Math.min(totalWidth, totalDepth) * 0.5 * Math.tan(pitch);
+            const topY = roofBase + rise;
+            const addHipFace = (points) => {
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute("position", new THREE.Float32BufferAttribute(
+                    points.flatMap((point) => [point[0], point[1], point[2]]), 3));
+                geometry.setIndex(points.length === 4 ? [0, 1, 2, 0, 2, 3] : [0, 1, 2]);
+                geometry.computeVertexNormals();
+                const face = new THREE.Mesh(geometry, roofMaterial);
+                face.castShadow = true;
+                face.receiveShadow = true;
+                part.add(face);
+            };
+            if (totalDepth >= totalWidth) {
+                const ridgeHalf = Math.max(0, (totalDepth - totalWidth) / 2);
+                addHipFace([[-totalWidth / 2, roofBase, -totalDepth / 2],
+                    [-totalWidth / 2, roofBase, totalDepth / 2], [0, topY, ridgeHalf],
+                    [0, topY, -ridgeHalf]]);
+                addHipFace([[totalWidth / 2, roofBase, totalDepth / 2],
+                    [totalWidth / 2, roofBase, -totalDepth / 2], [0, topY, -ridgeHalf],
+                    [0, topY, ridgeHalf]]);
+                addHipFace([[-totalWidth / 2, roofBase, -totalDepth / 2],
+                    [0, topY, -ridgeHalf], [totalWidth / 2, roofBase, -totalDepth / 2]]);
+                addHipFace([[totalWidth / 2, roofBase, totalDepth / 2],
+                    [0, topY, ridgeHalf], [-totalWidth / 2, roofBase, totalDepth / 2]]);
+                if (ridgeHalf > 0.02)
+                    addBox(part, [0.12, 0.12, ridgeHalf * 2], trimMaterial,
+                        [0, topY + 0.025, 0], { radius: 0.025 });
+            }
+            else {
+                const ridgeHalf = Math.max(0, (totalWidth - totalDepth) / 2);
+                addHipFace([[-totalWidth / 2, roofBase, totalDepth / 2],
+                    [totalWidth / 2, roofBase, totalDepth / 2], [ridgeHalf, topY, 0],
+                    [-ridgeHalf, topY, 0]]);
+                addHipFace([[totalWidth / 2, roofBase, -totalDepth / 2],
+                    [-totalWidth / 2, roofBase, -totalDepth / 2], [-ridgeHalf, topY, 0],
+                    [ridgeHalf, topY, 0]]);
+                addHipFace([[-totalWidth / 2, roofBase, -totalDepth / 2],
+                    [-ridgeHalf, topY, 0], [-totalWidth / 2, roofBase, totalDepth / 2]]);
+                addHipFace([[totalWidth / 2, roofBase, totalDepth / 2],
+                    [ridgeHalf, topY, 0], [totalWidth / 2, roofBase, -totalDepth / 2]]);
+                if (ridgeHalf > 0.02)
+                    addBox(part, [ridgeHalf * 2, 0.12, 0.12], trimMaterial,
+                        [0, topY + 0.025, 0], { radius: 0.025 });
+            }
             addBox(part, [roofWidth + overhang * 2, 0.10, roofDepth + overhang * 2], trimMaterial,
                 [0, roofBase + 0.02, 0], { castShadow: false });
         }
@@ -8245,7 +8472,7 @@ function createBuilderPart(item) {
             [-1, 1].forEach((side) => addBox(part,
                 [slopeLength, 0.16, roofDepth + overhang * 2], roofMaterial,
                 [side * halfRun / 2, roofBase + rise / 2, 0],
-                { rotation: [0, 0, side * pitch], radius: 0.025 }));
+                { rotation: [0, 0, -side * pitch], radius: 0.025 }));
             addBox(part, [0.13, 0.13, roofDepth + overhang * 2], trimMaterial,
                 [0, roofBase + rise, 0], { radius: 0.03 });
         }
@@ -8866,13 +9093,18 @@ function createHouseBuilder() {
             }
         });
         const maxOutside = samples.reduce((maximum, sample) => Math.max(maximum, sample.outside), 0);
-        if (maxOutside > 2.05)
+        // Ohne Stütze bleibt ein freier Balkonvorsprung von 1 m möglich. Eine
+        // Stütze erweitert den Wandzug bis maximal 1 m über ihren Standort
+        // hinaus; damit lassen sich echte, begehbare Balkonseiten bauen.
+        if (maxOutside > (supports.length ? 3.05 : 1.05))
             return {
                 valid: false, mode: "blocked", maxOutside, unsupported: [],
-                reason: "Obere Wände dürfen höchstens 2 m über die Etage darunter hinausragen."
+                reason: supports.length ?
+                    "Die Balkonwand darf höchstens 1 m über die äußerste tragende Stütze hinausragen." :
+                    "Ohne Stütze darf eine obere Wand höchstens 1 m frei hinausragen."
             };
         const unsupported = samples.filter((sample) => sample.outside > 1.05 &&
-            !supports.some((support) => Math.hypot(sample.x - support.x, sample.z - support.z) <= 1.35));
+            !supports.some((support) => Math.hypot(sample.x - support.x, sample.z - support.z) <= 1.05));
         if (unsupported.length)
             return {
                 valid: false, mode: "needs-support", maxOutside, unsupported,
@@ -8920,11 +9152,15 @@ function createHouseBuilder() {
         const loop = closedWallLoop(level);
         if (!loop || hasRoofAtLevel(level) || hasItemsAbove(level))
             return null;
+        const wallHeights = builder.items.filter((item) =>
+            item.type === "wall" && item.level === level).map((wall) =>
+            variantForItem(wall)?.height || 2.75);
         return {
             x: (loop.minX + loop.maxX) / 2,
             z: (loop.minZ + loop.maxZ) / 2,
             width: Math.max(1, loop.maxX - loop.minX),
             depth: Math.max(1, loop.maxZ - loop.minZ),
+            baseHeight: wallHeights.length ? Math.max(...wallHeights) : 2.75,
             loop
         };
     }
@@ -9532,7 +9768,7 @@ function createHouseBuilder() {
         }));
         if (preferredVariant && variants.some((variant) => variant.id === preferredVariant))
             builderVariant.value = preferredVariant;
-        builderVariantLabel.textContent = builderPartType.value === "wall" ? "Wandhöhe" :
+        builderVariantLabel.textContent = builderPartType.value === "wall" ? "Wand / Tapete" :
             ["floor", "grass"].includes(builderPartType.value) ? "Oberfläche" :
                 builderPartType.value === "roof" ? "Dachform" :
                     builderPartType.value === "support" ? "Stützenart" :
@@ -9554,25 +9790,7 @@ function createHouseBuilder() {
         );
     }
 
-    function snappedWallOrGridPoint(point) {
-        const endpointSnap = snapWallPoint(point);
-        return endpointSnap.snapped ? endpointSnap : {
-            point: snappedGroundPoint(point),
-            snapped: false,
-            wallId: null
-        };
-    }
-
-    function orthogonalWallPoint(start, point) {
-        const snapped = snappedGroundPoint(point);
-        const dx = snapped.x - start.x;
-        const dz = snapped.z - start.z;
-        return Math.abs(dx) >= Math.abs(dz) ?
-            new THREE.Vector3(snapped.x, 0, start.z) :
-            new THREE.Vector3(start.x, 0, snapped.z);
-    }
-
-    function snappedFloorEdgePoint(point) {
+    function snappedWallGridCorner(point) {
         return new THREE.Vector3(
             THREE.MathUtils.clamp(Math.round(point.x), -10, 10),
             0,
@@ -9580,19 +9798,40 @@ function createHouseBuilder() {
         );
     }
 
+    function snappedWallOrGridPoint(point) {
+        const endpointSnap = snapWallPoint(point);
+        return endpointSnap.snapped ? endpointSnap : {
+            point: snappedWallGridCorner(point),
+            snapped: false,
+            wallId: null
+        };
+    }
+
+    function orthogonalWallPoint(start, point, useWallGrid = true) {
+        const snapped = useWallGrid ? snappedWallGridCorner(point) : snappedGroundPoint(point);
+        const dx = snapped.x - start.x;
+        const dz = snapped.z - start.z;
+        return Math.abs(dx) >= Math.abs(dz) ?
+            new THREE.Vector3(snapped.x, 0, start.z) :
+            new THREE.Vector3(start.x, 0, snapped.z);
+    }
+
+    function snappedFloorCellCenter(point) {
+        return new THREE.Vector3(
+            THREE.MathUtils.clamp(Math.floor(point.x), -10, 9) + 0.5,
+            0,
+            THREE.MathUtils.clamp(Math.floor(point.z), -10, 9) + 0.5
+        );
+    }
+
     function updateFloorPreview(point) {
         const start = builder.drawStart;
-        const rawEnd = snappedFloorEdgePoint(point);
-        const end = rawEnd.clone();
-        if (end.x === start.x)
-            end.x = THREE.MathUtils.clamp(start.x + (point.x < start.x ? -1 : 1), -10, 10);
-        if (end.z === start.z)
-            end.z = THREE.MathUtils.clamp(start.z + (point.z < start.z ? -1 : 1), -10, 10);
-        if (end.x === start.x || end.z === start.z)
-            return false;
+        const end = snappedFloorCellCenter(point);
         builder.drawEnd = end;
-        const width = Math.abs(end.x - start.x);
-        const depth = Math.abs(end.z - start.z);
+        // Start- und Zielfeld zählen beide mit. Ein einzelner Tipp zeigt daher
+        // sofort genau eine vollständige 1 × 1-m-Kachel an.
+        const width = Math.abs(end.x - start.x) + 1;
+        const depth = Math.abs(end.z - start.z) + 1;
         builder.drawPreview.position.set(
             (start.x + end.x) / 2,
             builder.currentLevel * BUILDER_STOREY_HEIGHT + 0.055,
@@ -9622,7 +9861,7 @@ function createHouseBuilder() {
         const drawType = builder.drawType || "wall";
         if (drawType === "floor")
             return updateFloorPreview(point);
-        const constrainedPoint = orthogonalWallPoint(builder.drawStart, point);
+        const constrainedPoint = orthogonalWallPoint(builder.drawStart, point, drawType === "wall");
         const candidateSnap = drawType === "wall" ? snapWallPoint(constrainedPoint) : {
             point: constrainedPoint,
             snapped: false,
@@ -9698,10 +9937,10 @@ function createHouseBuilder() {
         setWallDrawPreviewValidity(true);
         clearFenceDrawPreview();
         if (drawType === "floor") {
-            const width = Math.abs(end.x - start.x);
-            const depth = Math.abs(end.z - start.z);
-            if (cancelled || width < 1 || depth < 1) {
-                updateStatus(cancelled ? "Bodenzeichnung abgebrochen." : "Boden mindestens ein 1 × 1-m-Feld groß aufziehen.");
+            const width = Math.abs(end.x - start.x) + 1;
+            const depth = Math.abs(end.z - start.z) + 1;
+            if (cancelled) {
+                updateStatus("Bodenzeichnung abgebrochen.");
                 return true;
             }
             const variant = selectedVariant();
@@ -9781,7 +10020,12 @@ function createHouseBuilder() {
             item.rotation = rotation;
             if (item.type === "wall")
                 updateAttachedOpenings(item.id);
-            applyItemTransform(item);
+            // Dächer speichern die Wandkontur in Weltkoordinaten. Nach einer
+            // Vierteldrehung muss ihre lokale Breite/Tiefe neu berechnet werden.
+            if (item.type === "roof")
+                replaceItemObject(item);
+            else
+                applyItemTransform(item);
         }
         setRotation(item.rotation);
         refreshSelectionHelper();
@@ -9845,7 +10089,8 @@ function createHouseBuilder() {
         if (roofPlacement)
             Object.assign(item, {
                 x: roofPlacement.x, z: roofPlacement.z,
-                width: roofPlacement.width, depth: roofPlacement.depth
+                width: roofPlacement.width, depth: roofPlacement.depth,
+                baseHeight: roofPlacement.baseHeight
             });
         const snapped = openingType ? openingPlacement.snap : null;
         if (["window", "door"].includes(item.type) && !snapped) {
@@ -9892,7 +10137,7 @@ function createHouseBuilder() {
                 return false;
             const rawPoint = hit?.point || point;
             const startSnap = drawType === "wall" ? snappedWallOrGridPoint(rawPoint) : {
-                point: drawType === "floor" ? snappedFloorEdgePoint(rawPoint) : snappedGroundPoint(rawPoint),
+                point: drawType === "floor" ? snappedFloorCellCenter(rawPoint) : snappedGroundPoint(rawPoint),
                 snapped: false,
                 wallId: null
             };
@@ -9923,7 +10168,7 @@ function createHouseBuilder() {
             return false;
         selectItem(id);
         if (clickedItem?.type === "roof") {
-            updateStatus("Dach ausgewählt. Es bleibt mittig auf den Außenwänden und kann gedreht oder gelöscht werden.");
+            updateStatus("Dach ausgewählt. Es bleibt bündig und mittig auf den Außenwänden und kann in 90°-Schritten gedreht werden.");
             return true;
         }
         if (wallSupportsUpperStructure(clickedItem)) {
@@ -10126,6 +10371,12 @@ function createHouseBuilder() {
             button.classList.toggle("selected",
                 button.style.getPropertyValue("--builder-swatch").toLowerCase() === builderColor.value.toLowerCase()));
         refreshVariants();
+        if (builderPartType.value === "roof") {
+            const placement = roofPlacementData();
+            if (placement)
+                // Der First startet automatisch parallel zur längeren Hausseite.
+                setRotation(placement.width > placement.depth ? 90 : 0);
+        }
         setWallLengthControls(null);
         refreshPlacementPreview();
         updateStatus(["wall", "fence", "floor"].includes(builderPartType.value) ?
@@ -10136,7 +10387,7 @@ function createHouseBuilder() {
                 builderPartType.value === "roof" ?
                     "Dachtyp wählen und auf den geschlossenen Wandzug tippen." :
                     builderPartType.value === "support" ?
-                        "Stütze in der Etage unter einem bis zu 2 m auskragenden Bauteil setzen." :
+                        "Stütze unter dem Balkon setzen; die Wand darf bis 1 m darüber hinauslaufen." :
                         `${builderTypeLabel(builderPartType.value)}: freie Stelle auf dem Grundstück antippen.`);
     });
     builderVariant.addEventListener("change", () => {

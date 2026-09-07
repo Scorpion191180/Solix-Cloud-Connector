@@ -14,7 +14,12 @@ let latestAutomationData = null;
 let latestAudiData = null;
 let latestWeatherData = null;
 let latestWasteData = null;
-let activeWeatherCoordinates = null;
+const WEATHER_LOCATION_STORAGE_KEY = "solix-weather-location-v1";
+let storedWeatherLocation = loadStoredWeatherLocation();
+let activeWeatherCoordinates = storedWeatherLocation ? {
+    latitude: storedWeatherLocation.latitude,
+    longitude: storedWeatherLocation.longitude
+} : null;
 let weatherRequestBusy = false;
 
 const automationReasons = {
@@ -834,6 +839,44 @@ function setWeatherLocationStatus(label, gpsActive = false) {
     }
 }
 
+function loadStoredWeatherLocation() {
+    try {
+        const value = JSON.parse(localStorage.getItem(WEATHER_LOCATION_STORAGE_KEY));
+        const latitude = Number(value?.latitude);
+        const longitude = Number(value?.longitude);
+        if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
+            !Number.isFinite(longitude) || longitude < -180 || longitude > 180)
+            return null;
+        return {
+            latitude,
+            longitude,
+            label: String(value?.label || "Gespeicherter GPS-Standort").slice(0, 90)
+        };
+    }
+    catch (_error) {
+        return null;
+    }
+}
+
+function saveActiveWeatherLocation(label) {
+    if (!activeWeatherCoordinates)
+        return;
+    storedWeatherLocation = {
+        ...activeWeatherCoordinates,
+        label: label || "Gespeicherter GPS-Standort"
+    };
+    try {
+        localStorage.setItem(
+            WEATHER_LOCATION_STORAGE_KEY,
+            JSON.stringify(storedWeatherLocation)
+        );
+    }
+    catch (_error) {
+        // Private Browser-Modi können lokalen Speicher sperren. Das Wetter
+        // bleibt dann wenigstens für die aktuelle Sitzung am GPS-Standort.
+    }
+}
+
 async function updateWeather() {
     if (weatherRequestBusy)
         return;
@@ -851,6 +894,8 @@ async function updateWeather() {
         if (!response.ok)
             throw new Error("Wetter API: HTTP " + response.status);
         latestWeatherData = await response.json();
+        if (latestWeatherData.location_mode === "gps")
+            saveActiveWeatherLocation(latestWeatherData.location_label);
         setWeatherLocationStatus(
             latestWeatherData.location_label ||
                 (activeWeatherCoordinates ? "GPS-Standort" : "Hausstandort"),
@@ -890,6 +935,8 @@ async function useGpsWeather() {
         button.disabled = true;
     if (location)
         location.textContent = "GPS wird bestimmt …";
+    const previousCoordinates = activeWeatherCoordinates;
+    const previousLocation = storedWeatherLocation;
     try {
         const position = await requestBrowserPosition();
         activeWeatherCoordinates = {
@@ -899,10 +946,15 @@ async function useGpsWeather() {
         await updateWeather();
     }
     catch (error) {
-        activeWeatherCoordinates = null;
-        setWeatherLocationStatus("GPS nicht freigegeben · Hausstandort", false);
+        activeWeatherCoordinates = previousCoordinates;
+        storedWeatherLocation = previousLocation;
+        setWeatherLocationStatus(
+            previousLocation?.label || "GPS nicht freigegeben · Hausstandort",
+            Boolean(previousCoordinates)
+        );
         console.log(error);
-        window.setTimeout(() => updateWeather(), 2600);
+        if (!previousCoordinates)
+            window.setTimeout(() => updateWeather(), 2600);
         if (button)
             button.disabled = false;
     }
@@ -1034,6 +1086,8 @@ async function setManualSmartPlug(enabled) {
 updateDashboard();
 updateAutomation();
 updateAudi();
+if (storedWeatherLocation)
+    setWeatherLocationStatus(storedWeatherLocation.label, true);
 updateWeather();
 updateWasteCollection();
 
