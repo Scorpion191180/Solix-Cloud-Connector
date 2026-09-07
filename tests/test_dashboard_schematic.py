@@ -21,8 +21,8 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260906-133", dashboard)
-        self.assertIn("house.js?v=20260906-133", dashboard)
+        self.assertIn("style.css?v=20260907-134", dashboard)
+        self.assertIn("house.js?v=20260907-134", dashboard)
         self.assertIn("app.js?v=20260821-96", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
@@ -356,6 +356,10 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("async function syncAnimalState", script)
         self.assertIn('fetch("/api/animals"', script)
         self.assertIn('data-animal-action="clean"', script)
+        self.assertIn('id="houseCleanShortcut"', dashboard)
+        self.assertIn("function updateCleanupControls", script)
+        self.assertIn("houseCleanShortcut.hidden = safeCount === 0", script)
+        self.assertIn(".house-clean-shortcut", stylesheet)
         self.assertIn("animalResourceLabelElements", script)
         self.assertIn('className = "animal-resource-label healthy"', script)
         self.assertIn("waterUrgency", script)
@@ -625,6 +629,8 @@ class DashboardSchematicTests(unittest.TestCase):
         for element_id in (
             "renderQualitySelect", "houseBuilderOpen", "houseBuilderPanel",
             "builderPartType", "builderVariant", "builderColor",
+            "builderLevelDown", "builderLevelUp", "builderLevelName",
+            "builderLevelPosition",
             "builderVariantLabel", "builderWallLengthRow", "builderWallLength",
             "builderWallLengthValue",
             "builderPanelToggle", "builderRotateLeft", "builderRotateRight",
@@ -637,8 +643,8 @@ class DashboardSchematicTests(unittest.TestCase):
         ):
             self.assertIn(f'id="{element_id}"', dashboard)
 
-        self.assertIn('const APP_BUILD_VERSION = "133"', script)
-        self.assertIn("Version 133", dashboard)
+        self.assertIn('const APP_BUILD_VERSION = "134"', script)
+        self.assertIn("Version 134", dashboard)
         self.assertIn('localStorage.getItem("solix-scene-labels")', script)
         self.assertIn('stage.classList.toggle("show-scene-labels"', script)
         self.assertIn("hasStoredDogPose", script)
@@ -676,19 +682,34 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('function finishWallDrawing(cancelled = false)', script)
         self.assertIn('fenceDrawPreview.name = "Zaun-Zeichenvorschau"', script)
         self.assertIn('function showFenceDrawPreview(length, center, rotation)', script)
-        self.assertIn('["wall", "fence"].includes(drawType)', script)
+        self.assertIn('["wall", "fence", "floor"].includes(drawType)', script)
         self.assertIn('builder.drawType = drawType', script)
         self.assertIn('function positionOpeningOnWall(item)', script)
         self.assertIn('function updateAttachedOpenings(wallId)', script)
         self.assertIn('id: "wall-custom-standard"', script)
         self.assertIn('id: "floor-stone"', script)
+        self.assertIn('id: "roof-gable"', script)
+        self.assertIn('id: "roof-hip"', script)
+        self.assertIn('id: "roof-shed"', script)
+        self.assertIn('id: "roof-flat"', script)
+        self.assertIn('const BUILDER_MAX_LEVEL = 2', script)
+        self.assertIn('const BUILDER_STOREY_HEIGHT = 2.9', script)
+        self.assertIn('function closedWallLoop(level)', script)
+        self.assertIn('function switchBuilderLevel(targetLevel)', script)
+        self.assertIn('function addAutomaticCeiling(level, loop)', script)
+        self.assertIn('function roofPlacementData(level = builder.currentLevel)', script)
+        self.assertIn('function updateFloorPreview(point)', script)
+        self.assertIn('type: "floor", variant: variant.id', script)
+        self.assertIn('width, depth, rotation: 0', script)
+        self.assertNotIn('Steinplatten · 3 × 3 m', script)
+        self.assertIn('<option value="roof">', dashboard)
         self.assertIn('id: "grass-lawn"', script)
         self.assertIn('id: "fence-picket"', script)
         self.assertIn('id: "tree-deciduous"', script)
         self.assertIn('id: "tree-birch"', script)
         self.assertIn('<option value="fence">', dashboard)
         self.assertIn('function builderItemHitAtPointer(event)', script)
-        self.assertIn('function snapWallPoint(point, excludeWallId = null)', script)
+        self.assertIn('function snapWallPoint(point, excludeWallId = null, level = builder.currentLevel)', script)
         self.assertIn('const WALL_ENDPOINT_SNAP_DISTANCE = 0.95', script)
         self.assertIn('activatePointerMode();', script)
         self.assertIn('function createPlacementPreview()', script)

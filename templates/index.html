@@ -14,7 +14,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/solix-home-32.png?v=94">
 <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/solix-home-180.png?v=94">
 <link rel="manifest" href="/static/site.webmanifest?v=94">
-<link rel="stylesheet" href="/static/style.css?v=20260906-133">
+<link rel="stylesheet" href="/static/style.css?v=20260907-134">
 
 <script type="importmap">
 {
@@ -36,7 +36,7 @@
 <p id="sceneLoaderStatus">Haus und 3D-Objekte werden vorbereitet …</p>
 <div class="scene-loader-track" aria-hidden="true"><span id="sceneLoaderBar"></span></div>
 <small id="sceneLoaderPercent">0 %</small>
-<small class="scene-loader-version" id="sceneLoaderVersion">Version 133</small>
+<small class="scene-loader-version" id="sceneLoaderVersion">Version 134</small>
 </div>
 </div>
 
@@ -259,6 +259,12 @@ Signalstärke
 <button id="builderPointerMode" type="button" aria-pressed="false" aria-keyshortcuts="M">⌁ Auswahl / Maus</button>
 <small>Ohne Bauteil navigieren und Vorhandenes auswählen</small>
 </div>
+<div class="house-builder-storey" aria-label="Geschoss auswählen">
+<button id="builderLevelDown" type="button" aria-label="Eine Etage nach unten" disabled>−</button>
+<span><small>AKTIVE ETAGE</small><strong id="builderLevelName">Erdgeschoss</strong></span>
+<output id="builderLevelPosition">1 / 3</output>
+<button id="builderLevelUp" type="button" aria-label="Eine Etage nach oben">＋</button>
+</div>
 <div class="house-builder-grid">
 <label>Bauteil
 <select id="builderPartType">
@@ -266,6 +272,7 @@ Signalstärke
 <option value="window">▢ Fenster</option>
 <option value="door">▯ Tür</option>
 <option value="floor">▦ Boden</option>
+<option value="roof">⌂ Dach</option>
 <option value="grass">▧ Grasfläche</option>
 <option value="fence">▥ Zaun</option>
 <option value="tree">♣ Baum</option>
@@ -291,7 +298,7 @@ Signalstärke
 <output id="builderRotation">0°</output>
 <button id="builderRotateRight" type="button" aria-label="Um 90 Grad nach rechts drehen">↷</button>
 </div>
-<p class="house-builder-help">Der Baumodus startet sicher mit Auswahl/Maus. Nach „Neues Bauteil“ erscheint eine Vorschau. Wände und Zäune lassen sich nur waagerecht oder senkrecht aufziehen; Wandecken rasten innerhalb eines Rasterfeldes fest zusammen. Auswahl/Maus: links verschieben, rechts drehen, Mausrad zoomen.</p>
+<p class="house-builder-help">Wände und Zäune werden rechtwinklig aufgezogen. Bodenflächen bestehen immer aus 1 × 1-m-Feldern und werden mit Vorschau aufgezogen. Die nächste Etage wird erst bei geschlossenem Wandzug freigeschaltet; ihre Geschossdecke entsteht automatisch. Ein Dach beendet den Aufbau nach oben.</p>
 <div class="house-builder-actions">
 <button id="builderNew" type="button" aria-keyshortcuts="N">＋ Neues Bauteil</button>
 <button id="builderDelete" type="button" disabled>Auswahl löschen</button>
@@ -329,7 +336,12 @@ Dein Browser unterstützt die interaktive Hausansicht nicht.
 <span><strong id="houseWeatherTemp">-- °C</strong><small id="houseWeatherText">Wetter wird geladen</small></span>
 </div>
 <button class="house-reset" id="houseReset" type="button" aria-label="Zur Standardansicht zurückkehren">↺ Standardansicht</button>
-<span class="house-version" id="houseVersion" aria-label="Aktuell geladene Version 133">Version 133</span>
+<span class="house-version" id="houseVersion" aria-label="Aktuell geladene Version 134">Version 134</span>
+<button class="house-clean-shortcut" id="houseCleanShortcut" type="button"
+    data-animal-action="clean" aria-label="Hinterlassenschaften vom Grundstück entfernen"
+    aria-live="polite" hidden>
+🧹 Grundstück reinigen
+</button>
 </div>
 
 <div class="house-inspector" id="houseInspector" aria-live="polite" hidden>
@@ -765,7 +777,7 @@ Einstellungen
 
 </div>
 
-<script type="module" src="/static/house.js?v=20260906-133"></script>
+<script type="module" src="/static/house.js?v=20260907-134"></script>
 <script src="/static/app.js?v=20260821-96"></script>
 
 </body>

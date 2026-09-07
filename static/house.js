@@ -30,6 +30,10 @@ const builderPanel = document.getElementById("houseBuilderPanel");
 const builderCloseButton = document.getElementById("houseBuilderClose");
 const builderPanelToggle = document.getElementById("builderPanelToggle");
 const builderPointerMode = document.getElementById("builderPointerMode");
+const builderLevelDown = document.getElementById("builderLevelDown");
+const builderLevelUp = document.getElementById("builderLevelUp");
+const builderLevelName = document.getElementById("builderLevelName");
+const builderLevelPosition = document.getElementById("builderLevelPosition");
 const builderPartType = document.getElementById("builderPartType");
 const builderVariant = document.getElementById("builderVariant");
 const builderVariantLabel = document.getElementById("builderVariantLabel");
@@ -54,6 +58,7 @@ const builderTouchBuild = document.getElementById("builderTouchBuild");
 const builderTouchCamera = document.getElementById("builderTouchCamera");
 const houseInstructions = document.getElementById("houseInstructions");
 const menuCleanStatus = document.getElementById("houseCleanStatus");
+const houseCleanShortcut = document.getElementById("houseCleanShortcut");
 const menuCareStatus = document.getElementById("houseCareStatus");
 const menuPvToday = document.getElementById("menuPvToday");
 const menuHousePower = document.getElementById("menuHousePower");
@@ -70,7 +75,7 @@ const sceneLoaderBar = document.getElementById("sceneLoaderBar");
 const sceneLoaderStatus = document.getElementById("sceneLoaderStatus");
 const sceneLoaderPercent = document.getElementById("sceneLoaderPercent");
 const sceneLoaderVersion = document.getElementById("sceneLoaderVersion");
-const APP_BUILD_VERSION = "133";
+const APP_BUILD_VERSION = "134";
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const INTERIOR_VIEW_ENABLED = false;
 
@@ -668,6 +673,20 @@ animalCleanLabel.addEventListener("keydown", (event) => {
         selectAnimalCleanup(event);
     }
 });
+
+function updateCleanupControls(count = horseDroppings.length + animalDroppings.length) {
+    const safeCount = Math.max(0, Math.round(Number(count) || 0));
+    animalCleanLabel.querySelector("strong").textContent = safeCount ?
+        `${safeCount} zu reinigen` : "Grundstück sauber";
+    animalCleanLabel.classList.toggle("outside", safeCount === 0);
+    if (houseCleanShortcut) {
+        houseCleanShortcut.hidden = safeCount === 0;
+        houseCleanShortcut.disabled = safeCount === 0;
+        houseCleanShortcut.textContent = safeCount ?
+            `🧹 Reinigen (${safeCount})` : "🧹 Grundstück sauber";
+    }
+    stage.dataset.droppingCount = String(safeCount);
+}
 const houseWindowLights = [];
 let streetLampLight = null;
 let streetLampBulb = null;
@@ -4455,6 +4474,7 @@ function addHorseDropping(position = horse?.group?.position, persist = true) {
         rememberDropping("Pferd", position);
     menuCleanStatus.textContent = (horseDroppings.length + animalDroppings.length) +
         " Hinterlassenschaften auf dem Grundstück.";
+    updateCleanupControls();
 }
 
 function addAnimalDropping(position, kind = "Kamel", persist = true) {
@@ -4478,6 +4498,7 @@ function addAnimalDropping(position, kind = "Kamel", persist = true) {
         rememberDropping(kind, position);
     menuCleanStatus.textContent = (horseDroppings.length + animalDroppings.length) +
         " Hinterlassenschaften auf dem Grundstück.";
+    updateCleanupControls();
 }
 
 function restoreAnimalDroppings(replaceExisting = false) {
@@ -4502,9 +4523,7 @@ function restoreAnimalDroppings(replaceExisting = false) {
     const count = horseDroppings.length + animalDroppings.length;
     menuCleanStatus.textContent = count ?
         `${count} Hinterlassenschaften auf dem Grundstück.` : "Grundstück ist sauber.";
-    animalCleanLabel.querySelector("strong").textContent = count ?
-        `${count} zu reinigen` : "Grundstück sauber";
-    animalCleanLabel.classList.toggle("outside", count === 0);
+    updateCleanupControls(count);
 }
 
 function addUrinePatch(position, pasture) {
@@ -4696,7 +4715,7 @@ function cleanHorseDroppings() {
         patch.materials.forEach((material) => material.dispose());
     });
     animalResources.droppings = [];
-    animalCleanLabel.classList.add("outside");
+    updateCleanupControls(0);
     menuCleanStatus.textContent = "Grundstück ist sauber.";
 }
 
@@ -7939,6 +7958,9 @@ function createAudiChargeConnection() {
 
 const BUILDER_STORAGE_KEY = "solix-house-builder-v1";
 const BUILDER_ROTATION_STEP = 90;
+const BUILDER_MAX_LEVEL = 2;
+const BUILDER_STOREY_HEIGHT = 2.9;
+const BUILDER_LEVEL_NAMES = Object.freeze(["Erdgeschoss", "1. Obergeschoss", "2. Obergeschoss"]);
 const BUILDER_VARIANTS = Object.freeze({
     wall: [
         { id: "wall-custom-standard", label: "Standard · 2,75 m hoch", length: 4.0, height: 2.75 },
@@ -7960,9 +7982,15 @@ const BUILDER_VARIANTS = Object.freeze({
         { id: "door-modern", label: "Moderne Haustür", width: 1.22, height: 2.18, style: "modern" }
     ],
     floor: [
-        { id: "floor-stone", label: "Steinplatten · 3 × 3 m", width: 3, depth: 3, surface: "stone" },
-        { id: "floor-wood", label: "Holzdielen · 3 × 3 m", width: 3, depth: 3, surface: "wood" },
-        { id: "floor-concrete", label: "Beton · 3 × 3 m", width: 3, depth: 3, surface: "concrete" }
+        { id: "floor-stone", label: "Steinplatten · 1-m-Raster", width: 1, depth: 1, surface: "stone" },
+        { id: "floor-wood", label: "Holzdielen · 1-m-Raster", width: 1, depth: 1, surface: "wood" },
+        { id: "floor-concrete", label: "Beton · 1-m-Raster", width: 1, depth: 1, surface: "concrete" }
+    ],
+    roof: [
+        { id: "roof-gable", label: "Satteldach", style: "gable", pitch: 32 },
+        { id: "roof-hip", label: "Walmdach", style: "hip", pitch: 28 },
+        { id: "roof-shed", label: "Pultdach", style: "shed", pitch: 16 },
+        { id: "roof-flat", label: "Flachdach", style: "flat", pitch: 2 }
     ],
     grass: [
         { id: "grass-lawn", label: "Rasen · 3 × 3 m", width: 3, depth: 3, surface: "lawn" },
@@ -7992,11 +8020,11 @@ const BUILDER_COLOR_SWATCHES = Object.freeze([
 ]);
 const BUILDER_DEFAULT_COLORS = Object.freeze({
     wall: "#f1eee5", window: "#9db5ce", door: "#8e5a43",
-    floor: "#9d9487", grass: "#5d9b49", fence: "#8e6947", tree: "#4f7d3d"
+    floor: "#9d9487", roof: "#a84932", grass: "#5d9b49", fence: "#8e6947", tree: "#4f7d3d"
 });
 const BUILDER_TYPE_LABELS = Object.freeze({
     wall: "Wand", window: "Fenster", door: "Tür",
-    floor: "Boden", grass: "Grasfläche", fence: "Zaun", tree: "Baum"
+    floor: "Boden", roof: "Dach", grass: "Grasfläche", fence: "Zaun", tree: "Baum"
 });
 
 function safeBuilderItems() {
@@ -8004,9 +8032,13 @@ function safeBuilderItems() {
         const parsed = JSON.parse(localStorage.getItem(BUILDER_STORAGE_KEY) || "[]");
         if (!Array.isArray(parsed))
             return [];
-        return parsed.slice(0, 400).filter((item) =>
+        return parsed.slice(0, 500).filter((item) =>
             item && BUILDER_VARIANTS[item.type]?.some((variant) => variant.id === item.variant) &&
-            Number.isFinite(item.x) && Number.isFinite(item.z) && Number.isFinite(item.rotation));
+            Number.isFinite(item.x) && Number.isFinite(item.z) && Number.isFinite(item.rotation))
+            .map((item) => ({
+                ...item,
+                level: THREE.MathUtils.clamp(Number.isInteger(item.level) ? item.level : 0, 0, BUILDER_MAX_LEVEL)
+            }));
     }
     catch (_error) {
         return [];
@@ -8016,7 +8048,9 @@ function safeBuilderItems() {
 function createBuilderPart(item) {
     const part = new THREE.Group();
     part.name = `Bauteil ${item.type} ${item.variant}`;
-    part.position.set(item.x, 0, item.z);
+    const itemLevel = THREE.MathUtils.clamp(Number.isInteger(item.level) ? item.level : 0, 0, BUILDER_MAX_LEVEL);
+    const levelBase = itemLevel * BUILDER_STOREY_HEIGHT;
+    part.position.set(item.x, levelBase, item.z);
     part.rotation.y = THREE.MathUtils.degToRad(item.rotation);
     part.userData.builderItemId = item.id;
     const color = new THREE.Color(item.color || BUILDER_DEFAULT_COLORS[item.type] || "#f1eee5");
@@ -8093,29 +8127,85 @@ function createBuilderPart(item) {
     }
     else if (["floor", "grass"].includes(item.type)) {
         const isGrass = item.type === "grass";
+        const surfaceWidth = isGrass ? variant.width :
+            THREE.MathUtils.clamp(Math.round(item.width || variant.width || 1), 1, 20);
+        const surfaceDepth = isGrass ? variant.depth :
+            THREE.MathUtils.clamp(Math.round(item.depth || variant.depth || 1), 1, 20);
         const surfaceMaterial = new THREE.MeshStandardMaterial({
             color, roughness: isGrass ? 0.98 : 0.86, metalness: 0
         });
-        addBox(part, [variant.width, isGrass ? 0.07 : 0.10, variant.depth], surfaceMaterial,
+        addBox(part, [surfaceWidth, isGrass ? 0.07 : 0.10, surfaceDepth], surfaceMaterial,
             [0, isGrass ? 0.025 : 0.045, 0], { castShadow: false });
         if (!isGrass) {
             const jointMaterial = new THREE.MeshBasicMaterial({ color: 0x4b443d });
-            for (let line = -1; line <= 1; line += 1) {
-                const alongX = variant.surface !== "wood";
-                addBox(part, alongX ? [0.018, 0.008, variant.depth] : [variant.width, 0.008, 0.018],
-                    jointMaterial, alongX ? [line, 0.102, 0] : [0, 0.102, line], { castShadow: false });
-            }
+            // Unabhängig von der aufgezogenen Gesamtgröße bleibt jedes sichtbare
+            // Bodenelement exakt ein Rasterfeld (1 × 1 m) groß.
+            for (let line = 1; line < surfaceWidth; line += 1)
+                addBox(part, [0.018, 0.008, surfaceDepth], jointMaterial,
+                    [-surfaceWidth / 2 + line, 0.102, 0], { castShadow: false });
+            for (let line = 1; line < surfaceDepth; line += 1)
+                addBox(part, [surfaceWidth, 0.008, 0.018], jointMaterial,
+                    [0, 0.102, -surfaceDepth / 2 + line], { castShadow: false });
         }
         else {
             const grassMaterial = new THREE.MeshStandardMaterial({
                 color: color.clone().multiplyScalar(1.08), roughness: 1
             });
             for (let index = 0; index < 20; index += 1) {
-                const x = ((index * 37) % 19) / 19 * variant.width - variant.width / 2;
-                const z = ((index * 61) % 23) / 23 * variant.depth - variant.depth / 2;
+                const x = ((index * 37) % 19) / 19 * surfaceWidth - surfaceWidth / 2;
+                const z = ((index * 61) % 23) / 23 * surfaceDepth - surfaceDepth / 2;
                 addMesh(part, new THREE.ConeGeometry(0.025, 0.18 + (index % 3) * 0.035, 4),
                     grassMaterial, x, 0.12, z, { castShadow: false });
             }
+        }
+    }
+    else if (item.type === "roof") {
+        const roofWidth = THREE.MathUtils.clamp(item.width || 6, 1, 20);
+        const roofDepth = THREE.MathUtils.clamp(item.depth || 6, 1, 20);
+        const overhang = 0.28;
+        const pitch = THREE.MathUtils.degToRad(variant.pitch || 28);
+        const roofMaterial = new THREE.MeshStandardMaterial({
+            color, roughness: 0.84, metalness: variant.style === "flat" ? 0.10 : 0.02,
+            side: THREE.DoubleSide
+        });
+        const trimMaterial = new THREE.MeshStandardMaterial({
+            color: color.clone().multiplyScalar(0.58), roughness: 0.78
+        });
+        const roofBase = BUILDER_STOREY_HEIGHT;
+        if (variant.style === "flat") {
+            addBox(part, [roofWidth + overhang * 2, 0.20, roofDepth + overhang * 2], roofMaterial,
+                [0, roofBase + 0.10, 0], { radius: 0.035 });
+            addBox(part, [roofWidth + overhang * 2 + 0.10, 0.15, 0.12], trimMaterial,
+                [0, roofBase + 0.17, roofDepth / 2 + overhang], { radius: 0.02 });
+        }
+        else if (variant.style === "shed") {
+            const run = roofWidth + overhang * 2;
+            const rise = run * Math.tan(pitch);
+            const slopeLength = Math.hypot(run, rise);
+            addBox(part, [slopeLength, 0.16, roofDepth + overhang * 2], roofMaterial,
+                [0, roofBase + rise / 2, 0], { rotation: [0, 0, pitch], radius: 0.025 });
+            [-1, 1].forEach((side) => addBox(part, [0.12, 0.22, roofDepth + overhang * 2], trimMaterial,
+                [side * run / 2, roofBase + (side > 0 ? rise : 0), 0], { radius: 0.018 }));
+        }
+        else if (variant.style === "hip") {
+            const rise = Math.min(roofWidth, roofDepth) * 0.5 * Math.tan(pitch);
+            const hip = addMesh(part, new THREE.ConeGeometry(1, rise, 4), roofMaterial,
+                0, roofBase + rise / 2, 0, { rotation: [0, Math.PI / 4, 0] });
+            hip.scale.set((roofWidth + overhang * 2) / Math.SQRT2, 1,
+                (roofDepth + overhang * 2) / Math.SQRT2);
+            addBox(part, [roofWidth + overhang * 2, 0.10, roofDepth + overhang * 2], trimMaterial,
+                [0, roofBase + 0.02, 0], { castShadow: false });
+        }
+        else {
+            const halfRun = roofWidth / 2 + overhang;
+            const rise = halfRun * Math.tan(pitch);
+            const slopeLength = Math.hypot(halfRun, rise);
+            [-1, 1].forEach((side) => addBox(part,
+                [slopeLength, 0.16, roofDepth + overhang * 2], roofMaterial,
+                [side * halfRun / 2, roofBase + rise / 2, 0],
+                { rotation: [0, 0, side * pitch], radius: 0.025 }));
+            addBox(part, [0.13, 0.13, roofDepth + overhang * 2], trimMaterial,
+                [0, roofBase + rise, 0], { radius: 0.03 });
         }
     }
     else if (item.type === "fence") {
@@ -8281,6 +8371,9 @@ function createHouseBuilder() {
     );
     perimeter.position.y = -0.04;
     root.add(perimeter);
+    const autoCeilings = new THREE.Group();
+    autoCeilings.name = "Automatische Geschossdecken";
+    root.add(autoCeilings);
     const drawPreview = new THREE.Mesh(
         new THREE.BoxGeometry(1, 1, 1),
         new THREE.MeshStandardMaterial({
@@ -8310,6 +8403,7 @@ function createHouseBuilder() {
     const builder = {
         root, ground, active: false, rotation: 0,
         items: safeBuilderItems(), objects: new Map(), previousView: null,
+        currentLevel: 0, autoCeilings, perimeter,
         selectedId: null, selectionHelper: null, draggingId: null,
         dragStartClient: null, dragMoved: false,
         drawing: false, drawType: null, drawStart: null, drawEnd: null,
@@ -8461,11 +8555,14 @@ function createHouseBuilder() {
 
     function startNewPart() {
         setPlacementEnabled(true);
-        selectItem(null, ["wall", "fence"].includes(builderPartType.value) ?
-            `${builderPartType.value === "fence" ? "Neuen Zaun" : "Neue Wand"}: Start- und Endpunkt auf dem Raster ziehen.` :
+        selectItem(null, ["wall", "fence", "floor"].includes(builderPartType.value) ?
+            builderPartType.value === "floor" ? "Neue Bodenfläche: gewünschte 1 × 1-m-Felder als Rechteck aufziehen." :
+                `${builderPartType.value === "fence" ? "Neuen Zaun" : "Neue Wand"}: Start- und Endpunkt auf dem Raster ziehen.` :
             ["window", "door"].includes(builderPartType.value) ?
                 "Neues Fenster oder neue Tür direkt auf eine Wand tippen." :
-                `${builderTypeLabel(builderPartType.value)} auf einer freien Fläche platzieren.`);
+                builderPartType.value === "roof" ?
+                    "Dach auf den geschlossenen Wandzug dieser Etage setzen." :
+                    `${builderTypeLabel(builderPartType.value)} auf einer freien Fläche platzieren.`);
     }
 
     function activatePointerMode() {
@@ -8516,11 +8613,14 @@ function createHouseBuilder() {
         refreshSelectionHelper();
         updateStatus(message || (item ?
             `${builderTypeLabel(item.type)} ausgewählt: ziehen zum Verschieben, Symbole direkt am Objekt zum Drehen oder Löschen.` :
-            ["wall", "fence"].includes(builderPartType.value) ?
-                `${builderPartType.value === "fence" ? "Neuen Zaun" : "Neue Wand"}: Start- und Endpunkt auf dem Raster ziehen.` :
+            ["wall", "fence", "floor"].includes(builderPartType.value) ?
+                builderPartType.value === "floor" ? "Bodenfläche im 1 × 1-m-Raster aufziehen." :
+                    `${builderPartType.value === "fence" ? "Neuen Zaun" : "Neue Wand"}: Start- und Endpunkt auf dem Raster ziehen.` :
                 ["window", "door"].includes(builderPartType.value) ?
                     "Fenster oder Tür wählen und direkt auf eine Wand tippen." :
-                    `${builderTypeLabel(builderPartType.value)} auf einer freien Fläche platzieren.`));
+                    builderPartType.value === "roof" ?
+                        "Dach auf den geschlossenen Wandzug dieser Etage setzen." :
+                        `${builderTypeLabel(builderPartType.value)} auf einer freien Fläche platzieren.`));
     }
 
     function wallSegments(item) {
@@ -8550,9 +8650,225 @@ function createHouseBuilder() {
         return segments;
     }
 
-    function wallEndpoints(excludeWallId = null) {
+    function wallNodeKey(x, z) {
+        return `${Math.round(x * 4) / 4}:${Math.round(z * 4) / 4}`;
+    }
+
+    function closedWallLoop(level) {
+        const edges = new Set();
+        const nodes = new Map();
+        builder.items.filter((item) => item.type === "wall" && item.level === level)
+            .forEach((wall) => wallSegments(wall).forEach((segment) => {
+                const a = {
+                    x: segment.x - segment.axisX * segment.length / 2,
+                    z: segment.z - segment.axisZ * segment.length / 2
+                };
+                const b = {
+                    x: segment.x + segment.axisX * segment.length / 2,
+                    z: segment.z + segment.axisZ * segment.length / 2
+                };
+                const aKey = wallNodeKey(a.x, a.z);
+                const bKey = wallNodeKey(b.x, b.z);
+                if (aKey === bKey)
+                    return;
+                if (!nodes.has(aKey))
+                    nodes.set(aKey, { key: aKey, x: a.x, z: a.z, neighbours: new Set() });
+                if (!nodes.has(bKey))
+                    nodes.set(bKey, { key: bKey, x: b.x, z: b.z, neighbours: new Set() });
+                nodes.get(aKey).neighbours.add(bKey);
+                nodes.get(bKey).neighbours.add(aKey);
+                edges.add([aKey, bKey].sort().join("|"));
+            }));
+        if (edges.size < 4 || nodes.size < 4)
+            return null;
+
+        // Auch mit an die Außenwand angeschlossenen Innenwänden bleibt das
+        // Gebäude geschlossen. Deshalb suchen wir alle einfachen Wandzyklen
+        // und verwenden die flächenmäßig größte Kontur als Gebäudehülle.
+        const nodeKeys = Array.from(nodes.keys()).sort();
+        const nodeIndex = new Map(nodeKeys.map((key, index) => [key, index]));
+        const cycles = new Map();
+        let searchSteps = 0;
+        const maxSearchSteps = 30000;
+
+        function cycleKey(keys) {
+            return keys.map((key, index) =>
+                [key, keys[(index + 1) % keys.length]].sort().join("|")).sort().join(";");
+        }
+
+        function findCycles(startKey, currentKey, path, visited) {
+            if (searchSteps >= maxSearchSteps || cycles.size >= 512)
+                return;
+            searchSteps += 1;
+            const minimumIndex = nodeIndex.get(startKey);
+            Array.from(nodes.get(currentKey)?.neighbours || []).sort().forEach((nextKey) => {
+                if (nextKey === startKey) {
+                    if (path.length >= 4)
+                        cycles.set(cycleKey(path), path.slice());
+                    return;
+                }
+                if (visited.has(nextKey) || nodeIndex.get(nextKey) < minimumIndex)
+                    return;
+                visited.add(nextKey);
+                path.push(nextKey);
+                findCycles(startKey, nextKey, path, visited);
+                path.pop();
+                visited.delete(nextKey);
+            });
+        }
+
+        nodeKeys.forEach((startKey) =>
+            findCycles(startKey, startKey, [startKey], new Set([startKey])));
+        const closedLoops = Array.from(cycles.values()).map((keys) => {
+            const points = keys.map((key) => {
+                const node = nodes.get(key);
+                return { x: node.x, z: node.z };
+            });
+            const area = Math.abs(points.reduce((sum, point, index) => {
+                const next = points[(index + 1) % points.length];
+                return sum + point.x * next.z - next.x * point.z;
+            }, 0) / 2);
+            return { points, area };
+        }).filter((loop) => loop.area >= 1).sort((a, b) => b.area - a.area);
+        const outer = closedLoops[0];
+        if (!outer)
+            return null;
+        const xs = outer.points.map((point) => point.x);
+        const zs = outer.points.map((point) => point.z);
+        return {
+            points: outer.points,
+            area: outer.area,
+            minX: Math.min(...xs), maxX: Math.max(...xs),
+            minZ: Math.min(...zs), maxZ: Math.max(...zs)
+        };
+    }
+
+    function hasRoofAtLevel(level) {
+        return builder.items.some((item) => item.type === "roof" && item.level === level);
+    }
+
+    function hasItemsAbove(level) {
+        return builder.items.some((item) => item.level > level);
+    }
+
+    function wallSupportsUpperStructure(item) {
+        return item?.type === "wall" && (hasRoofAtLevel(item.level) || hasItemsAbove(item.level));
+    }
+
+    function roofPlacementData(level = builder.currentLevel) {
+        const loop = closedWallLoop(level);
+        if (!loop || hasRoofAtLevel(level) || hasItemsAbove(level))
+            return null;
+        return {
+            x: (loop.minX + loop.maxX) / 2,
+            z: (loop.minZ + loop.maxZ) / 2,
+            width: Math.max(1, loop.maxX - loop.minX),
+            depth: Math.max(1, loop.maxZ - loop.minZ),
+            loop
+        };
+    }
+
+    function clearAutomaticCeilings() {
+        builder.autoCeilings.children.slice().forEach((child) => {
+            builder.autoCeilings.remove(child);
+            child.geometry?.dispose?.();
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            materials.filter(Boolean).forEach((material) => material.dispose?.());
+        });
+    }
+
+    function addAutomaticCeiling(level, loop) {
+        const shape = new THREE.Shape();
+        loop.points.forEach((point, index) => {
+            const x = point.x;
+            const y = -point.z;
+            if (index === 0)
+                shape.moveTo(x, y);
+            else
+                shape.lineTo(x, y);
+        });
+        shape.closePath();
+        const ceiling = new THREE.Mesh(
+            new THREE.ExtrudeGeometry(shape, { depth: 0.14, bevelEnabled: false }),
+            new THREE.MeshStandardMaterial({
+                color: 0xd8d2c6, roughness: 0.92, metalness: 0,
+                transparent: true, opacity: 0.94, side: THREE.DoubleSide
+            })
+        );
+        ceiling.name = `Automatische Decke ${BUILDER_LEVEL_NAMES[level]}`;
+        ceiling.rotation.x = -Math.PI / 2;
+        ceiling.position.y = (level + 1) * BUILDER_STOREY_HEIGHT - 0.14;
+        ceiling.receiveShadow = true;
+        ceiling.castShadow = false;
+        builder.autoCeilings.add(ceiling);
+    }
+
+    function updateLevelControls() {
+        const level = builder.currentLevel;
+        const loopClosed = Boolean(closedWallLoop(level));
+        const roofPlaced = hasRoofAtLevel(level);
+        builderLevelName.textContent = BUILDER_LEVEL_NAMES[level];
+        builderLevelPosition.value = `${level + 1} / ${BUILDER_MAX_LEVEL + 1}`;
+        builderLevelPosition.textContent = builderLevelPosition.value;
+        builderLevelDown.disabled = level === 0;
+        builderLevelUp.disabled = level >= BUILDER_MAX_LEVEL || !loopClosed || roofPlaced;
+        builderLevelUp.title = level >= BUILDER_MAX_LEVEL ? "Maximal drei Etagen" :
+            roofPlaced ? "Das Dach beendet den Aufbau nach oben" :
+                loopClosed ? "Nächste Etage öffnen" : "Außenwände dieser Etage zuerst schließen";
+        stage.dataset.builderLevel = String(level);
+        stage.dataset.builderLevelClosed = String(loopClosed);
+        stage.dataset.builderRoofPlaced = String(roofPlaced);
+    }
+
+    function refreshLevelStructures() {
+        clearAutomaticCeilings();
+        for (let level = 0; level < builder.currentLevel; level += 1) {
+            const loop = closedWallLoop(level);
+            if (loop)
+                addAutomaticCeiling(level, loop);
+        }
+        builder.objects.forEach((object, id) => {
+            const item = itemById(id);
+            object.visible = Boolean(item && item.level <= builder.currentLevel);
+        });
+        const base = builder.currentLevel * BUILDER_STOREY_HEIGHT;
+        builder.ground.position.y = base + 0.025;
+        grid.position.y = base + 0.012;
+        builder.perimeter.position.y = base - 0.04;
+        // Die Etagenhoehe darf nur die Kamera des aktiven Baumodus
+        // beeinflussen. Beim Aufbau der normalen Live-Szene wird der Builder
+        // ebenfalls einmal erzeugt, ist zu diesem Zeitpunkt aber unsichtbar.
+        if (builder.active)
+            cameraTarget.y = base + 1.10;
+        updateLevelControls();
+        renderer.shadowMap.needsUpdate = true;
+    }
+
+    function switchBuilderLevel(targetLevel) {
+        const nextLevel = THREE.MathUtils.clamp(Math.round(targetLevel), 0, BUILDER_MAX_LEVEL);
+        if (nextLevel === builder.currentLevel)
+            return true;
+        if (nextLevel > builder.currentLevel) {
+            if (hasRoofAtLevel(builder.currentLevel)) {
+                updateStatus("Über einem bereits gesetzten Dach kann keine weitere Etage entstehen.");
+                return false;
+            }
+            if (!closedWallLoop(builder.currentLevel)) {
+                updateStatus(`Die Außenwände im ${BUILDER_LEVEL_NAMES[builder.currentLevel]} müssen zuerst vollständig geschlossen sein.`);
+                return false;
+            }
+        }
+        finishWallDrawing(true);
+        builder.currentLevel = nextLevel;
+        selectItem(null);
+        refreshLevelStructures();
+        updateStatus(`${BUILDER_LEVEL_NAMES[nextLevel]} aktiv. Die Decke der Etage darunter wurde automatisch geschlossen.`);
+        return true;
+    }
+
+    function wallEndpoints(excludeWallId = null, level = builder.currentLevel) {
         const endpoints = [];
-        builder.items.filter((item) => item.type === "wall" && item.id !== excludeWallId)
+        builder.items.filter((item) => item.type === "wall" && item.id !== excludeWallId && item.level === level)
             .forEach((wall) => wallSegments(wall).forEach((segment, wallSegment) => {
                 [-1, 1].forEach((direction) => endpoints.push({
                     x: segment.x + segment.axisX * segment.length / 2 * direction,
@@ -8565,9 +8881,9 @@ function createHouseBuilder() {
         return endpoints;
     }
 
-    function snapWallPoint(point, excludeWallId = null) {
+    function snapWallPoint(point, excludeWallId = null, level = builder.currentLevel) {
         let best = null;
-        wallEndpoints(excludeWallId).forEach((endpoint) => {
+        wallEndpoints(excludeWallId, level).forEach((endpoint) => {
             const distance = Math.hypot(point.x - endpoint.x, point.z - endpoint.z);
             if ((!best || distance < best.distance) && distance <= WALL_ENDPOINT_SNAP_DISTANCE)
                 best = { ...endpoint, distance };
@@ -8590,7 +8906,7 @@ function createHouseBuilder() {
             [-1, 1].forEach((direction) => {
                 const endpointX = segment.x + segment.axisX * segment.length / 2 * direction;
                 const endpointZ = segment.z + segment.axisZ * segment.length / 2 * direction;
-                wallEndpoints(item.id).forEach((target) => {
+                wallEndpoints(item.id, item.level).forEach((target) => {
                     const distance = Math.hypot(endpointX - target.x, endpointZ - target.z);
                     if ((!best || distance < best.distance) && distance <= WALL_ENDPOINT_SNAP_DISTANCE) {
                         best = {
@@ -8610,7 +8926,7 @@ function createHouseBuilder() {
             return { x: rawX, z: rawZ, rotation: item.rotation, wallId: null };
         const opening = variantForItem(item);
         let best = null;
-        builder.items.filter((candidate) => candidate.type === "wall" &&
+        builder.items.filter((candidate) => candidate.type === "wall" && candidate.level === item.level &&
             (!onlyWallId || candidate.id === onlyWallId)).forEach((wall) => {
             wallSegments(wall).forEach((segment, wallSegment) => {
                 const dx = rawX - segment.x;
@@ -8639,7 +8955,7 @@ function createHouseBuilder() {
         const object = builder.objects.get(item.id);
         if (!object)
             return;
-        object.position.set(item.x, 0, item.z);
+        object.position.set(item.x, item.level * BUILDER_STOREY_HEIGHT, item.z);
         object.rotation.y = THREE.MathUtils.degToRad(item.rotation);
         object.updateWorldMatrix(true, true);
     }
@@ -8649,7 +8965,7 @@ function createHouseBuilder() {
             return false;
         const wall = itemById(item.wallId);
         const opening = variantForItem(item);
-        if (!wall || wall.type !== "wall" || !opening)
+        if (!wall || wall.type !== "wall" || wall.level !== item.level || !opening)
             return false;
         const segments = wallSegments(wall);
         const segmentIndex = Math.min(Math.max(Number(item.wallSegment) || 0, 0), segments.length - 1);
@@ -8710,7 +9026,7 @@ function createHouseBuilder() {
         raycaster.setFromCamera(pointer, camera);
         for (const hit of raycaster.intersectObjects(Array.from(builder.objects.values()), true)) {
             const id = itemIdFromObject(hit.object);
-            if (id)
+            if (id && itemById(id)?.level === builder.currentLevel)
                 return { id, point: builder.root.worldToLocal(hit.point.clone()) };
         }
         return null;
@@ -8725,7 +9041,7 @@ function createHouseBuilder() {
         raycaster.setFromCamera(pointer, camera);
         for (const hit of raycaster.intersectObjects(Array.from(builder.objects.values()), true)) {
             const id = itemIdFromObject(hit.object);
-            if (itemById(id)?.type === "wall")
+            if (itemById(id)?.type === "wall" && itemById(id)?.level === builder.currentLevel)
                 return { id, point: builder.root.worldToLocal(hit.point.clone()) };
         }
         return null;
@@ -8737,19 +9053,21 @@ function createHouseBuilder() {
 
     function updateStatus(message = "") {
         const count = builder.items.length;
-        builderUndo.disabled = count === 0;
+        const levelCount = builder.items.filter((item) => item.level === builder.currentLevel).length;
+        builderUndo.disabled = levelCount === 0;
         builderClear.disabled = count === 0;
         builderDelete.disabled = !builder.selectedId;
         builderStatus.textContent = message || (count === 0 ?
             "Noch keine Bauteile gesetzt." :
             builder.selectedId ? "Bauteil ausgewählt: ziehen oder mit den Pfeilen drehen." :
-                `${count} ${count === 1 ? "Bauteil" : "Bauteile"} gespeichert.`);
+                `${BUILDER_LEVEL_NAMES[builder.currentLevel]}: ${levelCount} ${levelCount === 1 ? "Bauteil" : "Bauteile"} · insgesamt ${count}.`);
         stage.dataset.builderItemCount = String(count);
         stage.dataset.builderSelection = builder.selectedId ? "true" : "false";
     }
 
     function addItemObject(item) {
         const object = createBuilderPart(item);
+        object.visible = item.level <= builder.currentLevel;
         builder.root.add(object);
         builder.objects.set(item.id, object);
     }
@@ -8770,6 +9088,7 @@ function createHouseBuilder() {
         builder.items.forEach(addItemObject);
         if (!builder.objects.has(builder.selectedId))
             builder.selectedId = null;
+        refreshLevelStructures();
         refreshSelectionHelper();
         updateStatus();
     }
@@ -8807,6 +9126,7 @@ function createHouseBuilder() {
                 type: "fence",
                 variant: variant.id,
                 color: builderColor.value,
+                level: builder.currentLevel,
                 length: previewLength,
                 rotation: 0,
                 x: 0,
@@ -8868,12 +9188,19 @@ function createHouseBuilder() {
             type,
             variant: variant.id,
             color: builderColor.value,
+            level: builder.currentLevel,
             rotation: builder.rotation,
             x: 0,
             z: 0
         };
         if (["wall", "fence"].includes(type))
             previewItem.length = 0.5;
+        if (type === "roof") {
+            const roofPlacement = roofPlacementData();
+            if (!roofPlacement)
+                return null;
+            Object.assign(previewItem, roofPlacement);
+        }
         const preview = createBuilderPart(previewItem);
         preview.name = `${builderTypeLabel(type)}-Platzierungsvorschau`;
         const sourceMaterialsToDispose = new Set();
@@ -8926,6 +9253,7 @@ function createHouseBuilder() {
             type,
             variant: variant.id,
             color: builderColor.value,
+            level: builder.currentLevel,
             rotation: builder.rotation,
             x: rawPoint.x,
             z: rawPoint.z
@@ -8947,6 +9275,15 @@ function createHouseBuilder() {
                 snap: opening.snap || null,
                 valid: Boolean(opening.snap)
             };
+        }
+        if (type === "roof") {
+            const roofPlacement = roofPlacementData();
+            return roofPlacement ? {
+                ...roofPlacement,
+                rotation: builder.rotation,
+                snap: null,
+                valid: true
+            } : null;
         }
         const point = pointerOnGround(event);
         if (!point)
@@ -8984,7 +9321,7 @@ function createHouseBuilder() {
         const preview = builder.placementPreview || createPlacementPreview();
         if (!placement || !preview)
             return false;
-        preview.position.set(placement.x, 0, placement.z);
+        preview.position.set(placement.x, builder.currentLevel * BUILDER_STOREY_HEIGHT, placement.z);
         preview.rotation.y = THREE.MathUtils.degToRad(placement.rotation);
         preview.visible = true;
         builder.previewSnap = placement.snap || null;
@@ -9030,6 +9367,7 @@ function createHouseBuilder() {
             builderVariant.value = preferredVariant;
         builderVariantLabel.textContent = builderPartType.value === "wall" ? "Wandhöhe" :
             ["floor", "grass"].includes(builderPartType.value) ? "Oberfläche" :
+                builderPartType.value === "roof" ? "Dachform" :
                 builderPartType.value === "tree" ? "Baumart" :
                     builderPartType.value === "fence" ? "Zaunart" : "Ausführung";
     }
@@ -9066,11 +9404,48 @@ function createHouseBuilder() {
             new THREE.Vector3(start.x, 0, snapped.z);
     }
 
+    function snappedFloorEdgePoint(point) {
+        return new THREE.Vector3(
+            THREE.MathUtils.clamp(Math.round(point.x), -10, 10),
+            0,
+            THREE.MathUtils.clamp(Math.round(point.z), -10, 10)
+        );
+    }
+
+    function updateFloorPreview(point) {
+        const start = builder.drawStart;
+        const rawEnd = snappedFloorEdgePoint(point);
+        const end = rawEnd.clone();
+        if (end.x === start.x)
+            end.x = THREE.MathUtils.clamp(start.x + (point.x < start.x ? -1 : 1), -10, 10);
+        if (end.z === start.z)
+            end.z = THREE.MathUtils.clamp(start.z + (point.z < start.z ? -1 : 1), -10, 10);
+        if (end.x === start.x || end.z === start.z)
+            return false;
+        builder.drawEnd = end;
+        const width = Math.abs(end.x - start.x);
+        const depth = Math.abs(end.z - start.z);
+        builder.drawPreview.position.set(
+            (start.x + end.x) / 2,
+            builder.currentLevel * BUILDER_STOREY_HEIGHT + 0.055,
+            (start.z + end.z) / 2
+        );
+        builder.drawPreview.rotation.y = 0;
+        builder.drawPreview.scale.set(width, 0.10, depth);
+        builder.drawPreview.visible = true;
+        clearFenceDrawPreview();
+        setWallLengthControls(null);
+        updateStatus(`Bodenfläche: ${width} × ${depth} m · ${width * depth} einzelne 1 × 1-m-Felder · loslassen zum Setzen.`);
+        return true;
+    }
+
     function updateWallPreview(point) {
         if (!builder.drawing || !builder.drawStart)
             return false;
         disposePlacementPreview();
         const drawType = builder.drawType || "wall";
+        if (drawType === "floor")
+            return updateFloorPreview(point);
         const constrainedPoint = orthogonalWallPoint(builder.drawStart, point);
         const candidateSnap = drawType === "wall" ? snapWallPoint(constrainedPoint) : {
             point: constrainedPoint,
@@ -9103,7 +9478,8 @@ function createHouseBuilder() {
         }
         else {
             clearFenceDrawPreview();
-            builder.drawPreview.position.set(center.x, variant.height / 2, center.z);
+            builder.drawPreview.position.set(center.x,
+                builder.currentLevel * BUILDER_STOREY_HEIGHT + variant.height / 2, center.z);
             builder.drawPreview.rotation.y = THREE.MathUtils.degToRad(rotation);
             builder.drawPreview.scale.set(length, variant.height, 0.20);
             builder.drawPreview.visible = true;
@@ -9132,6 +9508,28 @@ function createHouseBuilder() {
         builder.drawEndSnapped = false;
         builder.drawPreview.visible = false;
         clearFenceDrawPreview();
+        if (drawType === "floor") {
+            const width = Math.abs(end.x - start.x);
+            const depth = Math.abs(end.z - start.z);
+            if (cancelled || width < 1 || depth < 1) {
+                updateStatus(cancelled ? "Bodenzeichnung abgebrochen." : "Boden mindestens ein 1 × 1-m-Feld groß aufziehen.");
+                return true;
+            }
+            const variant = selectedVariant();
+            const item = {
+                id: globalThis.crypto?.randomUUID?.() || `part-${Date.now()}-${builder.items.length}`,
+                type: "floor", variant: variant.id, color: builderColor.value,
+                level: builder.currentLevel, width, depth, rotation: 0,
+                x: Math.round(((start.x + end.x) / 2) * 100) / 100,
+                z: Math.round(((start.z + end.z) / 2) * 100) / 100
+            };
+            builder.items.push(item);
+            addItemObject(item);
+            save();
+            selectItem(item.id, `Boden aus ${width * depth} einzelnen 1 × 1-m-Feldern gesetzt.`);
+            refreshLevelStructures();
+            return true;
+        }
         if (cancelled || length < 0.5) {
             setWallLengthControls(null);
             const label = drawType === "fence" ? "Zaun" : "Wand";
@@ -9142,6 +9540,7 @@ function createHouseBuilder() {
         const item = {
             id: globalThis.crypto?.randomUUID?.() || `part-${Date.now()}-${builder.items.length}`,
             type: drawType, variant: variant.id, color: builderColor.value,
+            level: builder.currentLevel,
             length: Math.round(Math.min(length, 28.25) * 100) / 100,
             rotation: ((Math.round(THREE.MathUtils.radToDeg(Math.atan2(-(end.z - start.z), end.x - start.x)) /
                 BUILDER_ROTATION_STEP) * BUILDER_ROTATION_STEP % 360) + 360) % 360,
@@ -9155,6 +9554,7 @@ function createHouseBuilder() {
         selectItem(item.id, drawType === "wall" && connectedCorners ?
             `Wand mit ${item.length.toLocaleString("de-DE")} m Länge und ${connectedCorners} eingerasteten ${connectedCorners === 1 ? "Ecke" : "Ecken"} gesetzt.` :
             `${drawType === "wall" ? "Freie " : ""}${itemLabel} mit ${item.length.toLocaleString("de-DE")} m Länge gesetzt.`);
+        refreshLevelStructures();
         renderer.shadowMap.needsUpdate = true;
         return true;
     }
@@ -9164,6 +9564,10 @@ function createHouseBuilder() {
         if (!item) {
             setRotation(builder.rotation + delta);
             refreshPlacementPreview();
+            return;
+        }
+        if (wallSupportsUpperStructure(item)) {
+            updateStatus("Diese Wand trägt bereits eine obere Etage oder ein Dach und bleibt deshalb fest verbunden.");
             return;
         }
         if (["window", "door"].includes(item.type) && item.wallId) {
@@ -9180,6 +9584,7 @@ function createHouseBuilder() {
         setRotation(item.rotation);
         refreshSelectionHelper();
         save();
+        refreshLevelStructures();
         updateStatus(["window", "door"].includes(item.type) ?
             "Öffnungsrichtung an der Wand gewechselt." : `Auswahl auf ${Math.round(item.rotation)}° gedreht.`);
     }
@@ -9190,15 +9595,30 @@ function createHouseBuilder() {
         const selectedType = builderPartType.value;
         const openingType = ["window", "door"].includes(selectedType);
         const openingPlacement = openingType ? openingPlacementAtPointer(event) : null;
-        if (["wall", "fence"].includes(selectedType)) {
-            updateStatus(`${selectedType === "fence" ? "Ein Zaun" : "Eine Wand"} wird durch Ziehen vom Start- bis zum Endpunkt erstellt.`);
+        if (["grass", "fence", "tree"].includes(selectedType) && builder.currentLevel > 0) {
+            updateStatus("Grasflächen, Grundstückszäune und Bäume können nur im Erdgeschoss platziert werden.");
+            return false;
+        }
+        if (["wall", "fence", "floor"].includes(selectedType)) {
+            updateStatus(selectedType === "floor" ?
+                "Eine Bodenfläche wird durch Aufziehen im 1 × 1-m-Raster erstellt." :
+                `${selectedType === "fence" ? "Ein Zaun" : "Eine Wand"} wird durch Ziehen vom Start- bis zum Endpunkt erstellt.`);
             return false;
         }
         if (openingType && !openingPlacement?.snap) {
             updateStatus("Fenster und Türen können nur direkt auf einer vorhandenen Wand sitzen.");
             return false;
         }
-        const point = openingType ? openingPlacement.point : pointerOnGround(event);
+        const roofPlacement = selectedType === "roof" ? roofPlacementData() : null;
+        if (selectedType === "roof" && !roofPlacement) {
+            updateStatus(hasRoofAtLevel(builder.currentLevel) ? "Auf dieser Etage ist bereits ein Dach gesetzt." :
+                hasItemsAbove(builder.currentLevel) ? "Eine Etage mit darüberliegenden Bauteilen kann nicht nachträglich überdacht werden." :
+                    "Ein Dach kann erst auf einen vollständig geschlossenen Wandzug gesetzt werden.");
+            return false;
+        }
+        const point = selectedType === "roof" ?
+            new THREE.Vector3(roofPlacement.x, 0, roofPlacement.z) :
+            openingType ? openingPlacement.point : pointerOnGround(event);
         if (!point)
             return false;
         let x = THREE.MathUtils.clamp(Math.round(point.x * 2) / 2, -9.5, 9.5);
@@ -9209,9 +9629,15 @@ function createHouseBuilder() {
             type: selectedType,
             variant: variant.id,
             color: builderColor.value,
+            level: builder.currentLevel,
             rotation: builder.rotation,
             x, z
         };
+        if (roofPlacement)
+            Object.assign(item, {
+                x: roofPlacement.x, z: roofPlacement.z,
+                width: roofPlacement.width, depth: roofPlacement.depth
+            });
         const snapped = openingType ? openingPlacement.snap : null;
         if (["window", "door"].includes(item.type) && !snapped) {
             updateStatus(`${variant.label}: bitte direkt auf oder neben eine vorhandene Wand tippen.`);
@@ -9230,6 +9656,7 @@ function createHouseBuilder() {
         addItemObject(item);
         save();
         selectItem(item.id, `${variant.label}${snapped?.wallId ? " an Wand eingerastet" : " gesetzt"}.`);
+        refreshLevelStructures();
         renderer.shadowMap.needsUpdate = true;
         return true;
     }
@@ -9240,13 +9667,23 @@ function createHouseBuilder() {
         const hit = builderItemHitAtPointer(event);
         const id = hit?.id || null;
         const drawType = builderPartType.value;
-        if (builder.placementEnabled && ["wall", "fence"].includes(drawType)) {
+        if (builder.placementEnabled && ["grass", "fence", "tree"].includes(drawType) &&
+            builder.currentLevel > 0) {
+            updateStatus("Grasflächen, Grundstückszäune und Bäume können nur im Erdgeschoss platziert werden.");
+            return true;
+        }
+        if (builder.placementEnabled && drawType === "wall" &&
+            (hasRoofAtLevel(builder.currentLevel) || hasItemsAbove(builder.currentLevel))) {
+            updateStatus("Die tragenden Außenwände dieser Etage sind durch Dach oder Obergeschoss bereits abgeschlossen.");
+            return true;
+        }
+        if (builder.placementEnabled && ["wall", "fence", "floor"].includes(drawType)) {
             const point = pointerOnGround(event);
             if (!point)
                 return false;
             const rawPoint = hit?.point || point;
             const startSnap = drawType === "wall" ? snappedWallOrGridPoint(rawPoint) : {
-                point: snappedGroundPoint(rawPoint),
+                point: drawType === "floor" ? snappedFloorEdgePoint(rawPoint) : snappedGroundPoint(rawPoint),
                 snapped: false,
                 wallId: null
             };
@@ -9276,6 +9713,14 @@ function createHouseBuilder() {
             clickedItem?.type === "wall")
             return false;
         selectItem(id);
+        if (clickedItem?.type === "roof") {
+            updateStatus("Dach ausgewählt. Es bleibt mittig auf den Außenwänden und kann gedreht oder gelöscht werden.");
+            return true;
+        }
+        if (wallSupportsUpperStructure(clickedItem)) {
+            updateStatus("Tragende Außenwand ausgewählt. Zum Verschieben zuerst das Dach beziehungsweise die obere Etage entfernen.");
+            return true;
+        }
         builder.draggingId = id;
         builder.dragStartClient = { x: event.clientX, y: event.clientY };
         builder.dragMoved = false;
@@ -9284,7 +9729,8 @@ function createHouseBuilder() {
 
     function movePointer(event) {
         if (builder.drawing) {
-            const point = wallHitAtPointer(event)?.point || pointerOnGround(event);
+            const point = builder.drawType === "floor" ? pointerOnGround(event) :
+                wallHitAtPointer(event)?.point || pointerOnGround(event);
             if (point) {
                 updateWallPreview(point);
                 builder.dragMoved = true;
@@ -9343,8 +9789,11 @@ function createHouseBuilder() {
             return finishWallDrawing(cancelled);
         if (!builder.draggingId)
             return false;
+        const movedItem = itemById(builder.draggingId);
         if (builder.dragMoved) {
             save();
+            if (movedItem?.type === "wall")
+                refreshLevelStructures();
             renderer.shadowMap.needsUpdate = true;
             updateStatus("Bauteil verschoben und gespeichert.");
         }
@@ -9396,6 +9845,7 @@ function createHouseBuilder() {
             setMenuOpen(false);
             setPanelCollapsed(window.innerWidth <= 900);
             activatePointerMode();
+            refreshLevelStructures();
             houseInstructions.textContent = "Baumodus: rechts ziehen = drehen · Auswahl/Maus: links ziehen = verschieben · Mausrad = Zoom";
             updateStatus("Auswahl/Maus ist aktiv. Erst nach Wahl eines Bauteils oder „Neues Bauteil“ wird etwas gesetzt.");
         }
@@ -9441,6 +9891,8 @@ function createHouseBuilder() {
     builderPanelToggle.addEventListener("click", () =>
         setPanelCollapsed(!builderPanel.classList.contains("is-collapsed")));
     builderPointerMode.addEventListener("click", activatePointerMode);
+    builderLevelDown.addEventListener("click", () => switchBuilderLevel(builder.currentLevel - 1));
+    builderLevelUp.addEventListener("click", () => switchBuilderLevel(builder.currentLevel + 1));
     builderTouchBuild?.addEventListener("click", () => {
         if (builder.placementEnabled)
             setCameraNavigation(false);
@@ -9459,11 +9911,14 @@ function createHouseBuilder() {
         refreshVariants();
         setWallLengthControls(null);
         refreshPlacementPreview();
-        updateStatus(["wall", "fence"].includes(builderPartType.value) ?
-            `${builderPartType.value === "fence" ? "Neuen Zaun" : "Neue Wand"}: auf dem Raster vom Start- bis zum Endpunkt ziehen.` :
+        updateStatus(["wall", "fence", "floor"].includes(builderPartType.value) ?
+            builderPartType.value === "floor" ? "Bodenfläche als Rechteck aus 1 × 1-m-Feldern aufziehen." :
+                `${builderPartType.value === "fence" ? "Neuen Zaun" : "Neue Wand"}: auf dem Raster vom Start- bis zum Endpunkt ziehen.` :
             ["window", "door"].includes(builderPartType.value) ?
                 `${builderTypeLabel(builderPartType.value)}: direkt auf eine Wand tippen.` :
-                `${builderTypeLabel(builderPartType.value)}: freie Stelle auf dem Grundstück antippen.`);
+                builderPartType.value === "roof" ?
+                    "Dachtyp wählen und auf den geschlossenen Wandzug tippen." :
+                    `${builderTypeLabel(builderPartType.value)}: freie Stelle auf dem Grundstück antippen.`);
     });
     builderVariant.addEventListener("change", () => {
         const item = itemById(builder.selectedId);
@@ -9484,6 +9939,11 @@ function createHouseBuilder() {
         const item = itemById(builder.selectedId);
         if (item?.type !== "wall")
             return;
+        if (wallSupportsUpperStructure(item)) {
+            setWallLengthControls(item);
+            updateStatus("Die Länge einer tragenden Wand kann erst nach Entfernen der oberen Etage oder des Dachs geändert werden.");
+            return;
+        }
         const length = THREE.MathUtils.clamp(Number(builderWallLength.value) || 0.5, 0.5, 28.25);
         if (item.variant === "wall-corner")
             item.variant = "wall-custom-standard";
@@ -9492,6 +9952,7 @@ function createHouseBuilder() {
         updateAttachedOpenings(item.id);
         setWallLengthControls(item);
         save();
+        refreshLevelStructures();
         updateStatus(`Wand auf ${item.length.toLocaleString("de-DE", {
             minimumFractionDigits: 2, maximumFractionDigits: 2
         })} m geändert.`);
@@ -9515,6 +9976,10 @@ function createHouseBuilder() {
         const id = builder.selectedId;
         if (!id)
             return;
+        if (wallSupportsUpperStructure(itemById(id))) {
+            updateStatus("Diese Wand trägt eine obere Etage oder ein Dach. Entferne zuerst den Aufbau darüber.");
+            return;
+        }
         const removedIds = new Set([id]);
         if (itemById(id)?.type === "wall")
             builder.items.filter((item) => item.wallId === id).forEach((item) => removedIds.add(item.id));
@@ -9530,6 +9995,7 @@ function createHouseBuilder() {
         builderSelectionTools.hidden = true;
         setWallLengthControls(null);
         save();
+        refreshLevelStructures();
         updateStatus(removedIds.size > 1 ?
             "Wand und daran befestigte Fenster/Türen gelöscht." : "Ausgewähltes Bauteil gelöscht.");
     }
@@ -9564,8 +10030,20 @@ function createHouseBuilder() {
             selectItem(null);
     });
     builderUndo.addEventListener("click", () => {
-        const item = builder.items.pop();
+        let itemIndex = -1;
+        for (let index = builder.items.length - 1; index >= 0; index -= 1) {
+            if (builder.items[index].level === builder.currentLevel) {
+                itemIndex = index;
+                break;
+            }
+        }
+        const item = itemIndex >= 0 ? builder.items[itemIndex] : null;
         if (item) {
+            if (wallSupportsUpperStructure(item)) {
+                updateStatus("Das letzte Bauteil dieser Etage trägt einen Aufbau. Entferne zuerst die obere Etage oder das Dach.");
+                return;
+            }
+            builder.items.splice(itemIndex, 1);
             const removedIds = new Set([item.id]);
             if (item.type === "wall")
                 builder.items.filter((candidate) => candidate.wallId === item.id)
@@ -9584,6 +10062,7 @@ function createHouseBuilder() {
                 setWallLengthControls(null);
             }
             save();
+            refreshLevelStructures();
             updateStatus("Letztes Bauteil entfernt.");
         }
     });
@@ -9598,6 +10077,7 @@ function createHouseBuilder() {
     builderOpenButton.addEventListener("click", () => setActive(true));
     builderCloseButton.addEventListener("click", () => setActive(false));
     rebuild();
+    updateLevelControls();
     builder.root.visible = false;
 
     builder.placeAtPointer = placeAtPointer;
@@ -9613,8 +10093,14 @@ function createHouseBuilder() {
         open: () => setActive(true),
         close: () => setActive(false),
         select: (id) => selectItem(id),
+        setLevel: (level) => switchBuilderLevel(level),
         getState: () => ({
             active: builder.active,
+            currentLevel: builder.currentLevel,
+            currentLevelName: BUILDER_LEVEL_NAMES[builder.currentLevel],
+            currentLevelClosed: Boolean(closedWallLoop(builder.currentLevel)),
+            roofPlaced: hasRoofAtLevel(builder.currentLevel),
+            automaticCeilings: builder.autoCeilings.children.length,
             selectedId: builder.selectedId,
             placementEnabled: builder.placementEnabled,
             cameraNavigation: builder.cameraNavigation,

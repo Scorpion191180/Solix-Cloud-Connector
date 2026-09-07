@@ -1274,6 +1274,7 @@ header p{
 .house-stage.is-building .house-string-label,
 .house-stage.is-building .animal-resource-label,
 .house-stage.is-building .animal-clean-label,
+.house-stage.is-building .house-clean-shortcut,
 .house-stage.is-building .house-click-marker,
 .house-stage.is-building .house-object-battery,
 .house-stage.is-building .house-device-label,
@@ -1909,6 +1910,61 @@ header p{
     line-height:1.25;
 }
 
+.house-builder-storey{
+    display:grid;
+    grid-template-columns:38px minmax(0,1fr) auto 38px;
+    align-items:center;
+    gap:8px;
+    margin-top:10px;
+    padding:7px;
+    border:1px solid rgba(56,189,248,.34);
+    border-radius:11px;
+    background:rgba(15,23,42,.56);
+}
+
+.house-builder-storey button{
+    width:38px;
+    height:38px;
+    padding:0;
+    border:1px solid rgba(56,189,248,.42);
+    border-radius:9px;
+    background:rgba(14,116,144,.20);
+    color:#e0f2fe;
+    font-size:20px;
+    font-weight:950;
+}
+
+.house-builder-storey button:disabled{
+    opacity:.34;
+    cursor:not-allowed;
+}
+
+.house-builder-storey span small,
+.house-builder-storey span strong{display:block;}
+
+.house-builder-storey span small{
+    color:#7dd3fc;
+    font-size:7.5px;
+    font-weight:950;
+    letter-spacing:.10em;
+}
+
+.house-builder-storey span strong{
+    margin-top:1px;
+    overflow:hidden;
+    color:#f8fafc;
+    font-size:12px;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+}
+
+.house-builder-storey output{
+    color:#bae6fd;
+    font-size:10px;
+    font-weight:900;
+    white-space:nowrap;
+}
+
 .house-builder-grid label,
 .house-builder-color-row > label{
     display:grid;
@@ -2081,6 +2137,27 @@ header p{
     font-size:9px;
     line-height:1.3;
 }
+
+.house-clean-shortcut{
+    position:absolute;
+    z-index:24;
+    left:max(12px,env(safe-area-inset-left));
+    bottom:max(58px,calc(env(safe-area-inset-bottom) + 54px));
+    min-height:38px;
+    padding:9px 13px;
+    border:1px solid rgba(251,191,36,.72);
+    border-radius:999px;
+    background:rgba(69,38,8,.86);
+    color:#fef3c7;
+    font:900 11px/1 system-ui,sans-serif;
+    letter-spacing:.025em;
+    box-shadow:0 6px 20px rgba(2,6,23,.48),0 0 14px rgba(251,191,36,.22);
+    cursor:pointer;
+    touch-action:manipulation;
+}
+
+.house-clean-shortcut[hidden]{display:none!important;}
+.house-clean-shortcut:disabled{opacity:.62;cursor:wait;}
 
 .house-weather{
     position:absolute;
@@ -3099,6 +3176,18 @@ body{
 .house-builder-length,
 .house-builder-rotation,
 .house-builder-actions{margin-top:7px;}
+
+.house-builder-storey{
+    grid-template-columns:34px minmax(0,1fr) auto 34px;
+    gap:6px;
+    margin-top:7px;
+    padding:5px;
+}
+
+.house-builder-storey button{
+    width:34px;
+    height:34px;
+}
 
 .house-builder-help,
 .house-builder-status{
