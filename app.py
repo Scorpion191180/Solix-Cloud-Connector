@@ -13,12 +13,14 @@ from audi.client import AudiClient
 from automation.controller import ChargingAutomation
 from solix.client import SolixClient
 from smartlife.client import SmartLifeGarageClient
+from waste.client import WasteCalendarClient
 from weather.client import WeatherClient
 
 client = SolixClient()
 audi_client = AudiClient()
 charging_automation = ChargingAutomation(client, audi_client)
 weather_client = WeatherClient()
+waste_calendar_client = WasteCalendarClient()
 animal_state = AnimalStateStore()
 garage_client = SmartLifeGarageClient()
 
@@ -112,6 +114,7 @@ async def lifespan(_app: FastAPI):
     await audi_client.close()
     await client.close()
     await weather_client.close()
+    await waste_calendar_client.close()
     await garage_client.close()
 
 
@@ -166,6 +169,12 @@ async def audi():
 async def weather():
     """Return cached live weather for the configured house coordinates."""
     return await weather_client.get_live()
+
+
+@app.get("/api/waste")
+async def waste_collection():
+    """Return the next official collections without exposing the home address."""
+    return await waste_calendar_client.get_live()
 
 
 @app.get("/api/garage")

@@ -99,6 +99,19 @@ den Gerätefunktionen des eigenen Tuya-Cloudprojekts übernommen werden. Die App
 rät diese sicherheitsrelevanten Werte nicht. Der Karoq nutzt die linke Garage
 rein visuell; Yeti, Karoq und Fox können unabhängig wegfahren und zurückkehren.
 
+## Müllabfuhr-Anzeige
+
+Neben dem Live-Wetter zeigt das Dashboard die nächste Abholung von Restmüll,
+Biomüll, Papier oder Gelbem Sack. Fallen mehrere Abholungen auf denselben Tag,
+werden alle passenden Symbole angezeigt. Am Abholtag steht dort **Heute**,
+ansonsten die Zahl der verbleibenden Tage.
+
+Als Quelle dient ausschließlich das persönliche iCal-Kalenderabo des
+Abfallwirtschaftsbetriebs Landkreis Freudenstadt. Die URL wird privat als
+`WASTE_ICS_URL` in Render gespeichert. Die App liefert dem Browser nur
+Abfallart und Datum; weder Kalender-URL noch Anschrift werden veröffentlicht.
+Der Kalender wird standardmäßig alle sechs Stunden serverseitig aktualisiert.
+
 ## Render-Konfiguration
 
 Unter **Environment** des Render-Web-Service setzen:
@@ -112,6 +125,8 @@ AUDI_HOME_LATITUDE=48.123456
 AUDI_HOME_LONGITUDE=8.123456
 AUDI_HOME_RADIUS_METERS=120
 AUDI_POSITION_INTERVAL_SECONDS=120
+WASTE_ICS_URL=https://offizielle-ical-abo-url-aus-dem-awb-abfallkalender
+WASTE_CACHE_SECONDS=21600
 SOLIX_CACHE_SECONDS=30
 SOLIX_TELEMETRY_INTERVAL_SECONDS=60
 # Optional mit persistentem Render-Datenträger, damit Tageskurven auch

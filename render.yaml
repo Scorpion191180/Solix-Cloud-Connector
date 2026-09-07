@@ -18,6 +18,10 @@ services:
         sync: false
       - key: AUDI_HOME_LONGITUDE
         sync: false
+      - key: WASTE_ICS_URL
+        sync: false
+      - key: WASTE_CACHE_SECONDS
+        value: "21600"
       - key: AUDI_HOME_RADIUS_METERS
         value: "120"
       - key: AUDI_POSITION_INTERVAL_SECONDS

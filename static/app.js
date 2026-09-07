@@ -13,6 +13,7 @@ let latestSolixData = null;
 let latestAutomationData = null;
 let latestAudiData = null;
 let latestWeatherData = null;
+let latestWasteData = null;
 
 const automationReasons = {
     automation_disabled: "Die Ladeautomatik ist deaktiviert.",
@@ -831,6 +832,78 @@ async function updateWeather() {
     }
 }
 
+const wasteUi = {
+    rest: { short: "R", className: "rest", label: "Restmüll" },
+    bio: { short: "🌿", className: "bio", label: "Biomüll" },
+    paper: { short: "▤", className: "paper", label: "Papier" },
+    yellow: { short: "♻", className: "yellow", label: "Gelber Sack" }
+};
+
+function renderWasteCollection(data) {
+    const panel = document.getElementById("houseWaste");
+    const icons = document.getElementById("houseWasteIcons");
+    const title = document.getElementById("houseWasteTitle");
+    const detail = document.getElementById("houseWasteText");
+    if (!panel || !icons || !title || !detail)
+        return;
+
+    const items = Array.isArray(data?.items) ? data.items : [];
+    icons.replaceChildren();
+    if (!data?.available || !items.length) {
+        const icon = document.createElement("i");
+        icon.className = "unknown";
+        icon.textContent = "?";
+        icons.append(icon);
+        title.textContent = "Müllabfuhr";
+        detail.textContent = data?.error || "Kalender wird eingerichtet";
+        panel.classList.toggle("stale", data?.stale === true);
+        return;
+    }
+
+    items.forEach((item) => {
+        const definition = wasteUi[item.key] || {
+            short: "?", className: "unknown", label: item.label || "Abfall"
+        };
+        const icon = document.createElement("i");
+        icon.className = definition.className;
+        icon.textContent = definition.short;
+        icon.title = item.label || definition.label;
+        icons.append(icon);
+    });
+    const labels = items.map((item) => item.label || wasteUi[item.key]?.label || "Abfall");
+    const days = Number(data.days_until);
+    title.textContent = data.is_today ? "Heute: " + labels.join(" + ") : labels.join(" + ");
+    if (data.is_today)
+        detail.textContent = "wird heute abgeholt";
+    else if (days === 1)
+        detail.textContent = "morgen";
+    else
+        detail.textContent = "in " + days + " Tagen";
+    if (data.stale === true)
+        detail.textContent += " · letzter Stand";
+    panel.classList.toggle("stale", data.stale === true);
+    panel.title = "Nächste Müllabfuhr · " + labels.join(", ") + " · " + detail.textContent;
+}
+
+async function updateWasteCollection() {
+    try {
+        const response = await fetch("/api/waste", { cache: "no-store" });
+        if (!response.ok)
+            throw new Error("Abfallkalender API: HTTP " + response.status);
+        latestWasteData = await response.json();
+        renderWasteCollection(latestWasteData);
+    }
+    catch (error) {
+        renderWasteCollection({
+            available: false,
+            stale: true,
+            error: "Termine vorübergehend nicht erreichbar",
+            items: []
+        });
+        console.log(error);
+    }
+}
+
 async function setManualSmartPlug(enabled) {
 
     if (manualControlBusy)
@@ -886,6 +959,7 @@ updateDashboard();
 updateAutomation();
 updateAudi();
 updateWeather();
+updateWasteCollection();
 
 document.getElementById("smartPlugOn").addEventListener("click", () => setManualSmartPlug(true));
 document.getElementById("smartPlugOff").addEventListener("click", () => setManualSmartPlug(false));
@@ -915,5 +989,7 @@ setInterval(updateAutomation, 30000);
 setInterval(updateAudi, 30000);
 
 setInterval(updateWeather, 5 * 60 * 1000);
+
+setInterval(updateWasteCollection, 60 * 60 * 1000);
 
 setInterval(updateLastRefresh, 1000);

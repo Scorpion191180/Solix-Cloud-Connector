@@ -21,9 +21,9 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260907-134", dashboard)
-        self.assertIn("house.js?v=20260907-134", dashboard)
-        self.assertIn("app.js?v=20260821-96", dashboard)
+        self.assertIn("style.css?v=20260907-135", dashboard)
+        self.assertIn("house.js?v=20260907-135", dashboard)
+        self.assertIn("app.js?v=20260907-135", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
 
@@ -45,6 +45,7 @@ class DashboardSchematicTests(unittest.TestCase):
     def test_virtual_house_is_touch_enabled_and_uses_live_data(self) -> None:
         dashboard = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
         script = (ROOT / "static" / "house.js").read_text(encoding="utf-8")
+        app_script = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
         stylesheet = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
 
         self.assertIn('id="houseCanvas"', dashboard)
@@ -366,6 +367,13 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("hayUrgency", script)
         self.assertNotIn('id="houseCleanHorse"', dashboard)
         self.assertIn('id="houseWeather"', dashboard)
+        self.assertIn('id="houseWaste"', dashboard)
+        self.assertIn('id="houseWasteIcons"', dashboard)
+        self.assertIn('fetch("/api/waste"', app_script)
+        self.assertIn("function renderWasteCollection", app_script)
+        self.assertIn(".house-waste-icons .yellow", stylesheet)
+        self.assertIn("touch-action:pan-y", stylesheet)
+        self.assertIn("if (event.target === canvas)", script)
         self.assertIn("function animateWeather", script)
         self.assertIn("weather.weather_code", script)
         self.assertIn("PANEL_AZIMUTH_FALLBACK_DEGREES = 157.5", script)
@@ -630,7 +638,7 @@ class DashboardSchematicTests(unittest.TestCase):
             "renderQualitySelect", "houseBuilderOpen", "houseBuilderPanel",
             "builderPartType", "builderVariant", "builderColor",
             "builderLevelDown", "builderLevelUp", "builderLevelName",
-            "builderLevelPosition",
+            "builderLevelPosition", "builderRoofState",
             "builderVariantLabel", "builderWallLengthRow", "builderWallLength",
             "builderWallLengthValue",
             "builderPanelToggle", "builderRotateLeft", "builderRotateRight",
@@ -643,8 +651,8 @@ class DashboardSchematicTests(unittest.TestCase):
         ):
             self.assertIn(f'id="{element_id}"', dashboard)
 
-        self.assertIn('const APP_BUILD_VERSION = "134"', script)
-        self.assertIn("Version 134", dashboard)
+        self.assertIn('const APP_BUILD_VERSION = "135"', script)
+        self.assertIn("Version 135", dashboard)
         self.assertIn('localStorage.getItem("solix-scene-labels")', script)
         self.assertIn('stage.classList.toggle("show-scene-labels"', script)
         self.assertIn("hasStoredDogPose", script)
@@ -692,17 +700,29 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('id: "roof-hip"', script)
         self.assertIn('id: "roof-shed"', script)
         self.assertIn('id: "roof-flat"', script)
+        self.assertIn('id: "support-square"', script)
+        self.assertIn('id: "support-round"', script)
+        self.assertIn('id: "support-wood"', script)
         self.assertIn('const BUILDER_MAX_LEVEL = 2', script)
         self.assertIn('const BUILDER_STOREY_HEIGHT = 2.9', script)
         self.assertIn('function closedWallLoop(level)', script)
         self.assertIn('function switchBuilderLevel(targetLevel)', script)
         self.assertIn('function addAutomaticCeiling(level, loop)', script)
         self.assertIn('function roofPlacementData(level = builder.currentLevel)', script)
+        self.assertIn('function upperWallAssessment(item, options = {})', script)
+        self.assertIn('function supportMoveAssessment(item, candidate = null, removeOnly = false)', script)
+        self.assertIn('maxOutside > 2.05', script)
+        self.assertIn('sample.outside > 1.05', script)
+        self.assertIn('type === "support" && item.level === level - 1', script)
+        self.assertIn('Über einem bereits gesetzten Dach kann keine weitere Etage entstehen.', script)
+        self.assertIn('items.filter((item) => item.level <= firstRoofLevel)', script)
         self.assertIn('function updateFloorPreview(point)', script)
         self.assertIn('type: "floor", variant: variant.id', script)
         self.assertIn('width, depth, rotation: 0', script)
         self.assertNotIn('Steinplatten · 3 × 3 m', script)
         self.assertIn('<option value="roof">', dashboard)
+        self.assertIn('<option value="support">', dashboard)
+        self.assertIn('Dach noch offen · unter „Bauteil“ auswählbar', dashboard)
         self.assertIn('id: "grass-lawn"', script)
         self.assertIn('id: "fence-picket"', script)
         self.assertIn('id: "tree-deciduous"', script)
@@ -740,6 +760,10 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("function startAudiPresenceTransition", script)
         self.assertIn("function updateAudiPresenceMotion", script)
         self.assertIn("function runAudiPresenceDemo", script)
+        self.assertIn("function orientDomesticRoute(controller, route, destination)", script)
+        self.assertIn("controller.route = orientDomesticRoute(controller, route, destination)", script)
+        self.assertIn("frontYawOffset: Math.PI", script)
+        self.assertIn('routePose(controller, x + 0.45, 13.15, yaw - 0.35, "forward")', script)
         self.assertIn("const AUDI_DEPARTURE_ROUTE", script)
         self.assertIn("const AUDI_ARRIVAL_ROUTE", script)
         self.assertIn("{ x: 0.00, z: 14.15, yaw: Math.PI / 2 }", script)

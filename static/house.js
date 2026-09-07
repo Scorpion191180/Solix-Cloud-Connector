@@ -34,6 +34,7 @@ const builderLevelDown = document.getElementById("builderLevelDown");
 const builderLevelUp = document.getElementById("builderLevelUp");
 const builderLevelName = document.getElementById("builderLevelName");
 const builderLevelPosition = document.getElementById("builderLevelPosition");
+const builderRoofState = document.getElementById("builderRoofState");
 const builderPartType = document.getElementById("builderPartType");
 const builderVariant = document.getElementById("builderVariant");
 const builderVariantLabel = document.getElementById("builderVariantLabel");
@@ -75,7 +76,7 @@ const sceneLoaderBar = document.getElementById("sceneLoaderBar");
 const sceneLoaderStatus = document.getElementById("sceneLoaderStatus");
 const sceneLoaderPercent = document.getElementById("sceneLoaderPercent");
 const sceneLoaderVersion = document.getElementById("sceneLoaderVersion");
-const APP_BUILD_VERSION = "134";
+const APP_BUILD_VERSION = "135";
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const INTERIOR_VIEW_ENABLED = false;
 
@@ -7986,6 +7987,11 @@ const BUILDER_VARIANTS = Object.freeze({
         { id: "floor-wood", label: "Holzdielen · 1-m-Raster", width: 1, depth: 1, surface: "wood" },
         { id: "floor-concrete", label: "Beton · 1-m-Raster", width: 1, depth: 1, surface: "concrete" }
     ],
+    support: [
+        { id: "support-square", label: "Massive Stütze · quadratisch", style: "square", width: 0.34 },
+        { id: "support-round", label: "Stahlstütze · rund", style: "round", width: 0.26 },
+        { id: "support-wood", label: "Holzstütze", style: "wood", width: 0.30 }
+    ],
     roof: [
         { id: "roof-gable", label: "Satteldach", style: "gable", pitch: 32 },
         { id: "roof-hip", label: "Walmdach", style: "hip", pitch: 28 },
@@ -8020,11 +8026,13 @@ const BUILDER_COLOR_SWATCHES = Object.freeze([
 ]);
 const BUILDER_DEFAULT_COLORS = Object.freeze({
     wall: "#f1eee5", window: "#9db5ce", door: "#8e5a43",
-    floor: "#9d9487", roof: "#a84932", grass: "#5d9b49", fence: "#8e6947", tree: "#4f7d3d"
+    floor: "#9d9487", support: "#b8b2a8", roof: "#a84932",
+    grass: "#5d9b49", fence: "#8e6947", tree: "#4f7d3d"
 });
 const BUILDER_TYPE_LABELS = Object.freeze({
     wall: "Wand", window: "Fenster", door: "Tür",
-    floor: "Boden", roof: "Dach", grass: "Grasfläche", fence: "Zaun", tree: "Baum"
+    floor: "Boden", support: "Stütze", roof: "Dach",
+    grass: "Grasfläche", fence: "Zaun", tree: "Baum"
 });
 
 function safeBuilderItems() {
@@ -8032,13 +8040,19 @@ function safeBuilderItems() {
         const parsed = JSON.parse(localStorage.getItem(BUILDER_STORAGE_KEY) || "[]");
         if (!Array.isArray(parsed))
             return [];
-        return parsed.slice(0, 500).filter((item) =>
+        const items = parsed.slice(0, 500).filter((item) =>
             item && BUILDER_VARIANTS[item.type]?.some((variant) => variant.id === item.variant) &&
             Number.isFinite(item.x) && Number.isFinite(item.z) && Number.isFinite(item.rotation))
             .map((item) => ({
                 ...item,
                 level: THREE.MathUtils.clamp(Number.isInteger(item.level) ? item.level : 0, 0, BUILDER_MAX_LEVEL)
             }));
+        const roofLevels = items.filter((item) => item.type === "roof").map((item) => item.level);
+        const firstRoofLevel = roofLevels.length ? Math.min(...roofLevels) : null;
+        // Ein Dach ist der feste obere Abschluss. Selbst manipulierte oder alte
+        // Browserdaten dürfen keine Bauteile oberhalb eines Dachs reaktivieren.
+        return firstRoofLevel == null ? items :
+            items.filter((item) => item.level <= firstRoofLevel);
     }
     catch (_error) {
         return [];
@@ -8124,6 +8138,33 @@ function createBuilderPart(item) {
         const handle = new THREE.MeshStandardMaterial({ color: 0xd7dde0, metalness: 0.82, roughness: 0.20 });
         [-1, 1].forEach((side) => addMesh(part, new THREE.SphereGeometry(0.055, 12, 8), handle,
             side * variant.width * 0.30, variant.height * 0.52, side * 0.18, { castShadow: false }));
+    }
+    else if (item.type === "support") {
+        const supportHeight = BUILDER_STOREY_HEIGHT - 0.08;
+        const supportMaterial = new THREE.MeshStandardMaterial({
+            color,
+            roughness: variant.style === "round" ? 0.34 : variant.style === "wood" ? 0.82 : 0.76,
+            metalness: variant.style === "round" ? 0.68 : 0.02
+        });
+        const capMaterial = new THREE.MeshStandardMaterial({
+            color: color.clone().multiplyScalar(variant.style === "wood" ? 0.78 : 0.88),
+            roughness: 0.68,
+            metalness: variant.style === "round" ? 0.48 : 0.02
+        });
+        if (variant.style === "round") {
+            addMesh(part, new THREE.CylinderGeometry(variant.width / 2, variant.width / 2,
+                supportHeight, 18), supportMaterial, 0, supportHeight / 2, 0);
+            [0.07, supportHeight - 0.07].forEach((y) =>
+                addMesh(part, new THREE.CylinderGeometry(variant.width * 0.72,
+                    variant.width * 0.72, 0.14, 18), capMaterial, 0, y, 0));
+        }
+        else {
+            addBox(part, [variant.width, supportHeight, variant.width], supportMaterial,
+                [0, supportHeight / 2, 0], { radius: variant.style === "wood" ? 0.018 : 0.035 });
+            [0.07, supportHeight - 0.07].forEach((y) =>
+                addBox(part, [variant.width + 0.14, 0.14, variant.width + 0.14], capMaterial,
+                    [0, y, 0], { radius: 0.025 }));
+        }
     }
     else if (["floor", "grass"].includes(item.type)) {
         const isGrass = item.type === "grass";
@@ -8755,6 +8796,125 @@ function createHouseBuilder() {
         return item?.type === "wall" && (hasRoofAtLevel(item.level) || hasItemsAbove(item.level));
     }
 
+    function pointToSegmentDistance(point, start, end) {
+        const dx = end.x - start.x;
+        const dz = end.z - start.z;
+        const lengthSquared = dx * dx + dz * dz;
+        if (lengthSquared < 0.000001)
+            return Math.hypot(point.x - start.x, point.z - start.z);
+        const progress = THREE.MathUtils.clamp(
+            ((point.x - start.x) * dx + (point.z - start.z) * dz) / lengthSquared, 0, 1);
+        return Math.hypot(
+            point.x - (start.x + progress * dx),
+            point.z - (start.z + progress * dz)
+        );
+    }
+
+    function pointInsideWallLoop(point, loop) {
+        let inside = false;
+        for (let index = 0, previous = loop.points.length - 1;
+            index < loop.points.length; previous = index, index += 1) {
+            const currentPoint = loop.points[index];
+            const previousPoint = loop.points[previous];
+            const crosses = ((currentPoint.z > point.z) !== (previousPoint.z > point.z)) &&
+                (point.x < (previousPoint.x - currentPoint.x) *
+                    (point.z - currentPoint.z) /
+                    ((previousPoint.z - currentPoint.z) || 0.000001) + currentPoint.x);
+            if (crosses)
+                inside = !inside;
+        }
+        return inside;
+    }
+
+    function pointOutsideWallLoop(point, loop) {
+        const edgeDistance = loop.points.reduce((closest, start, index) => {
+            const end = loop.points[(index + 1) % loop.points.length];
+            return Math.min(closest, pointToSegmentDistance(point, start, end));
+        }, Infinity);
+        return pointInsideWallLoop(point, loop) || edgeDistance <= 0.08 ? 0 : edgeDistance;
+    }
+
+    function supportsBelowWall(level, options = {}) {
+        const supports = builder.items.filter((item) =>
+            item.type === "support" && item.level === level - 1 && item.id !== options.excludeSupportId);
+        if (options.supportOverride?.level === level - 1)
+            supports.push(options.supportOverride);
+        return supports;
+    }
+
+    function upperWallAssessment(item, options = {}) {
+        if (item?.type !== "wall" || item.level <= 0)
+            return { valid: true, mode: "inside", maxOutside: 0, unsupported: [] };
+        const lowerLoop = closedWallLoop(item.level - 1);
+        if (!lowerLoop)
+            return {
+                valid: false, mode: "blocked", maxOutside: Infinity, unsupported: [],
+                reason: `Die Außenwände im ${BUILDER_LEVEL_NAMES[item.level - 1]} sind nicht geschlossen.`
+            };
+        const supports = supportsBelowWall(item.level, options);
+        const samples = [];
+        wallSegments(item).forEach((segment) => {
+            const sampleCount = Math.max(1, Math.ceil(segment.length / 0.5));
+            for (let index = 0; index <= sampleCount; index += 1) {
+                const progress = index / sampleCount - 0.5;
+                const point = {
+                    x: segment.x + segment.axisX * segment.length * progress,
+                    z: segment.z + segment.axisZ * segment.length * progress
+                };
+                samples.push({ ...point, outside: pointOutsideWallLoop(point, lowerLoop) });
+            }
+        });
+        const maxOutside = samples.reduce((maximum, sample) => Math.max(maximum, sample.outside), 0);
+        if (maxOutside > 2.05)
+            return {
+                valid: false, mode: "blocked", maxOutside, unsupported: [],
+                reason: "Obere Wände dürfen höchstens 2 m über die Etage darunter hinausragen."
+            };
+        const unsupported = samples.filter((sample) => sample.outside > 1.05 &&
+            !supports.some((support) => Math.hypot(sample.x - support.x, sample.z - support.z) <= 1.35));
+        if (unsupported.length)
+            return {
+                valid: false, mode: "needs-support", maxOutside, unsupported,
+                reason: "Für mehr als 1 m Auskragung zuerst Stützen in der Etage darunter setzen."
+            };
+        return {
+            valid: true,
+            mode: maxOutside > 1.05 ? "supported" : maxOutside > 0.08 ? "balcony" : "inside",
+            maxOutside,
+            unsupported: []
+        };
+    }
+
+    function supportMoveAssessment(item, candidate = null, removeOnly = false) {
+        if (item?.type !== "support")
+            return { valid: true };
+        const upperWalls = builder.items.filter((wall) =>
+            wall.type === "wall" && wall.level === item.level + 1);
+        // Eine bereits ungueltige Alt-Konstruktion darf das Verschieben einer
+        // voellig unabhaengigen Stütze nicht blockieren. Gesperrt wird nur,
+        // wenn gerade diese Stütze aus einer gueltigen Wand eine ungueltige
+        // Auskragung machen würde.
+        const invalidWall = upperWalls.find((wall) =>
+            upperWallAssessment(wall).valid && !upperWallAssessment(wall, {
+                excludeSupportId: item.id,
+                supportOverride: removeOnly ? null : candidate
+            }).valid);
+        return invalidWall ? {
+            valid: false,
+            reason: "Diese Stütze trägt eine auskragende Wand der Etage darüber und kann nicht entfernt oder dorthin verschoben werden."
+        } : { valid: true };
+    }
+
+    function structureHint(assessment) {
+        if (!assessment?.valid)
+            return assessment?.reason || "Diese Position ist statisch nicht zulässig.";
+        if (assessment.mode === "supported")
+            return "2-m-Auskragung wird von den Stützen darunter getragen.";
+        if (assessment.mode === "balcony")
+            return "Freier Balkonvorsprung innerhalb der zulässigen 1 m.";
+        return "Wand steht innerhalb oder direkt auf der unteren Gebäudehülle.";
+    }
+
     function roofPlacementData(level = builder.currentLevel) {
         const loop = closedWallLoop(level);
         if (!loop || hasRoofAtLevel(level) || hasItemsAbove(level))
@@ -8815,6 +8975,10 @@ function createHouseBuilder() {
         builderLevelUp.title = level >= BUILDER_MAX_LEVEL ? "Maximal drei Etagen" :
             roofPlaced ? "Das Dach beendet den Aufbau nach oben" :
                 loopClosed ? "Nächste Etage öffnen" : "Außenwände dieser Etage zuerst schließen";
+        builderRoofState.textContent = roofPlaced ?
+            "⌂ Dach gesetzt · weitere Etage gesperrt" :
+            "⌂ Dach noch offen · unter „Bauteil“ auswählbar";
+        builderRoofState.classList.toggle("is-set", roofPlaced);
         stage.dataset.builderLevel = String(level);
         stage.dataset.builderLevelClosed = String(loopClosed);
         stage.dataset.builderRoofPlaced = String(roofPlaced);
@@ -8849,13 +9013,15 @@ function createHouseBuilder() {
         if (nextLevel === builder.currentLevel)
             return true;
         if (nextLevel > builder.currentLevel) {
-            if (hasRoofAtLevel(builder.currentLevel)) {
-                updateStatus("Über einem bereits gesetzten Dach kann keine weitere Etage entstehen.");
-                return false;
-            }
-            if (!closedWallLoop(builder.currentLevel)) {
-                updateStatus(`Die Außenwände im ${BUILDER_LEVEL_NAMES[builder.currentLevel]} müssen zuerst vollständig geschlossen sein.`);
-                return false;
+            for (let level = builder.currentLevel; level < nextLevel; level += 1) {
+                if (hasRoofAtLevel(level)) {
+                    updateStatus("Über einem bereits gesetzten Dach kann keine weitere Etage entstehen.");
+                    return false;
+                }
+                if (!closedWallLoop(level)) {
+                    updateStatus(`Die Außenwände im ${BUILDER_LEVEL_NAMES[level]} müssen zuerst vollständig geschlossen sein.`);
+                    return false;
+                }
             }
         }
         finishWallDrawing(true);
@@ -9368,8 +9534,9 @@ function createHouseBuilder() {
         builderVariantLabel.textContent = builderPartType.value === "wall" ? "Wandhöhe" :
             ["floor", "grass"].includes(builderPartType.value) ? "Oberfläche" :
                 builderPartType.value === "roof" ? "Dachform" :
-                builderPartType.value === "tree" ? "Baumart" :
-                    builderPartType.value === "fence" ? "Zaunart" : "Ausführung";
+                    builderPartType.value === "support" ? "Stützenart" :
+                        builderPartType.value === "tree" ? "Baumart" :
+                            builderPartType.value === "fence" ? "Zaunart" : "Ausführung";
     }
 
     function setRotation(value) {
@@ -9439,6 +9606,14 @@ function createHouseBuilder() {
         return true;
     }
 
+    function setWallDrawPreviewValidity(valid = true) {
+        const material = builder.drawPreview.material;
+        material.color.set(valid ? 0xfacc15 : 0xef4444);
+        material.emissive.set(valid ? 0x4f3d00 : 0x7f1d1d);
+        material.emissiveIntensity = valid ? 0.18 : 0.62;
+        stage.dataset.builderStructuralPreview = valid ? "valid" : "invalid";
+    }
+
     function updateWallPreview(point) {
         if (!builder.drawing || !builder.drawStart)
             return false;
@@ -9484,11 +9659,23 @@ function createHouseBuilder() {
             builder.drawPreview.scale.set(length, variant.height, 0.20);
             builder.drawPreview.visible = true;
         }
+        const candidate = {
+            type: drawType,
+            variant: variant.id,
+            level: builder.currentLevel,
+            length,
+            rotation,
+            x: center.x,
+            z: center.z
+        };
+        const assessment = drawType === "wall" ? upperWallAssessment(candidate) : { valid: true };
+        setWallDrawPreviewValidity(assessment.valid);
         setRotation(rotation);
         setWallLengthControls(drawType === "wall" ? { type: "wall", variant: variant.id, length } : null);
         updateStatus(`${drawType === "fence" ? "Zaun" : "Wand"}länge: ${length.toLocaleString("de-DE", {
             minimumFractionDigits: 2, maximumFractionDigits: 2
-        })} m${endpointSnap.snapped ? " · Ecke eingerastet" : ""} · loslassen zum Setzen.`);
+        })} m${endpointSnap.snapped ? " · Ecke eingerastet" : ""}${drawType === "wall" ?
+            ` · ${structureHint(assessment)}` : ""} · loslassen zum Setzen.`);
         return true;
     }
 
@@ -9507,6 +9694,7 @@ function createHouseBuilder() {
         builder.drawStartSnapped = false;
         builder.drawEndSnapped = false;
         builder.drawPreview.visible = false;
+        setWallDrawPreviewValidity(true);
         clearFenceDrawPreview();
         if (drawType === "floor") {
             const width = Math.abs(end.x - start.x);
@@ -9547,13 +9735,20 @@ function createHouseBuilder() {
             x: Math.round(((start.x + end.x) / 2) * 100) / 100,
             z: Math.round(((start.z + end.z) / 2) * 100) / 100
         };
+        const assessment = drawType === "wall" ? upperWallAssessment(item) : { valid: true };
+        if (!assessment.valid) {
+            setWallLengthControls(null);
+            updateStatus(assessment.reason);
+            return true;
+        }
         builder.items.push(item);
         addItemObject(item);
         save();
         const itemLabel = drawType === "fence" ? "Zaun" : "Wand";
-        selectItem(item.id, drawType === "wall" && connectedCorners ?
+        const placementMessage = drawType === "wall" && connectedCorners ?
             `Wand mit ${item.length.toLocaleString("de-DE")} m Länge und ${connectedCorners} eingerasteten ${connectedCorners === 1 ? "Ecke" : "Ecken"} gesetzt.` :
-            `${drawType === "wall" ? "Freie " : ""}${itemLabel} mit ${item.length.toLocaleString("de-DE")} m Länge gesetzt.`);
+            `${drawType === "wall" ? "Freie " : ""}${itemLabel} mit ${item.length.toLocaleString("de-DE")} m Länge gesetzt.`;
+        selectItem(item.id, drawType === "wall" ? `${placementMessage} ${structureHint(assessment)}` : placementMessage);
         refreshLevelStructures();
         renderer.shadowMap.needsUpdate = true;
         return true;
@@ -9575,8 +9770,14 @@ function createHouseBuilder() {
             positionOpeningOnWall(item);
         }
         else {
-            item.rotation = ((Math.round((item.rotation + delta) / BUILDER_ROTATION_STEP) *
+            const rotation = ((Math.round((item.rotation + delta) / BUILDER_ROTATION_STEP) *
                 BUILDER_ROTATION_STEP % 360) + 360) % 360;
+            const assessment = item.type === "wall" ? upperWallAssessment({ ...item, rotation }) : { valid: true };
+            if (!assessment.valid) {
+                updateStatus(assessment.reason);
+                return;
+            }
+            item.rotation = rotation;
             if (item.type === "wall")
                 updateAttachedOpenings(item.id);
             applyItemTransform(item);
@@ -9597,6 +9798,13 @@ function createHouseBuilder() {
         const openingPlacement = openingType ? openingPlacementAtPointer(event) : null;
         if (["grass", "fence", "tree"].includes(selectedType) && builder.currentLevel > 0) {
             updateStatus("Grasflächen, Grundstückszäune und Bäume können nur im Erdgeschoss platziert werden.");
+            return false;
+        }
+        if (selectedType === "support" &&
+            (builder.currentLevel >= BUILDER_MAX_LEVEL || hasRoofAtLevel(builder.currentLevel))) {
+            updateStatus(builder.currentLevel >= BUILDER_MAX_LEVEL ?
+                "Über der dritten Etage kann keine weitere Etage getragen werden." :
+                "Unter einem bereits gesetzten Dach wird keine neue Geschossstütze benötigt.");
             return false;
         }
         if (["wall", "fence", "floor"].includes(selectedType)) {
@@ -9773,6 +9981,13 @@ function createHouseBuilder() {
             x = THREE.MathUtils.clamp(Math.round(wallSnap.x * 100) / 100, -9.5, 9.5);
             z = THREE.MathUtils.clamp(Math.round(wallSnap.z * 100) / 100, -9.5, 9.5);
         }
+        const candidate = { ...item, x, z };
+        const structureAssessment = item.type === "wall" ? upperWallAssessment(candidate) :
+            item.type === "support" ? supportMoveAssessment(item, candidate) : { valid: true };
+        if (!structureAssessment.valid) {
+            updateStatus(structureAssessment.reason);
+            return true;
+        }
         item.x = x;
         item.z = z;
         applyItemTransform(item);
@@ -9780,7 +9995,8 @@ function createHouseBuilder() {
             updateAttachedOpenings(item.id);
         builder.selectionHelper?.update();
         builder.dragMoved = true;
-        updateStatus(`Auswahl bei ${x.toLocaleString("de-DE")} / ${z.toLocaleString("de-DE")} m.`);
+        updateStatus(`Auswahl bei ${x.toLocaleString("de-DE")} / ${z.toLocaleString("de-DE")} m.${
+            item.type === "wall" ? ` ${structureHint(structureAssessment)}` : ""}`);
         return true;
     }
 
@@ -9918,13 +10134,23 @@ function createHouseBuilder() {
                 `${builderTypeLabel(builderPartType.value)}: direkt auf eine Wand tippen.` :
                 builderPartType.value === "roof" ?
                     "Dachtyp wählen und auf den geschlossenen Wandzug tippen." :
-                    `${builderTypeLabel(builderPartType.value)}: freie Stelle auf dem Grundstück antippen.`);
+                    builderPartType.value === "support" ?
+                        "Stütze in der Etage unter einem bis zu 2 m auskragenden Bauteil setzen." :
+                        `${builderTypeLabel(builderPartType.value)}: freie Stelle auf dem Grundstück antippen.`);
     });
     builderVariant.addEventListener("change", () => {
         const item = itemById(builder.selectedId);
         if (!item) {
             refreshPlacementPreview();
             return;
+        }
+        if (item.type === "wall") {
+            const assessment = upperWallAssessment({ ...item, variant: builderVariant.value });
+            if (!assessment.valid) {
+                refreshVariants(item.variant);
+                updateStatus(assessment.reason);
+                return;
+            }
         }
         item.variant = builderVariant.value;
         replaceItemObject(item);
@@ -9945,9 +10171,16 @@ function createHouseBuilder() {
             return;
         }
         const length = THREE.MathUtils.clamp(Number(builderWallLength.value) || 0.5, 0.5, 28.25);
-        if (item.variant === "wall-corner")
-            item.variant = "wall-custom-standard";
-        item.length = Math.round(length * 100) / 100;
+        const nextVariant = item.variant === "wall-corner" ? "wall-custom-standard" : item.variant;
+        const nextLength = Math.round(length * 100) / 100;
+        const assessment = upperWallAssessment({ ...item, variant: nextVariant, length: nextLength });
+        if (!assessment.valid) {
+            setWallLengthControls(item);
+            updateStatus(assessment.reason);
+            return;
+        }
+        item.variant = nextVariant;
+        item.length = nextLength;
         replaceItemObject(item);
         updateAttachedOpenings(item.id);
         setWallLengthControls(item);
@@ -9976,8 +10209,14 @@ function createHouseBuilder() {
         const id = builder.selectedId;
         if (!id)
             return;
-        if (wallSupportsUpperStructure(itemById(id))) {
+        const selectedItem = itemById(id);
+        if (wallSupportsUpperStructure(selectedItem)) {
             updateStatus("Diese Wand trägt eine obere Etage oder ein Dach. Entferne zuerst den Aufbau darüber.");
+            return;
+        }
+        const supportAssessment = supportMoveAssessment(selectedItem, null, true);
+        if (!supportAssessment.valid) {
+            updateStatus(supportAssessment.reason);
             return;
         }
         const removedIds = new Set([id]);
@@ -10043,6 +10282,11 @@ function createHouseBuilder() {
                 updateStatus("Das letzte Bauteil dieser Etage trägt einen Aufbau. Entferne zuerst die obere Etage oder das Dach.");
                 return;
             }
+            const supportAssessment = supportMoveAssessment(item, null, true);
+            if (!supportAssessment.valid) {
+                updateStatus(supportAssessment.reason);
+                return;
+            }
             builder.items.splice(itemIndex, 1);
             const removedIds = new Set([item.id]);
             if (item.type === "wall")
@@ -10100,6 +10344,11 @@ function createHouseBuilder() {
             currentLevelName: BUILDER_LEVEL_NAMES[builder.currentLevel],
             currentLevelClosed: Boolean(closedWallLoop(builder.currentLevel)),
             roofPlaced: hasRoofAtLevel(builder.currentLevel),
+            supportsOnLevel: builder.items.filter((item) =>
+                item.type === "support" && item.level === builder.currentLevel).length,
+            upperWallsValid: builder.items.filter((item) =>
+                item.type === "wall" && item.level === builder.currentLevel)
+                .every((item) => upperWallAssessment(item).valid),
             automaticCeilings: builder.autoCeilings.children.length,
             selectedId: builder.selectedId,
             placementEnabled: builder.placementEnabled,
@@ -10488,6 +10737,11 @@ function createDomesticVehicleController(id, label, slot, home, options = {}) {
         label,
         slot,
         home: { ...home },
+        // Winkel zwischen der lokalen +Z-Achse der jeweiligen GLB-Datei und
+        // ihrer sichtbaren Fahrzeugfront. Damit folgt beim Fahren wirklich
+        // die Motorhaube der Strecke, obwohl die Quellmodelle unterschiedlich
+        // ausgerichtet exportiert wurden.
+        frontYawOffset: options.frontYawOffset || 0,
         garageDoor: options.garageDoor || null,
         // Der Mittelpunkt eines knapp vier Meter langen Fahrzeugs muss rund
         // drei Meter hinter der Torfläche stehen. Zuvor blieb das Heck in der
@@ -10507,9 +10761,11 @@ function createDomesticVehicleController(id, label, slot, home, options = {}) {
 }
 
 const yetiController = createDomesticVehicleController("yeti", "Skoda Yeti",
-    vehicleModels.yeti.slot, { x: 0, z: 8.72, yaw: 0 }, { garageDoor: "middle" });
+    vehicleModels.yeti.slot, { x: 0, z: 8.72, yaw: 0 },
+    { garageDoor: "middle", frontYawOffset: Math.PI });
 const karoqController = createDomesticVehicleController("karoq", "Skoda Karoq",
-    vehicleModels.karoq.slot, { x: -2.10, z: 8.72, yaw: 0 }, { garageDoor: "left" });
+    vehicleModels.karoq.slot, { x: -2.10, z: 8.72, yaw: 0 },
+    { garageDoor: "left", frontYawOffset: Math.PI });
 const foxController = createDomesticVehicleController("fox", "VW Fox",
     vehicleModels.fox.slot, { x: 2.10, z: 8.45, yaw: Math.PI });
 
@@ -10519,6 +10775,24 @@ function shortestYaw(from, to, amount) {
 
 function routePose(controller, x, z, yaw = controller.home.yaw, motion = "forward") {
     return { x, z, yaw, motion };
+}
+
+function orientDomesticRoute(controller, route, destination) {
+    return route.map((pose, index) => {
+        const next = route[index + 1];
+        const previous = route[index - 1];
+        const neighbour = next || previous;
+        if (!neighbour)
+            return { ...pose };
+        const dx = next ? next.x - pose.x : pose.x - previous.x;
+        const dz = next ? next.z - pose.z : pose.z - previous.z;
+        const movementYaw = Math.atan2(dx, dz);
+        const frontYaw = movementYaw + (pose.motion === "reverse" ? Math.PI : 0);
+        let yaw = frontYaw - controller.frontYawOffset;
+        if (index === route.length - 1 && ["home", "garage"].includes(destination))
+            yaw = controller.home.yaw;
+        return { ...pose, yaw };
+    });
 }
 
 function beginDomesticRoute(controller, route, destination, duration = 10500) {
@@ -10547,7 +10821,7 @@ function activateDomesticRoute(controller, route, destination, duration = 10500)
         return false;
     if (!domesticFleet.active && controller.motion !== "idle")
         return false;
-    controller.route = route;
+    controller.route = orientDomesticRoute(controller, route, destination);
     controller.destination = destination;
     controller.routeStartedAt = performance.now();
     controller.routeDuration = reduceMotion ? 50 : duration;
@@ -10562,7 +10836,7 @@ function domesticAwayRoute(controller) {
     return [
         routePose(controller, x, z, yaw, "reverse"),
         routePose(controller, x, 11.75, yaw, "reverse"),
-        routePose(controller, x + 0.45, 13.15, yaw - 0.35, "reverse"),
+        routePose(controller, x + 0.45, 13.15, yaw - 0.35, "forward"),
         routePose(controller, 4.75, 14.05, Math.PI / 2, "forward"),
         routePose(controller, 8.35, 13.40, 2.05, "forward"),
         routePose(controller, 10.35, 9.10, Math.PI, "forward"),
@@ -10578,8 +10852,8 @@ function domesticReturnRoute(controller) {
         routePose(controller, 8.65, 11.70, -0.46, "forward"),
         routePose(controller, 6.70, 13.35, -1.05, "forward"),
         routePose(controller, 4.35, 13.70, -1.58, "forward"),
-        routePose(controller, x + 0.35, 11.60, yaw, "reverse"),
-        routePose(controller, x, z, yaw, "reverse")
+        routePose(controller, x + 0.35, 11.60, yaw, "forward"),
+        routePose(controller, x, z, yaw, "forward")
     ];
 }
 
@@ -13151,7 +13425,12 @@ canvas.addEventListener("pointerleave", () => {
     if (!state.pointers.size)
         houseBuilder.leavePointer();
 });
-stage.addEventListener("touchmove", (event) => event.preventDefault(), { passive: false });
+stage.addEventListener("touchmove", (event) => {
+    // Menüs und Formulare müssen auf kleinen iPhones eigenständig scrollbar
+    // bleiben. Nur Gesten direkt auf der 3D-Leinwand werden abgefangen.
+    if (event.target === canvas)
+        event.preventDefault();
+}, { passive: false });
 canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 canvas.addEventListener("wheel", (event) => {
     event.preventDefault();
@@ -13215,6 +13494,9 @@ resetButton.addEventListener("click", () => {
 
 function setMenuOpen(open) {
     menuPanel.hidden = !open;
+    stage.classList.toggle("menu-open", open);
+    if (open)
+        menuPanel.scrollTop = 0;
     menuToggle.setAttribute("aria-expanded", open ? "true" : "false");
     menuToggle.setAttribute("aria-label", open ? "Energie-Menü schließen" : "Energie-Menü öffnen");
 }

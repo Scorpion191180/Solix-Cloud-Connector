@@ -1607,6 +1607,7 @@ header p{
     overscroll-behavior:contain;
     scrollbar-gutter:stable;
     -webkit-overflow-scrolling:touch;
+    touch-action:pan-y;
 }
 
 .house-menu-head,
@@ -1965,6 +1966,18 @@ header p{
     white-space:nowrap;
 }
 
+.house-builder-roof-state{
+    margin:6px 2px 0;
+    color:#fde68a;
+    font-size:8.5px;
+    font-weight:850;
+    line-height:1.3;
+}
+
+.house-builder-roof-state.is-set{
+    color:#fca5a5;
+}
+
 .house-builder-grid label,
 .house-builder-color-row > label{
     display:grid;
@@ -2115,6 +2128,7 @@ header p{
 .house-stage.is-building .animal-resource-label,
 .house-stage.is-building .animal-clean-label,
 .house-stage.is-building .house-weather,
+.house-stage.is-building .house-waste,
 .house-stage.is-building .house-reset,
 .house-stage.is-building .house-version,
 .house-stage.is-building .house-gesture,
@@ -2159,6 +2173,19 @@ header p{
 .house-clean-shortcut[hidden]{display:none!important;}
 .house-clean-shortcut:disabled{opacity:.62;cursor:wait;}
 
+/* Das geöffnete Hauptmenü bekommt auf kleinen Bildschirmen die ungeteilte
+   Bedienfläche. Schwebende Szenenaktionen dürfen seine letzten Einträge nicht
+   überdecken. */
+.house-stage.menu-open .house-clean-shortcut,
+.house-stage.menu-open .house-weather,
+.house-stage.menu-open .house-waste,
+.house-stage.menu-open .house-reset,
+.house-stage.menu-open .house-version,
+.house-stage.menu-open .house-gesture{
+    opacity:0;
+    pointer-events:none;
+}
+
 .house-weather{
     position:absolute;
     z-index:7;
@@ -2185,6 +2212,61 @@ header p{
 .house-weather strong{font-size:13px;line-height:1.05;}
 .house-weather small{margin-top:2px;color:#cbd5e1;font-size:8px;}
 .house-weather.stale{opacity:.72;}
+
+.house-waste{
+    position:absolute;
+    z-index:7;
+    top:calc(max(12px,env(safe-area-inset-top)) + 58px);
+    right:max(12px,env(safe-area-inset-right));
+    display:flex;
+    align-items:center;
+    gap:8px;
+    max-width:min(290px,calc(100vw - 24px));
+    padding:7px 10px;
+    border:1px solid rgba(226,232,240,.25);
+    border-radius:13px;
+    background:rgba(7,15,27,.66);
+    color:#f8fafc;
+    box-shadow:0 8px 24px rgba(2,6,23,.28);
+    backdrop-filter:blur(10px);
+    -webkit-backdrop-filter:blur(10px);
+    pointer-events:none;
+}
+
+.house-waste > span:last-child{min-width:0;}
+.house-waste strong,
+.house-waste small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.house-waste strong{font-size:10px;line-height:1.1;}
+.house-waste small{margin-top:2px;color:#cbd5e1;font-size:8px;}
+.house-waste.stale{opacity:.72;}
+.house-waste-icons{display:flex;align-items:center;gap:3px;flex:none;}
+.house-waste-icons i{
+    position:relative;
+    display:grid;
+    place-items:center;
+    width:22px;
+    height:24px;
+    border:1px solid rgba(255,255,255,.34);
+    border-radius:4px 4px 6px 6px;
+    color:#fff;
+    font:950 10px/1 system-ui,sans-serif;
+    font-style:normal;
+    box-shadow:inset 0 0 8px rgba(255,255,255,.10),0 3px 8px rgba(2,6,23,.34);
+}
+.house-waste-icons i::before{
+    position:absolute;
+    width:15px;
+    height:2px;
+    margin-top:-27px;
+    border-radius:3px;
+    background:currentColor;
+    content:"";
+}
+.house-waste-icons .rest{background:#374151;color:#e5e7eb;}
+.house-waste-icons .bio{background:#3f6212;color:#ecfccb;font-size:11px;}
+.house-waste-icons .paper{background:#1d4ed8;color:#dbeafe;font-size:14px;}
+.house-waste-icons .yellow{background:#ca8a04;color:#fef9c3;font-size:13px;}
+.house-waste-icons .unknown{background:#475569;color:#e2e8f0;}
 
 .house-gesture,
 .house-reset{
@@ -3131,6 +3213,22 @@ body{
     border-radius:0;
     overscroll-behavior:none;
     touch-action:none;
+}
+
+.house-menu-panel{
+    top:calc(max(8px,env(safe-area-inset-top)) + 52px);
+    bottom:max(8px,env(safe-area-inset-bottom));
+    height:auto;
+    max-height:calc(100dvh - max(8px,env(safe-area-inset-top)) - max(8px,env(safe-area-inset-bottom)) - 52px);
+    padding-bottom:calc(28px + env(safe-area-inset-bottom));
+    overscroll-behavior-y:contain;
+    touch-action:pan-y;
+}
+
+.house-waste{
+    top:calc(max(8px,env(safe-area-inset-top)) + 54px);
+    right:max(10px,env(safe-area-inset-right));
+    max-width:min(245px,calc(100vw - 20px));
 }
 
 .house-builder-panel{
