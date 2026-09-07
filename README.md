@@ -215,7 +215,12 @@ Fahrt; ein Wechsel wird deshalb nach dem Abstellen des Fahrzeugs erkannt.
 Die Live-Wetteranzeige verwendet dieselben serverseitigen Hauskoordinaten und
 gibt sie ebenfalls nicht an den Browser weiter. Falls für das Wetter ein
 anderer Punkt verwendet werden soll, können optional `HOUSE_LATITUDE` und
-`HOUSE_LONGITUDE` als private Render-Variablen gesetzt werden. Falls Open-Meteo
+`HOUSE_LONGITUDE` als private Render-Variablen gesetzt werden. Mit der optionalen
+privaten Variable `HOUSE_LOCATION_LABEL` wird der Ortsname des Hausstandorts
+oben rechts angezeigt. Über den GPS-Knopf kann der Nutzer dem Browser einmalig
+erlauben, Wetter und Himmelsverlauf für seinen aktuellen Standort zu laden. Die
+GPS-Koordinaten werden dafür per `POST` verarbeitet, nicht dauerhaft gespeichert
+und nicht in der Antwort an den Browser zurückgegeben. Falls Open-Meteo
 vom Render-Netz vorübergehend nicht erreichbar ist, verwendet die App
 automatisch Bright Sky mit Messwerten des Deutschen Wetterdienstes.
 

@@ -18,6 +18,8 @@ services:
         sync: false
       - key: AUDI_HOME_LONGITUDE
         sync: false
+      - key: HOUSE_LOCATION_LABEL
+        sync: false
       - key: WASTE_ICS_URL
         sync: false
       - key: WASTE_CACHE_SECONDS

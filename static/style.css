@@ -2191,10 +2191,9 @@ header p{
     z-index:7;
     top:max(12px,env(safe-area-inset-top));
     right:max(12px,env(safe-area-inset-right));
-    display:flex;
-    align-items:center;
-    gap:8px;
-    min-width:116px;
+    display:grid;
+    gap:5px;
+    min-width:142px;
     padding:8px 11px;
     border:1px solid rgba(226,232,240,.28);
     border-radius:14px;
@@ -2203,20 +2202,56 @@ header p{
     box-shadow:0 8px 28px rgba(2,6,23,.30);
     backdrop-filter:blur(10px);
     -webkit-backdrop-filter:blur(10px);
-    pointer-events:none;
+    pointer-events:auto;
 }
 
+.house-weather-main{display:flex;align-items:center;gap:8px;}
 .house-weather-icon{font-size:22px;line-height:1;}
 .house-weather strong,
 .house-weather small{display:block;white-space:nowrap;}
 .house-weather strong{font-size:13px;line-height:1.05;}
 .house-weather small{margin-top:2px;color:#cbd5e1;font-size:8px;}
 .house-weather.stale{opacity:.72;}
+.house-location-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:7px;
+    padding-top:4px;
+    border-top:1px solid rgba(226,232,240,.16);
+}
+.house-location-label{
+    display:block;
+    max-width:112px;
+    overflow:hidden;
+    color:#e2e8f0!important;
+    font-size:8px!important;
+    font-weight:750;
+    text-overflow:ellipsis;
+}
+.house-gps-button{
+    min-height:22px;
+    padding:3px 7px;
+    border:1px solid rgba(94,234,212,.48);
+    border-radius:999px;
+    background:rgba(13,148,136,.16);
+    color:#ccfbf1;
+    font:850 8px/1 system-ui,sans-serif;
+    white-space:nowrap;
+    cursor:pointer;
+    touch-action:manipulation;
+}
+.house-gps-button.active{
+    border-color:rgba(52,211,153,.75);
+    background:rgba(5,150,105,.36);
+    color:#ecfdf5;
+}
+.house-gps-button:disabled{opacity:.55;cursor:wait;}
 
 .house-waste{
     position:absolute;
     z-index:7;
-    top:calc(max(12px,env(safe-area-inset-top)) + 58px);
+    top:calc(max(12px,env(safe-area-inset-top)) + 88px);
     right:max(12px,env(safe-area-inset-right));
     display:flex;
     align-items:center;
@@ -2245,28 +2280,65 @@ header p{
     display:grid;
     place-items:center;
     width:22px;
-    height:24px;
-    border:1px solid rgba(255,255,255,.34);
-    border-radius:4px 4px 6px 6px;
+    height:25px;
     color:#fff;
     font:950 10px/1 system-ui,sans-serif;
     font-style:normal;
-    box-shadow:inset 0 0 8px rgba(255,255,255,.10),0 3px 8px rgba(2,6,23,.34);
+    filter:drop-shadow(0 3px 4px rgba(2,6,23,.38));
 }
-.house-waste-icons i::before{
+.house-waste-icons .bin{
+    border:1px solid rgba(255,255,255,.32);
+    border-radius:3px 3px 5px 5px;
+    box-shadow:inset 0 0 8px rgba(255,255,255,.12);
+}
+.house-waste-icons .bin::before{
     position:absolute;
-    width:15px;
-    height:2px;
-    margin-top:-27px;
+    top:-4px;
+    left:1px;
+    width:18px;
+    height:4px;
     border-radius:3px;
-    background:currentColor;
+    background:inherit;
+    border:1px solid rgba(255,255,255,.30);
     content:"";
 }
-.house-waste-icons .rest{background:#374151;color:#e5e7eb;}
-.house-waste-icons .bio{background:#3f6212;color:#ecfccb;font-size:11px;}
-.house-waste-icons .paper{background:#1d4ed8;color:#dbeafe;font-size:14px;}
-.house-waste-icons .yellow{background:#ca8a04;color:#fef9c3;font-size:13px;}
-.house-waste-icons .unknown{background:#475569;color:#e2e8f0;}
+.house-waste-icons .bin::after{
+    position:absolute;
+    right:2px;
+    bottom:-3px;
+    left:2px;
+    height:4px;
+    border-right:4px solid currentColor;
+    border-left:4px solid currentColor;
+    content:"";
+}
+.house-waste-icons .rest{background:#111827;color:#030712;}
+.house-waste-icons .bio{background:#854d28;color:#422006;}
+.house-waste-icons .paper{background:#2563eb;color:#1e3a8a;}
+.house-waste-icons .yellow{
+    height:27px;
+    border:1px solid rgba(255,255,255,.55);
+    border-radius:50% 50% 38% 38% / 18% 18% 72% 72%;
+    background:#facc15;
+    color:#166534;
+    font-size:13px;
+    box-shadow:inset 0 0 7px rgba(255,255,255,.46);
+}
+.house-waste-icons .yellow::before{
+    position:absolute;
+    top:-3px;
+    width:9px;
+    height:5px;
+    border-radius:2px 2px 50% 50%;
+    background:#facc15;
+    content:"";
+}
+.house-waste-icons .unknown{
+    border:1px solid rgba(255,255,255,.34);
+    border-radius:6px;
+    background:#475569;
+    color:#e2e8f0;
+}
 
 .house-gesture,
 .house-reset{
@@ -3226,7 +3298,7 @@ body{
 }
 
 .house-waste{
-    top:calc(max(8px,env(safe-area-inset-top)) + 54px);
+    top:calc(max(8px,env(safe-area-inset-top)) + 88px);
     right:max(10px,env(safe-area-inset-right));
     max-width:min(245px,calc(100vw - 20px));
 }

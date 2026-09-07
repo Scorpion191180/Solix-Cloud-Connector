@@ -33,6 +33,11 @@ class GarageDoorCommand(BaseModel):
     open: bool
 
 
+class WeatherLocationRequest(BaseModel):
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+
+
 class AutomationSettingsUpdate(BaseModel):
     on_threshold_percent: int = Field(ge=20, le=90)
     off_threshold_percent: int = Field(ge=0, le=89)
@@ -169,6 +174,12 @@ async def audi():
 async def weather():
     """Return cached live weather for the configured house coordinates."""
     return await weather_client.get_live()
+
+
+@app.post("/api/weather/location")
+async def weather_at_location(location: WeatherLocationRequest):
+    """Return weather for an explicitly approved browser GPS position."""
+    return await weather_client.get_live_at(location.latitude, location.longitude)
 
 
 @app.get("/api/waste")

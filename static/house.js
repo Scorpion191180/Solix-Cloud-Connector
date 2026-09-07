@@ -71,12 +71,13 @@ const weatherPanel = document.getElementById("houseWeather");
 const weatherIcon = document.getElementById("houseWeatherIcon");
 const weatherTemp = document.getElementById("houseWeatherTemp");
 const weatherText = document.getElementById("houseWeatherText");
+const weatherLocation = document.getElementById("houseWeatherLocation");
 const sceneLoader = document.getElementById("sceneLoader");
 const sceneLoaderBar = document.getElementById("sceneLoaderBar");
 const sceneLoaderStatus = document.getElementById("sceneLoaderStatus");
 const sceneLoaderPercent = document.getElementById("sceneLoaderPercent");
 const sceneLoaderVersion = document.getElementById("sceneLoaderVersion");
-const APP_BUILD_VERSION = "135";
+const APP_BUILD_VERSION = "136";
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const INTERIOR_VIEW_ENABLED = false;
 
@@ -11292,6 +11293,8 @@ function updateWeatherScene(weather) {
         (wind == null ? "" : " · " + Math.round(wind) + " km/h") +
         (weather?.is_day === 0 && moonPhase ? " · " + moonPhase : "") +
         (weather?.stale === true ? " · letzter Stand" : "");
+    if (weatherLocation && weather?.location_label)
+        weatherLocation.textContent = weather.location_label;
     weatherPanel.classList.toggle("stale", weather?.stale === true);
 }
 

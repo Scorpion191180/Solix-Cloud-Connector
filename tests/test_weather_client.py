@@ -76,6 +76,36 @@ class WeatherFallbackTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(data["available"])
         self.assertEqual(data["source"], "Bright Sky (DWD)")
+        self.assertEqual(data["location_mode"], "home")
+        self.assertEqual(data["location_label"], "Hausstandort")
+
+    async def test_explicit_gps_location_uses_its_own_weather_and_label(self):
+        client = WeatherClient()
+        gps_weather = {
+            "timezone": "Europe/Berlin",
+            "current": {"temperature_2m": 18.6, "weather_code": 2},
+            "daily": {},
+        }
+        with (
+            patch.object(
+                client,
+                "_fetch_data_for",
+                AsyncMock(return_value=gps_weather),
+            ) as fetch_data,
+            patch.object(
+                client,
+                "_reverse_geocode",
+                AsyncMock(return_value="Freudenstadt"),
+            ),
+        ):
+            data = await client.get_live_at(48.463, 8.411)
+
+        self.assertTrue(data["available"])
+        self.assertEqual(data["location_mode"], "gps")
+        self.assertEqual(data["location_label"], "Freudenstadt")
+        self.assertEqual(data["temperature_c"], 18.6)
+        self.assertIn("celestial", data)
+        fetch_data.assert_awaited_once_with(48.463, 8.411)
 
     async def test_httpx_fallback_returns_weather_if_aiohttp_fails(self):
         client = WeatherClient()

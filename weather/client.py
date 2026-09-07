@@ -17,6 +17,7 @@ import httpx
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 BRIGHT_SKY_URL = "https://api.brightsky.dev/current_weather"
+NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
 DEFAULT_TIMEZONE = "Europe/Berlin"
 DEFAULT_PANEL_AZIMUTH_DEGREES = 157.5
 
@@ -234,22 +235,36 @@ class WeatherClient:
             "HOUSE_LONGITUDE", _float_setting("AUDI_HOME_LONGITUDE")
         )
         self.timezone = os.getenv("APP_TIMEZONE", DEFAULT_TIMEZONE)
+        self.home_location_label = (
+            os.getenv("HOUSE_LOCATION_LABEL", "").strip() or "Hausstandort"
+        )
         self.panel_azimuth = _float_setting(
             "PV_AZIMUTH_DEGREES", DEFAULT_PANEL_AZIMUTH_DEGREES
         ) or DEFAULT_PANEL_AZIMUTH_DEGREES
         self._cache_seconds = 5 * 60
         self._last_fetch = 0.0
         self._last_payload: dict[str, Any] | None = None
+        self._location_cache: dict[
+            tuple[float, float], tuple[float, dict[str, Any]]
+        ] = {}
+        self._location_labels: dict[tuple[float, float], str] = {}
         self._lock = asyncio.Lock()
         self._session: aiohttp.ClientSession | None = None
         self._httpx_client: httpx.AsyncClient | None = None
 
-    def _with_celestial(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def _with_celestial(
+        self,
+        payload: dict[str, Any],
+        latitude: float | None = None,
+        longitude: float | None = None,
+    ) -> dict[str, Any]:
         decorated = dict(payload)
-        if self.latitude is not None and self.longitude is not None:
+        selected_latitude = self.latitude if latitude is None else latitude
+        selected_longitude = self.longitude if longitude is None else longitude
+        if selected_latitude is not None and selected_longitude is not None:
             decorated["celestial"] = celestial_snapshot(
-                self.latitude,
-                self.longitude,
+                selected_latitude,
+                selected_longitude,
                 panel_azimuth_degrees=self.panel_azimuth,
             )
         return decorated
@@ -269,14 +284,21 @@ class WeatherClient:
                 verify=certifi.where(),
                 timeout=12,
                 follow_redirects=True,
+                headers={
+                    "User-Agent": (
+                        "Solix-Cloud-Connector/1.0 "
+                        "(private weather location display)"
+                    )
+                },
             )
         return self._httpx_client
 
-    @property
-    def _request_params(self) -> dict[str, Any]:
+    def _request_params_for(
+        self, latitude: float | None, longitude: float | None
+    ) -> dict[str, Any]:
         return {
-            "latitude": self.latitude,
-            "longitude": self.longitude,
+            "latitude": latitude,
+            "longitude": longitude,
             "current": (
                 "temperature_2m,apparent_temperature,is_day,"
                 "precipitation,rain,snowfall,weather_code,"
@@ -287,11 +309,21 @@ class WeatherClient:
             "timezone": self.timezone,
         }
 
+    @property
+    def _request_params(self) -> dict[str, Any]:
+        return self._request_params_for(self.latitude, self.longitude)
+
     async def _fetch_data(self) -> dict[str, Any]:
+        return await self._fetch_data_for(self.latitude, self.longitude)
+
+    async def _fetch_data_for(
+        self, latitude: float | None, longitude: float | None
+    ) -> dict[str, Any]:
         """Use two transports and a DWD-backed provider as final fallback."""
+        request_params = self._request_params_for(latitude, longitude)
         try:
             session = await self._ensure_session()
-            async with session.get(OPEN_METEO_URL, params=self._request_params) as response:
+            async with session.get(OPEN_METEO_URL, params=request_params) as response:
                 response.raise_for_status()
                 return await response.json()
         except Exception:
@@ -299,7 +331,7 @@ class WeatherClient:
 
         client = await self._ensure_httpx_client()
         try:
-            response = await client.get(OPEN_METEO_URL, params=self._request_params)
+            response = await client.get(OPEN_METEO_URL, params=request_params)
             response.raise_for_status()
             return response.json()
         except Exception:
@@ -308,7 +340,7 @@ class WeatherClient:
             # ohne Schlüssel bereit und verhindert eine leere Wetteranzeige.
             response = await client.get(
                 BRIGHT_SKY_URL,
-                params={"lat": self.latitude, "lon": self.longitude},
+                params={"lat": latitude, "lon": longitude},
             )
             response.raise_for_status()
             bright_sky = response.json()
@@ -348,6 +380,79 @@ class WeatherClient:
                 "daily": {},
             }
 
+    def _normalize_payload(
+        self,
+        data: dict[str, Any],
+        location_label: str,
+        location_mode: str,
+    ) -> dict[str, Any]:
+        current = data.get("current") or {}
+        daily = data.get("daily") or {}
+        return {
+            "available": True,
+            "stale": False,
+            "timezone": data.get("timezone") or self.timezone,
+            "observed_at": current.get("time"),
+            "temperature_c": current.get("temperature_2m"),
+            "feels_like_c": current.get("apparent_temperature"),
+            "is_day": current.get("is_day"),
+            "precipitation_mm": current.get("precipitation"),
+            "rain_mm": current.get("rain"),
+            "snowfall_cm": current.get("snowfall"),
+            "weather_code": current.get("weather_code"),
+            "cloud_cover_percent": current.get("cloud_cover"),
+            "wind_speed_kmh": current.get("wind_speed_10m"),
+            "wind_direction_deg": current.get("wind_direction_10m"),
+            "sunrise": (daily.get("sunrise") or [None])[0],
+            "sunset": (daily.get("sunset") or [None])[0],
+            "location_label": location_label,
+            "location_mode": location_mode,
+            "source": data.get("_source") or "Open-Meteo",
+            "error": None,
+        }
+
+    async def _reverse_geocode(self, latitude: float, longitude: float) -> str:
+        """Resolve a short locality name without returning coordinates."""
+        cache_key = (round(latitude, 3), round(longitude, 3))
+        cached = self._location_labels.get(cache_key)
+        if cached:
+            return cached
+        try:
+            client = await self._ensure_httpx_client()
+            response = await client.get(
+                NOMINATIM_REVERSE_URL,
+                params={
+                    "format": "jsonv2",
+                    "lat": latitude,
+                    "lon": longitude,
+                    "zoom": 14,
+                    "addressdetails": 1,
+                    "accept-language": "de",
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+            address = data.get("address") or {}
+            label = next(
+                (
+                    str(address.get(key)).strip()
+                    for key in (
+                        "village",
+                        "town",
+                        "city",
+                        "municipality",
+                        "city_district",
+                        "county",
+                    )
+                    if address.get(key)
+                ),
+                "GPS-Standort",
+            )
+        except Exception:
+            label = "GPS-Standort"
+        self._location_labels[cache_key] = label
+        return label
+
     async def get_live(self) -> dict[str, Any]:
         async with self._lock:
             if self.latitude is None or self.longitude is None:
@@ -355,6 +460,8 @@ class WeatherClient:
                     "available": False,
                     "stale": True,
                     "timezone": self.timezone,
+                    "location_label": self.home_location_label,
+                    "location_mode": "home",
                     "error": "Hauskoordinaten für Wetter sind nicht eingerichtet",
                     "source": "Open-Meteo / Bright Sky (DWD)",
                 }
@@ -367,28 +474,9 @@ class WeatherClient:
 
             try:
                 data = await self._fetch_data()
-                current = data.get("current") or {}
-                daily = data.get("daily") or {}
-                payload = {
-                    "available": True,
-                    "stale": False,
-                    "timezone": data.get("timezone") or self.timezone,
-                    "observed_at": current.get("time"),
-                    "temperature_c": current.get("temperature_2m"),
-                    "feels_like_c": current.get("apparent_temperature"),
-                    "is_day": current.get("is_day"),
-                    "precipitation_mm": current.get("precipitation"),
-                    "rain_mm": current.get("rain"),
-                    "snowfall_cm": current.get("snowfall"),
-                    "weather_code": current.get("weather_code"),
-                    "cloud_cover_percent": current.get("cloud_cover"),
-                    "wind_speed_kmh": current.get("wind_speed_10m"),
-                    "wind_direction_deg": current.get("wind_direction_10m"),
-                    "sunrise": (daily.get("sunrise") or [None])[0],
-                    "sunset": (daily.get("sunset") or [None])[0],
-                    "source": data.get("_source") or "Open-Meteo",
-                    "error": None,
-                }
+                payload = self._normalize_payload(
+                    data, self.home_location_label, "home"
+                )
                 self._last_payload = payload
                 self._last_fetch = now
                 return self._with_celestial(payload)
@@ -406,9 +494,51 @@ class WeatherClient:
                     "available": False,
                     "stale": True,
                     "timezone": self.timezone,
+                    "location_label": self.home_location_label,
+                    "location_mode": "home",
                     "error": "Wetterdaten vorübergehend nicht erreichbar",
                     "source": "Open-Meteo / Bright Sky (DWD)",
                 })
+
+    async def get_live_at(self, latitude: float, longitude: float) -> dict[str, Any]:
+        """Return weather for an explicitly supplied, non-persisted GPS point."""
+        cache_key = (round(latitude, 3), round(longitude, 3))
+        async with self._lock:
+            now = time.monotonic()
+            cached = self._location_cache.get(cache_key)
+            if cached is not None and now - cached[0] < self._cache_seconds:
+                return self._with_celestial(
+                    cached[1], latitude=latitude, longitude=longitude
+                )
+
+            location_label = await self._reverse_geocode(latitude, longitude)
+            try:
+                data = await self._fetch_data_for(latitude, longitude)
+                payload = self._normalize_payload(data, location_label, "gps")
+                self._location_cache[cache_key] = (now, payload)
+                return self._with_celestial(
+                    payload, latitude=latitude, longitude=longitude
+                )
+            except Exception:
+                if cached is not None:
+                    payload = dict(cached[1])
+                    payload.update({
+                        "stale": True,
+                        "error": "Wetterdaten vorübergehend nicht erreichbar",
+                    })
+                else:
+                    payload = {
+                        "available": False,
+                        "stale": True,
+                        "timezone": self.timezone,
+                        "location_label": location_label,
+                        "location_mode": "gps",
+                        "error": "Wetterdaten vorübergehend nicht erreichbar",
+                        "source": "Open-Meteo / Bright Sky (DWD)",
+                    }
+                return self._with_celestial(
+                    payload, latitude=latitude, longitude=longitude
+                )
 
     async def close(self) -> None:
         if self._session is not None and not self._session.closed:

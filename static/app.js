@@ -14,6 +14,8 @@ let latestAutomationData = null;
 let latestAudiData = null;
 let latestWeatherData = null;
 let latestWasteData = null;
+let activeWeatherCoordinates = null;
+let weatherRequestBusy = false;
 
 const automationReasons = {
     automation_disabled: "Die Ladeautomatik ist deaktiviert.",
@@ -819,23 +821,97 @@ async function updateAudi() {
     }
 }
 
+function setWeatherLocationStatus(label, gpsActive = false) {
+    const location = document.getElementById("houseWeatherLocation");
+    const button = document.getElementById("houseGpsButton");
+    if (location && label)
+        location.textContent = label;
+    if (button) {
+        button.classList.toggle("active", gpsActive);
+        button.textContent = gpsActive ? "⌖ GPS ✓" : "⌖ GPS";
+        button.title = gpsActive ?
+            "GPS-Standort aktualisieren" : "GPS-Standort verwenden";
+    }
+}
+
 async function updateWeather() {
+    if (weatherRequestBusy)
+        return;
+    weatherRequestBusy = true;
     try {
-        const response = await fetch("/api/weather", { cache: "no-store" });
+        const request = activeWeatherCoordinates ? {
+            method: "POST",
+            cache: "no-store",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(activeWeatherCoordinates)
+        } : { cache: "no-store" };
+        const endpoint = activeWeatherCoordinates ?
+            "/api/weather/location" : "/api/weather";
+        const response = await fetch(endpoint, request);
         if (!response.ok)
             throw new Error("Wetter API: HTTP " + response.status);
         latestWeatherData = await response.json();
+        setWeatherLocationStatus(
+            latestWeatherData.location_label ||
+                (activeWeatherCoordinates ? "GPS-Standort" : "Hausstandort"),
+            latestWeatherData.location_mode === "gps"
+        );
         renderEnergyDiagram();
     }
     catch (error) {
         console.log(error);
     }
+    finally {
+        weatherRequestBusy = false;
+        const button = document.getElementById("houseGpsButton");
+        if (button)
+            button.disabled = false;
+    }
+}
+
+function requestBrowserPosition() {
+    return new Promise((resolve, reject) => {
+        if (!navigator.geolocation) {
+            reject(new Error("GPS wird von diesem Browser nicht unterstützt"));
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: false,
+            timeout: 12000,
+            maximumAge: 5 * 60 * 1000
+        });
+    });
+}
+
+async function useGpsWeather() {
+    const button = document.getElementById("houseGpsButton");
+    const location = document.getElementById("houseWeatherLocation");
+    if (button)
+        button.disabled = true;
+    if (location)
+        location.textContent = "GPS wird bestimmt …";
+    try {
+        const position = await requestBrowserPosition();
+        activeWeatherCoordinates = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude
+        };
+        await updateWeather();
+    }
+    catch (error) {
+        activeWeatherCoordinates = null;
+        setWeatherLocationStatus("GPS nicht freigegeben · Hausstandort", false);
+        console.log(error);
+        window.setTimeout(() => updateWeather(), 2600);
+        if (button)
+            button.disabled = false;
+    }
 }
 
 const wasteUi = {
-    rest: { short: "R", className: "rest", label: "Restmüll" },
-    bio: { short: "🌿", className: "bio", label: "Biomüll" },
-    paper: { short: "▤", className: "paper", label: "Papier" },
+    rest: { short: "", className: "bin rest", label: "Restmüll" },
+    bio: { short: "", className: "bin bio", label: "Biomüll" },
+    paper: { short: "", className: "bin paper", label: "Papier" },
     yellow: { short: "♻", className: "yellow", label: "Gelber Sack" }
 };
 
@@ -961,6 +1037,7 @@ updateAudi();
 updateWeather();
 updateWasteCollection();
 
+document.getElementById("houseGpsButton").addEventListener("click", useGpsWeather);
 document.getElementById("smartPlugOn").addEventListener("click", () => setManualSmartPlug(true));
 document.getElementById("smartPlugOff").addEventListener("click", () => setManualSmartPlug(false));
 function thresholdInputChanged(event) {
