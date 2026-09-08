@@ -21,9 +21,9 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260907-137", dashboard)
-        self.assertIn("house.js?v=20260907-137", dashboard)
-        self.assertIn("app.js?v=20260907-137", dashboard)
+        self.assertIn("style.css?v=20260908-138", dashboard)
+        self.assertIn("house.js?v=20260908-138", dashboard)
+        self.assertIn("app.js?v=20260908-138", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
 
@@ -648,6 +648,7 @@ class DashboardSchematicTests(unittest.TestCase):
             "builderPartType", "builderVariant", "builderColor",
             "builderLevelDown", "builderLevelUp", "builderLevelName",
             "builderLevelPosition", "builderRoofState",
+            "builderBirdView", "builderWallCutaway", "builderPartPalette",
             "builderVariantLabel", "builderWallLengthRow", "builderWallLength",
             "builderWallLengthValue",
             "builderPanelToggle", "builderRotateLeft", "builderRotateRight",
@@ -660,8 +661,8 @@ class DashboardSchematicTests(unittest.TestCase):
         ):
             self.assertIn(f'id="{element_id}"', dashboard)
 
-        self.assertIn('const APP_BUILD_VERSION = "137"', script)
-        self.assertIn("Version 137", dashboard)
+        self.assertIn('const APP_BUILD_VERSION = "138"', script)
+        self.assertIn("Version 138", dashboard)
         self.assertIn('localStorage.getItem("solix-scene-labels")', script)
         self.assertIn('stage.classList.toggle("show-scene-labels"', script)
         self.assertIn("hasStoredDogPose", script)
@@ -694,6 +695,13 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('sceneLoadingManager.itemEnd(SCENE_BOOTSTRAP_ITEM)', script)
         self.assertIn('function createHouseBuilder()', script)
         self.assertIn('function createBuilderPart(item)', script)
+        self.assertIn('const BUILDER_MIN_PITCH = -1.08', script)
+        self.assertIn('function builderRoofUndersideHeightAtWorldPoint', script)
+        self.assertIn('function builderWallRoofExtensions', script)
+        self.assertIn('new THREE.ExtrudeGeometry(shape', script)
+        self.assertIn('function synchronizeRoofWallExtensions()', script)
+        self.assertIn('function updateCameraWallCutaway', script)
+        self.assertIn('function showBuilderBirdView()', script)
         self.assertIn('new THREE.GridHelper(20, 20', script)
         self.assertIn('function snapOpeningToWall(item, rawX, rawZ, onlyWallId = null)', script)
         self.assertIn('function updateWallPreview(point)', script)
@@ -760,6 +768,12 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('function previewPlacementAtPointer(event)', script)
         self.assertIn('builder.placementEnabled', script)
         self.assertIn('id="builderPointerMode"', dashboard)
+        self.assertIn('data-builder-type="wall"', dashboard)
+        self.assertIn('data-builder-type="roof"', dashboard)
+        self.assertIn('builderPartType.dispatchEvent(new Event("change"', script)
+        self.assertIn('selectItem(null, "Auswahl aufgehoben.")', script)
+        self.assertIn('wallSurface.repeat.set(wallpaperWidth', script)
+        self.assertIn('{ id: "grass-lawn", label: "Rasen", width: 1, depth: 1', script)
         self.assertIn('stage.dataset.builderPlacementPreview = valid ? "valid" : "invalid"', script)
         self.assertIn('houseBuilder.hoverPointer(event)', script)
         self.assertIn('clickedItem?.type === "wall"', script)

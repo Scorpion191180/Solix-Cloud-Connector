@@ -14,7 +14,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/solix-home-32.png?v=94">
 <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/solix-home-180.png?v=94">
 <link rel="manifest" href="/static/site.webmanifest?v=94">
-<link rel="stylesheet" href="/static/style.css?v=20260907-137">
+<link rel="stylesheet" href="/static/style.css?v=20260908-138">
 
 <script type="importmap">
 {
@@ -259,6 +259,11 @@ Signalstärke
 <button id="builderPointerMode" type="button" aria-pressed="false" aria-keyshortcuts="M">⌁ Auswahl / Maus</button>
 <small>Ohne Bauteil navigieren und Vorhandenes auswählen</small>
 </div>
+<div class="house-builder-view-tools" aria-label="Ansicht im Baumodus">
+<button id="builderBirdView" type="button" title="Senkrecht von oben auf das Grundstück sehen">⌄ Vogelperspektive</button>
+<button id="builderWallCutaway" type="button" aria-pressed="false"
+    title="Nur die Wände auf der Kameraseite auf 50 cm absenken">◫ Vorderwände 50 cm</button>
+</div>
 <div class="house-builder-storey" aria-label="Geschoss auswählen">
 <button id="builderLevelDown" type="button" aria-label="Eine Etage nach unten" disabled>−</button>
 <span><small>AKTIVE ETAGE</small><strong id="builderLevelName">Erdgeschoss</strong></span>
@@ -266,9 +271,8 @@ Signalstärke
 <button id="builderLevelUp" type="button" aria-label="Eine Etage nach oben">＋</button>
 </div>
 <p class="house-builder-roof-state" id="builderRoofState">⌂ Dach noch offen · unter „Bauteil“ auswählbar</p>
-<div class="house-builder-grid">
-<label>Bauteil
-<select id="builderPartType">
+<label class="builder-part-select-native" for="builderPartType">Bauteil
+<select id="builderPartType" tabindex="-1" aria-hidden="true">
 <option value="wall">▰ Wand</option>
 <option value="window">▢ Fenster</option>
 <option value="door">▯ Tür</option>
@@ -280,6 +284,19 @@ Signalstärke
 <option value="tree">♣ Baum</option>
 </select>
 </label>
+<fieldset class="house-builder-part-palette" id="builderPartPalette">
+<legend>Bauteil wählen</legend>
+<button type="button" data-builder-type="wall"><span aria-hidden="true">▰</span>Wand</button>
+<button type="button" data-builder-type="window"><span aria-hidden="true">▣</span>Fenster</button>
+<button type="button" data-builder-type="door"><span aria-hidden="true">▯</span>Tür</button>
+<button type="button" data-builder-type="floor"><span aria-hidden="true">▦</span>Boden</button>
+<button type="button" data-builder-type="support"><span aria-hidden="true">║</span>Stütze</button>
+<button type="button" data-builder-type="roof"><span aria-hidden="true">⌂</span>Dach</button>
+<button type="button" data-builder-type="grass"><span aria-hidden="true">♒</span>Gras</button>
+<button type="button" data-builder-type="fence"><span aria-hidden="true">▥</span>Zaun</button>
+<button type="button" data-builder-type="tree"><span aria-hidden="true">♣</span>Baum</button>
+</fieldset>
+<div class="house-builder-grid house-builder-variant-grid">
 <label><span id="builderVariantLabel">Ausführung</span>
 <select id="builderVariant"></select>
 </label>
@@ -350,7 +367,7 @@ Dein Browser unterstützt die interaktive Hausansicht nicht.
 <span><strong id="houseWasteTitle">Müllabfuhr</strong><small id="houseWasteText">Termine werden geladen</small></span>
 </div>
 <button class="house-reset" id="houseReset" type="button" aria-label="Zur Standardansicht zurückkehren">↺ Standardansicht</button>
-<span class="house-version" id="houseVersion" aria-label="Aktuell geladene Version 137">Version 137</span>
+<span class="house-version" id="houseVersion" aria-label="Aktuell geladene Version 138">Version 138</span>
 <button class="house-clean-shortcut" id="houseCleanShortcut" type="button"
     data-animal-action="clean" aria-label="Hinterlassenschaften vom Grundstück entfernen"
     aria-live="polite" hidden>
@@ -791,8 +808,8 @@ Einstellungen
 
 </div>
 
-<script type="module" src="/static/house.js?v=20260907-137"></script>
-<script src="/static/app.js?v=20260907-137"></script>
+<script type="module" src="/static/house.js?v=20260908-138"></script>
+<script src="/static/app.js?v=20260908-138"></script>
 
 </body>
 </html>
