@@ -81,9 +81,12 @@ gewählt werden; **Automatisch** ist die empfohlene Einstellung.
 
 Über **Eigenes Haus bauen** öffnet sich der erste 20 × 20-m-Baumodus. Wände,
 Fenster und Türen lassen sich in mehreren Modellen und Farben auf einem
-Meter-Raster setzen, drehen und rückgängig machen. Der Entwurf wird vorerst
-lokal im jeweiligen Browser gespeichert. Diese erste Ausbaustufe greift nicht
-in die bestehende Live-Grundstücksansicht oder die Ladeautomatik ein.
+Meter-Raster setzen, drehen und rückgängig machen. Der Entwurf wird
+serverseitig gespeichert und deshalb auf allen geöffneten Geräten gleich
+angezeigt. Ein vorhandener lokaler Entwurf wird beim ersten Start automatisch
+übernommen, solange der Server noch keinen Entwurf kennt. Diese Ausbaustufe
+greift nicht in die bestehende Live-Grundstücksansicht oder die Ladeautomatik
+ein.
 
 ## Optionales Smart-Life-Garagentor
 
@@ -132,7 +135,8 @@ SOLIX_TELEMETRY_INTERVAL_SECONDS=60
 # Optional mit persistentem Render-Datenträger, damit Tageskurven auch
 # Deploys und Instanzwechsel überstehen:
 SOLIX_HISTORY_FILE=/var/data/solix-telemetry.json
-# Optional auf demselben Datenträger für Futter, Wasser, Tierpflege und Positionen:
+# Optional auf demselben Datenträger für Futter, Wasser, Tierpflege,
+# Tierpositionen und den gemeinsamen Hausentwurf:
 ANIMAL_STATE_FILE=/var/data/solix-animal-state.json
 SOLIX_SOLARBANK_PN=AE103
 SOLIX_BATTERY_CAPACITY_WH=10400
@@ -178,8 +182,10 @@ Datenträger (zum Beispiel unter `/var/data`) benötigt.
 Heu, Wasser, Hundefutter und Hinterlassenschaften werden serverseitig geteilt,
 sodass alle Browser denselben Stand sehen. Auch die Bewegungen von Pferd,
 Kamelen, Rottweiler, Vögeln und Fischen folgen auf allen geöffneten Geräten
-derselben laufenden Simulation. `ANIMAL_STATE_FILE` speichert die Pflegewerte
-optional ebenfalls auf dem persistenten Render-Datenträger.
+derselben laufenden Simulation. Der Hausentwurf aus dem Baumodus nutzt
+denselben gemeinsamen Zustand. `ANIMAL_STATE_FILE` speichert Pflegewerte,
+Tierpositionen und Hausentwurf optional auf dem persistenten Render-Datenträger,
+damit sie auch einen Deploy oder Neustart überstehen.
 
 Sind mehrere Solix-Systeme im Konto, wählt `SOLIX_SOLARBANK_PN` das Modell für
 Dashboard und Ladeautomatik eindeutig aus. Für die vorhandene Solarbank 4 ist

@@ -21,9 +21,9 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260908-138", dashboard)
-        self.assertIn("house.js?v=20260908-138", dashboard)
-        self.assertIn("app.js?v=20260908-138", dashboard)
+        self.assertIn("style.css?v=20260908-139", dashboard)
+        self.assertIn("house.js?v=20260908-139", dashboard)
+        self.assertIn("app.js?v=20260908-139", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
 
@@ -648,7 +648,7 @@ class DashboardSchematicTests(unittest.TestCase):
             "builderPartType", "builderVariant", "builderColor",
             "builderLevelDown", "builderLevelUp", "builderLevelName",
             "builderLevelPosition", "builderRoofState",
-            "builderBirdView", "builderWallCutaway", "builderPartPalette",
+            "builderWallCutaway", "builderPartPalette",
             "builderVariantLabel", "builderWallLengthRow", "builderWallLength",
             "builderWallLengthValue",
             "builderPanelToggle", "builderRotateLeft", "builderRotateRight",
@@ -661,8 +661,8 @@ class DashboardSchematicTests(unittest.TestCase):
         ):
             self.assertIn(f'id="{element_id}"', dashboard)
 
-        self.assertIn('const APP_BUILD_VERSION = "138"', script)
-        self.assertIn("Version 138", dashboard)
+        self.assertIn('const APP_BUILD_VERSION = "139"', script)
+        self.assertIn("Version 139", dashboard)
         self.assertIn('localStorage.getItem("solix-scene-labels")', script)
         self.assertIn('stage.classList.toggle("show-scene-labels"', script)
         self.assertIn("hasStoredDogPose", script)
@@ -701,7 +701,9 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('new THREE.ExtrudeGeometry(shape', script)
         self.assertIn('function synchronizeRoofWallExtensions()', script)
         self.assertIn('function updateCameraWallCutaway', script)
-        self.assertIn('function showBuilderBirdView()', script)
+        self.assertNotIn('id="builderBirdView"', dashboard)
+        self.assertIn('data-builder-category="wallpaper"', dashboard)
+        self.assertIn('builderCategory === "wallpaper"', script)
         self.assertIn('new THREE.GridHelper(20, 20', script)
         self.assertIn('function snapOpeningToWall(item, rawX, rawZ, onlyWallId = null)', script)
         self.assertIn('function updateWallPreview(point)', script)
@@ -725,8 +727,12 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('const BUILDER_STOREY_HEIGHT = 2.9', script)
         self.assertIn('function closedWallLoop(level)', script)
         self.assertIn('function switchBuilderLevel(targetLevel)', script)
-        self.assertIn('function addAutomaticCeiling(level, loop)', script)
+        self.assertIn('function addAutomaticCeiling(level, loop,', script)
         self.assertIn('function roofPlacementData(level = builder.currentLevel)', script)
+        self.assertIn('function placeOrSelectRoof()', script)
+        self.assertIn('fetch("/api/builder"', script)
+        self.assertIn('method: "PUT"', script)
+        self.assertIn('Automatischer Boden über', script)
         self.assertIn('function upperWallAssessment(item, options = {})', script)
         self.assertIn('function supportMoveAssessment(item, candidate = null, removeOnly = false)', script)
         self.assertIn('maxOutside > (supports.length ? 3.05 : 1.05)', script)
@@ -779,9 +785,7 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('clickedItem?.type === "wall"', script)
         self.assertIn('function beginPointer(event)', script)
         self.assertIn('function movePointer(event)', script)
-        self.assertIn('builder.selectionHelper = new THREE.BoxHelper', script)
-        self.assertIn('scene.add(builder.selectionHelper)', script)
-        self.assertIn('scene.remove(builder.selectionHelper)', script)
+        self.assertNotIn('new THREE.BoxHelper', script)
         self.assertIn('function updateSelectionToolsPosition()', script)
         self.assertIn('builderSelectionDelete.addEventListener("click", deleteSelection)', script)
         self.assertIn('window.solixHouseBuilder', script)

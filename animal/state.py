@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 import json
+import math
 import os
 from pathlib import Path
 import threading
@@ -33,6 +34,30 @@ DOG_MEAL_PERCENT = 45.0
 MOTION_LEASE_SECONDS = 6.0
 MOTION_SAVE_INTERVAL_SECONDS = 5.0
 MAX_MOTION_ANIMALS = 56
+MAX_BUILDER_ITEMS = 500
+BUILDER_ITEM_TYPES = {
+    "wall", "window", "door", "floor", "support", "roof",
+    "grass", "fence", "tree",
+}
+BUILDER_TEXT_FIELDS = {
+    "id": 96,
+    "type": 24,
+    "variant": 96,
+    "color": 24,
+    "wallId": 96,
+}
+BUILDER_NUMBER_FIELDS = {
+    "x": (-50.0, 50.0),
+    "z": (-50.0, 50.0),
+    "rotation": (-1080.0, 1080.0),
+    "length": (0.0, 50.0),
+    "width": (0.0, 50.0),
+    "depth": (0.0, 50.0),
+    "baseHeight": (0.0, 20.0),
+    "wallSegment": (0.0, 32.0),
+    "wallProgress": (-2.0, 2.0),
+    "wallSide": (-1.0, 1.0),
+}
 
 
 class AnimalStateStore:
@@ -66,6 +91,11 @@ class AnimalStateStore:
                 "saved_at": 0.0,
                 "revision": 0,
                 "animals": [],
+            },
+            "builder": {
+                "items": [],
+                "updated_at": 0.0,
+                "revision": 0,
             },
             "updated_at": time.time(),
             "revision": 1,
@@ -112,6 +142,14 @@ class AnimalStateStore:
                 "revision": int(motion.get("revision") or 0),
                 "animals": animals[-MAX_MOTION_ANIMALS:]
                 if isinstance(animals, list) else [],
+            }
+            builder = state.get("builder")
+            if not isinstance(builder, dict):
+                builder = defaults["builder"]
+            state["builder"] = {
+                "items": self._clean_builder_items(builder.get("items")),
+                "updated_at": float(builder.get("updated_at") or 0),
+                "revision": max(0, int(builder.get("revision") or 0)),
             }
             return state
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
@@ -163,6 +201,77 @@ class AnimalStateStore:
             encoding="utf-8",
         )
         temporary.replace(self.path)
+
+    @staticmethod
+    def _clean_builder_items(items: Any) -> list[dict[str, Any]]:
+        """Keep only the bounded fields the 3-D builder is allowed to store."""
+        if not isinstance(items, list):
+            return []
+        cleaned: list[dict[str, Any]] = []
+        for raw in items[:MAX_BUILDER_ITEMS]:
+            if not isinstance(raw, dict):
+                continue
+            item_type = str(raw.get("type") or "")
+            identifier = str(raw.get("id") or "")
+            variant = str(raw.get("variant") or "")
+            if item_type not in BUILDER_ITEM_TYPES or not identifier or not variant:
+                continue
+            item: dict[str, Any] = {}
+            for key, limit in BUILDER_TEXT_FIELDS.items():
+                value = raw.get(key)
+                if value is not None:
+                    item[key] = str(value)[:limit]
+            item["type"] = item_type
+            item["id"] = identifier[:BUILDER_TEXT_FIELDS["id"]]
+            item["variant"] = variant[:BUILDER_TEXT_FIELDS["variant"]]
+            try:
+                item["level"] = max(0, min(2, int(raw.get("level", 0))))
+            except (TypeError, ValueError):
+                item["level"] = 0
+            invalid = False
+            for key, (minimum, maximum) in BUILDER_NUMBER_FIELDS.items():
+                if key not in raw:
+                    continue
+                try:
+                    value = float(raw[key])
+                except (TypeError, ValueError):
+                    invalid = True
+                    break
+                if not math.isfinite(value):
+                    invalid = True
+                    break
+                item[key] = round(max(minimum, min(maximum, value)), 4)
+            if invalid or not all(key in item for key in ("x", "z", "rotation")):
+                continue
+            cleaned.append(item)
+        return cleaned
+
+    def get_builder(self) -> dict[str, Any]:
+        """Return the shared house draft without inflating animal payloads."""
+        with self._lock:
+            builder = self._state["builder"]
+            return {
+                "available": True,
+                "items": list(builder["items"]),
+                "updated_at": float(builder["updated_at"]),
+                "revision": int(builder["revision"]),
+            }
+
+    def update_builder(self, items: Any) -> dict[str, Any]:
+        """Persist one complete, validated last-write-wins builder snapshot."""
+        with self._lock:
+            builder = self._state.setdefault("builder", self._defaults()["builder"])
+            cleaned_items = self._clean_builder_items(items)
+            # Mehrere geöffnete Browser dürfen denselben Stand bestätigen,
+            # ohne dadurch die Revisionsnummer oder den Datenträger unnötig
+            # bei jedem Polling-Zyklus zu beschreiben.
+            if cleaned_items == builder.get("items", []):
+                return self.get_builder()
+            builder["items"] = cleaned_items
+            builder["updated_at"] = time.time()
+            builder["revision"] = int(builder.get("revision") or 0) + 1
+            self._save()
+            return self.get_builder()
 
     def _payload(self) -> dict[str, Any]:
         now = time.time()

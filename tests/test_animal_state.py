@@ -133,6 +133,48 @@ class AnimalStateStoreTests(unittest.TestCase):
             self.assertEqual(dog["yaw"], 1.234)
             self.assertEqual(dog["state"], "walking")
 
+    def test_builder_snapshot_is_shared_validated_and_persistent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "animals.json"
+            draft = [{
+                "id": "wall-one",
+                "type": "wall",
+                "variant": "wall-custom-standard",
+                "color": "#f1eee5",
+                "level": 0,
+                "x": 1.25,
+                "z": -2.5,
+                "rotation": 90,
+                "length": 4,
+                # Abgeleitete Renderdaten dürfen nicht auf dem Server landen.
+                "roofExtensions": [{"height": 99}],
+            }, {
+                "id": "bad-type",
+                "type": "spaceship",
+                "variant": "unknown",
+                "x": 0,
+                "z": 0,
+                "rotation": 0,
+            }]
+            with patch("animal.state.time.time", return_value=1_000_000):
+                first = AnimalStateStore(path)
+                saved = first.update_builder(draft)
+                unchanged = first.update_builder(draft)
+
+            self.assertEqual(saved["revision"], 1)
+            self.assertEqual(unchanged["revision"], 1)
+            self.assertEqual(len(saved["items"]), 1)
+            self.assertNotIn("roofExtensions", saved["items"][0])
+
+            with patch("animal.state.time.time", return_value=1_000_000):
+                restored = AnimalStateStore(path)
+                shared = restored.get_builder()
+                animal = restored.get()
+            self.assertEqual(shared["items"][0]["id"], "wall-one")
+            self.assertEqual(shared["items"][0]["rotation"], 90)
+            # Bauänderungen beeinflussen den getrennten Hundezustand nicht.
+            self.assertEqual(animal["dog_food"], 55)
+
 
 if __name__ == "__main__":
     unittest.main()

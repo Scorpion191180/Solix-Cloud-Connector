@@ -30,7 +30,6 @@ const builderPanel = document.getElementById("houseBuilderPanel");
 const builderCloseButton = document.getElementById("houseBuilderClose");
 const builderPanelToggle = document.getElementById("builderPanelToggle");
 const builderPointerMode = document.getElementById("builderPointerMode");
-const builderBirdView = document.getElementById("builderBirdView");
 const builderWallCutaway = document.getElementById("builderWallCutaway");
 const builderLevelDown = document.getElementById("builderLevelDown");
 const builderLevelUp = document.getElementById("builderLevelUp");
@@ -80,7 +79,7 @@ const sceneLoaderBar = document.getElementById("sceneLoaderBar");
 const sceneLoaderStatus = document.getElementById("sceneLoaderStatus");
 const sceneLoaderPercent = document.getElementById("sceneLoaderPercent");
 const sceneLoaderVersion = document.getElementById("sceneLoaderVersion");
-const APP_BUILD_VERSION = "138";
+const APP_BUILD_VERSION = "139";
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const INTERIOR_VIEW_ENABLED = false;
 
@@ -8197,9 +8196,10 @@ function builderSurfaceTexture(surface, color) {
     return texture;
 }
 
-function safeBuilderItems() {
+function safeBuilderItems(source = undefined) {
     try {
-        const parsed = JSON.parse(localStorage.getItem(BUILDER_STORAGE_KEY) || "[]");
+        const parsed = source === undefined ?
+            JSON.parse(localStorage.getItem(BUILDER_STORAGE_KEY) || "[]") : source;
         if (!Array.isArray(parsed))
             return [];
         const items = parsed.slice(0, 500).filter((item) =>
@@ -8818,19 +8818,112 @@ function createHouseBuilder() {
         wallCutaway: false, frontWallIds: new Set(),
         selectionBox: new THREE.Box3(), selectionAnchor: new THREE.Vector3()
     };
+    let builderCategory = "wall";
     // Wandecken innerhalb eines sichtbaren 1-m-Rasterfeldes werden zu einem
     // gemeinsamen, exakt deckungsgleichen Eckpunkt zusammengezogen.
     const WALL_ENDPOINT_SNAP_DISTANCE = 0.95;
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
+    const builderServer = {
+        ready: false,
+        revision: -1,
+        dirty: false,
+        saving: false,
+        generation: 0,
+        timer: null
+    };
 
-    function save() {
+    function saveBuilderLocally() {
         try {
             localStorage.setItem(BUILDER_STORAGE_KEY, JSON.stringify(builder.items));
+            return true;
         }
         catch (_error) {
             builderStatus.textContent = "Entwurf bleibt nur bis zum Schließen dieser Seite erhalten.";
+            return false;
         }
+    }
+
+    function scheduleBuilderServerSave(delay = 450) {
+        if (!builderServer.ready)
+            return;
+        window.clearTimeout(builderServer.timer);
+        builderServer.timer = window.setTimeout(() => void pushBuilderToServer(), delay);
+    }
+
+    async function pushBuilderToServer() {
+        if (!builderServer.ready || builderServer.saving || !builderServer.dirty)
+            return;
+        builderServer.saving = true;
+        const generation = builderServer.generation;
+        const snapshot = builder.items.map((item) => ({ ...item }));
+        try {
+            const response = await fetch("/api/builder", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ items: snapshot })
+            });
+            if (!response.ok)
+                throw new Error(`Builder-Server ${response.status}`);
+            const shared = await response.json();
+            builderServer.revision = Math.max(builderServer.revision,
+                Number(shared.revision) || 0);
+            if (builderServer.generation === generation)
+                builderServer.dirty = false;
+        }
+        catch (error) {
+            console.warn("Hausentwurf konnte nicht synchronisiert werden", error);
+        }
+        finally {
+            builderServer.saving = false;
+            if (builderServer.dirty)
+                scheduleBuilderServerSave(1000);
+        }
+    }
+
+    async function syncBuilderFromServer(initial = false) {
+        if ((!initial && (builderServer.dirty || builderServer.saving || builder.drawing ||
+            builder.draggingId)) || document.hidden)
+            return;
+        try {
+            const response = await fetch("/api/builder", { cache: "no-store" });
+            if (!response.ok)
+                throw new Error(`Builder-Server ${response.status}`);
+            const shared = await response.json();
+            const revision = Number(shared.revision) || 0;
+            const sharedItems = safeBuilderItems(shared.items);
+            if (!builderServer.ready) {
+                builderServer.ready = true;
+                // Beim ersten Update wird ein vorhandener lokaler Entwurf nur
+                // dann hochgeladen, wenn der Server noch vollständig leer ist.
+                if (revision === 0 && sharedItems.length === 0 && builder.items.length) {
+                    builderServer.revision = revision;
+                    builderServer.dirty = true;
+                    builderServer.generation += 1;
+                    scheduleBuilderServerSave(0);
+                    return;
+                }
+            }
+            if (revision <= builderServer.revision)
+                return;
+            builder.items = sharedItems;
+            builderServer.revision = revision;
+            builderServer.dirty = false;
+            saveBuilderLocally();
+            rebuild();
+            if (builder.active)
+                updateStatus("Der gemeinsame Hausentwurf wurde von einem anderen Gerät aktualisiert.");
+        }
+        catch (error) {
+            console.warn("Gemeinsamer Hausentwurf ist vorübergehend nicht erreichbar", error);
+        }
+    }
+
+    function save() {
+        saveBuilderLocally();
+        builderServer.dirty = true;
+        builderServer.generation += 1;
+        scheduleBuilderServerSave();
     }
 
     function itemById(id) {
@@ -8844,7 +8937,14 @@ function createHouseBuilder() {
 
     function availableVariants(type) {
         const variants = BUILDER_VARIANTS[type] || BUILDER_VARIANTS.wall;
-        return variants.filter((variant) => !variant.legacy);
+        return variants.filter((variant) => {
+            if (variant.legacy)
+                return false;
+            if (type !== "wall")
+                return true;
+            const wallpaper = Boolean(variant.surface?.startsWith("wallpaper-"));
+            return builderCategory === "wallpaper" ? wallpaper : !wallpaper;
+        });
     }
 
     function wallLengthForItem(item) {
@@ -8865,14 +8965,6 @@ function createHouseBuilder() {
     }
 
     function clearSelectionHelper() {
-        if (!builder.selectionHelper)
-            return;
-        // BoxHelper berechnet seine Punkte in Weltkoordinaten. Als Kind der
-        // Baugruppe wurde deren Transform ein zweites Mal angewandt und der
-        // gelbe Rahmen stand deshalb neben dem ausgewählten Objekt.
-        scene.remove(builder.selectionHelper);
-        builder.selectionHelper.geometry?.dispose?.();
-        builder.selectionHelper.material?.dispose?.();
         builder.selectionHelper = null;
     }
 
@@ -8911,13 +9003,9 @@ function createHouseBuilder() {
             return;
         }
         object.updateWorldMatrix(true, true);
-        builder.selectionHelper = new THREE.BoxHelper(object, 0xfacc15);
-        builder.selectionHelper.name = "Ausgewähltes Bauteil";
-        builder.selectionHelper.material.depthTest = false;
-        builder.selectionHelper.material.transparent = true;
-        builder.selectionHelper.material.opacity = 0.96;
-        builder.selectionHelper.renderOrder = 20;
-        scene.add(builder.selectionHelper);
+        // Die schwebende Werkzeugleiste markiert die Auswahl eindeutig. Eine
+        // zusätzliche Drahtgitter-Box würde kleine Bauteile auf dem Handy
+        // verdecken und wird deshalb nicht erzeugt.
         updateSelectionToolsPosition();
     }
 
@@ -8925,6 +9013,8 @@ function createHouseBuilder() {
         if (item.type === "wall" && !Number.isFinite(item.length))
             item.length = variantForItem(item)?.length || 4;
         builderPartType.value = item.type;
+        builderCategory = item.type === "wall" &&
+            variantForItem(item)?.surface?.startsWith("wallpaper-") ? "wallpaper" : item.type;
         refreshVariants(item.variant);
         builderColor.value = item.color || BUILDER_DEFAULT_COLORS[item.type] || "#f1eee5";
         builderSwatches.querySelectorAll("button").forEach((button) =>
@@ -8946,7 +9036,9 @@ function createHouseBuilder() {
         stage.dataset.builderTool = builder.cameraNavigation ? "camera" :
             selectionOnly ? "select" : builderPartType.value;
         builderPartPalette?.querySelectorAll("[data-builder-type]").forEach((button) => {
-            const selected = button.dataset.builderType === builderPartType.value;
+            const buttonCategory = button.dataset.builderCategory || button.dataset.builderType;
+            const selected = button.dataset.builderType === builderPartType.value &&
+                buttonCategory === builderCategory;
             button.classList.toggle("selected", selected);
             button.setAttribute("aria-pressed", String(selected));
         });
@@ -8963,6 +9055,10 @@ function createHouseBuilder() {
     }
 
     function startNewPart() {
+        if (builderPartType.value === "roof") {
+            placeOrSelectRoof();
+            return;
+        }
         setPlacementEnabled(true);
         selectItem(null, ["wall", "fence", "floor"].includes(builderPartType.value) ?
             builderPartType.value === "floor" ? "Neue Bodenfläche: gewünschte 1 × 1-m-Felder als Rechteck aufziehen." :
@@ -8970,7 +9066,7 @@ function createHouseBuilder() {
             ["window", "door"].includes(builderPartType.value) ?
                 "Neues Fenster oder neue Tür direkt auf eine Wand tippen." :
                 builderPartType.value === "roof" ?
-                    "Dach auf den geschlossenen Wandzug dieser Etage setzen." :
+                    "Dach wird automatisch auf den geschlossenen Wandzug gesetzt." :
                     `${builderTypeLabel(builderPartType.value)} auf einer freien Fläche platzieren.`);
     }
 
@@ -9256,15 +9352,6 @@ function createHouseBuilder() {
             "Schnittansicht aus: Alle Außenwände und das Dach sind wieder vollständig sichtbar.");
     }
 
-    function showBuilderBirdView() {
-        setCameraNavigation(true);
-        state.targetPitch = BUILDER_MIN_PITCH;
-        state.targetPanX = 0;
-        state.targetPanY = 0;
-        state.targetZoom = Math.max(0.74, Math.min(state.targetZoom, 0.92));
-        updateStatus("Vogelperspektive aktiv: Böden lassen sich jetzt sauber von oben im Raster aufziehen.");
-    }
-
     function pointInsideWallLoop(point, loop) {
         let inside = false;
         for (let index = 0, previous = loop.points.length - 1;
@@ -9392,16 +9479,60 @@ function createHouseBuilder() {
         };
     }
 
+    function placeOrSelectRoof() {
+        const existingRoof = builder.items.find((item) =>
+            item.type === "roof" && item.level === builder.currentLevel);
+        if (existingRoof) {
+            selectItem(existingRoof.id,
+                "Dach ausgewählt. Die Dachart kann direkt im Auswahlfeld geändert werden.");
+            return existingRoof;
+        }
+        const placement = roofPlacementData();
+        if (!placement) {
+            setPlacementEnabled(false);
+            updateStatus(hasItemsAbove(builder.currentLevel) ?
+                "Eine Etage mit darüberliegenden Bauteilen kann nicht nachträglich überdacht werden." :
+                "Ein Dach wird automatisch gesetzt, sobald die Außenwände dieser Etage vollständig geschlossen sind.");
+            return null;
+        }
+        // Der First startet automatisch parallel zur längeren Hausseite.
+        setRotation(placement.width > placement.depth ? 90 : 0);
+        const variant = selectedVariant();
+        const item = {
+            id: globalThis.crypto?.randomUUID?.() || `part-${Date.now()}-${builder.items.length}`,
+            type: "roof",
+            variant: variant.id,
+            color: builderColor.value,
+            level: builder.currentLevel,
+            rotation: builder.rotation,
+            x: placement.x,
+            z: placement.z,
+            width: placement.width,
+            depth: placement.depth,
+            baseHeight: placement.baseHeight
+        };
+        builder.items.push(item);
+        rebuild();
+        save();
+        selectItem(item.id,
+            `${variant.label} automatisch auf den geschlossenen Außenwänden gesetzt. Dachart im Auswahlfeld ändern.`);
+        renderer.shadowMap.needsUpdate = true;
+        return item;
+    }
+
     function clearAutomaticCeilings() {
         builder.autoCeilings.children.slice().forEach((child) => {
             builder.autoCeilings.remove(child);
-            child.geometry?.dispose?.();
-            const materials = Array.isArray(child.material) ? child.material : [child.material];
-            materials.filter(Boolean).forEach((material) => material.dispose?.());
+            child.traverse((part) => {
+                part.geometry?.dispose?.();
+                const materials = Array.isArray(part.material) ? part.material : [part.material];
+                materials.filter(Boolean).forEach((material) => material.dispose?.());
+            });
         });
     }
 
-    function addAutomaticCeiling(level, loop) {
+    function addAutomaticCeiling(level, loop,
+        topY = (level + 1) * BUILDER_STOREY_HEIGHT) {
         const shape = new THREE.Shape();
         loop.points.forEach((point, index) => {
             const x = point.x;
@@ -9412,6 +9543,9 @@ function createHouseBuilder() {
                 shape.lineTo(x, y);
         });
         shape.closePath();
+        const storeySlab = new THREE.Group();
+        storeySlab.name = `Automatische Decke ${BUILDER_LEVEL_NAMES[level]} mit Bodenauflage`;
+        storeySlab.userData.builderAutomaticStoreySlab = true;
         const ceiling = new THREE.Mesh(
             new THREE.ExtrudeGeometry(shape, { depth: 0.14, bevelEnabled: false }),
             new THREE.MeshStandardMaterial({
@@ -9421,10 +9555,23 @@ function createHouseBuilder() {
         );
         ceiling.name = `Automatische Decke ${BUILDER_LEVEL_NAMES[level]}`;
         ceiling.rotation.x = -Math.PI / 2;
-        ceiling.position.y = (level + 1) * BUILDER_STOREY_HEIGHT - 0.14;
+        ceiling.position.y = topY - 0.14;
         ceiling.receiveShadow = true;
         ceiling.castShadow = false;
-        builder.autoCeilings.add(ceiling);
+        storeySlab.add(ceiling);
+        const floorSurface = new THREE.Mesh(
+            new THREE.ShapeGeometry(shape),
+            new THREE.MeshStandardMaterial({
+                color: 0xb8aa96, roughness: 0.88, metalness: 0,
+                side: THREE.DoubleSide
+            })
+        );
+        floorSurface.name = `Automatischer Boden über ${BUILDER_LEVEL_NAMES[level]}`;
+        floorSurface.rotation.x = -Math.PI / 2;
+        floorSurface.position.y = topY + 0.004;
+        floorSurface.receiveShadow = true;
+        storeySlab.add(floorSurface);
+        builder.autoCeilings.add(storeySlab);
     }
 
     function updateLevelControls() {
@@ -9450,11 +9597,25 @@ function createHouseBuilder() {
 
     function refreshLevelStructures() {
         clearAutomaticCeilings();
+        const coveredLevels = new Set();
         for (let level = 0; level < builder.currentLevel; level += 1) {
             const loop = closedWallLoop(level);
-            if (loop)
+            if (loop) {
                 addAutomaticCeiling(level, loop);
+                coveredLevels.add(level);
+            }
         }
+        // Ein Dach schließt dieselbe Etage ebenfalls automatisch nach oben ab.
+        // Die Decke entsteht nur bei wirklich geschlossenen Außenwänden.
+        builder.items.filter((item) => item.type === "roof" &&
+            item.level <= builder.currentLevel && !coveredLevels.has(item.level))
+            .forEach((roof) => {
+                const loop = closedWallLoop(roof.level);
+                if (loop)
+                    addAutomaticCeiling(roof.level, loop,
+                        roof.level * BUILDER_STOREY_HEIGHT +
+                        (Number.isFinite(roof.baseHeight) ? roof.baseHeight : 2.75));
+            });
         builder.objects.forEach((object, id) => {
             const item = itemById(id);
             object.visible = Boolean(item && item.level <= builder.currentLevel);
@@ -9493,7 +9654,7 @@ function createHouseBuilder() {
         builder.currentLevel = nextLevel;
         selectItem(null);
         refreshLevelStructures();
-        updateStatus(`${BUILDER_LEVEL_NAMES[nextLevel]} aktiv. Die Decke der Etage darunter wurde automatisch geschlossen.`);
+        updateStatus(`${BUILDER_LEVEL_NAMES[nextLevel]} aktiv. Decke und Boden zwischen den Etagen wurden automatisch eingefügt.`);
         return true;
     }
 
@@ -9816,11 +9977,6 @@ function createHouseBuilder() {
                 materials.filter(Boolean).forEach((material) => material.dispose?.());
             });
         }
-        if (builder.placementPreviewHelper) {
-            builder.root.remove(builder.placementPreviewHelper);
-            builder.placementPreviewHelper.geometry?.dispose?.();
-            builder.placementPreviewHelper.material?.dispose?.();
-        }
         builder.placementPreview = null;
         builder.placementPreviewHelper = null;
         builder.previewSnap = null;
@@ -9876,16 +10032,7 @@ function createHouseBuilder() {
         sourceMaterialsToDispose.forEach((material) => material.dispose?.());
         preview.visible = false;
         builder.root.add(preview);
-        const helper = new THREE.BoxHelper(preview, 0xef4444);
-        helper.name = "Platzierungsvorschau-Rahmen";
-        helper.material.depthTest = false;
-        helper.material.transparent = true;
-        helper.material.opacity = 0.92;
-        helper.renderOrder = 19;
-        helper.visible = false;
-        builder.root.add(helper);
         builder.placementPreview = preview;
-        builder.placementPreviewHelper = helper;
         return preview;
     }
 
@@ -9985,11 +10132,6 @@ function createHouseBuilder() {
                     material.emissive.set(valid ? 0x0f766e : 0x7f1d1d).multiplyScalar(valid ? 0.50 : 0.72);
             });
         });
-        if (builder.placementPreviewHelper) {
-            builder.placementPreviewHelper.material.color.set(valid ? 0x2dd4bf : 0xef4444);
-            builder.placementPreviewHelper.visible = true;
-            builder.placementPreviewHelper.update();
-        }
         stage.dataset.builderPlacementPreview = valid ? "valid" : "invalid";
         return valid;
     }
@@ -10015,8 +10157,10 @@ function createHouseBuilder() {
         }));
         if (preferredVariant && variants.some((variant) => variant.id === preferredVariant))
             builderVariant.value = preferredVariant;
-        builderVariantLabel.textContent = builderPartType.value === "wall" ? "Wand / Tapete" :
-            ["floor", "grass"].includes(builderPartType.value) ? "Oberfläche" :
+        builderVariantLabel.textContent = builderPartType.value === "wall" ?
+            builderCategory === "wallpaper" ? "Tapetenmuster" : "Wandhöhe" :
+            builderPartType.value === "floor" ? "Bodenbelag" :
+                builderPartType.value === "grass" ? "Grasart" :
                 builderPartType.value === "roof" ? "Dachform" :
                     builderPartType.value === "support" ? "Stützenart" :
                         builderPartType.value === "tree" ? "Baumart" :
@@ -10608,10 +10752,10 @@ function createHouseBuilder() {
     builderPanelToggle.addEventListener("click", () =>
         setPanelCollapsed(!builderPanel.classList.contains("is-collapsed")));
     builderPointerMode.addEventListener("click", activatePointerMode);
-    builderBirdView?.addEventListener("click", showBuilderBirdView);
     builderWallCutaway?.addEventListener("click", () => setWallCutaway(!builder.wallCutaway));
     builderPartPalette?.querySelectorAll("[data-builder-type]").forEach((button) => {
         button.addEventListener("click", () => {
+            builderCategory = button.dataset.builderCategory || button.dataset.builderType;
             builderPartType.value = button.dataset.builderType;
             builderPartType.dispatchEvent(new Event("change", { bubbles: true }));
         });
@@ -10626,6 +10770,8 @@ function createHouseBuilder() {
     });
     builderTouchCamera?.addEventListener("click", () => setCameraNavigation(true));
     builderPartType.addEventListener("change", () => {
+        if (builderPartType.value !== "wall")
+            builderCategory = builderPartType.value;
         if (builder.selectedId)
             selectItem(null);
         setPlacementEnabled(true);
@@ -10634,22 +10780,18 @@ function createHouseBuilder() {
             button.classList.toggle("selected",
                 button.style.getPropertyValue("--builder-swatch").toLowerCase() === builderColor.value.toLowerCase()));
         refreshVariants();
-        if (builderPartType.value === "roof") {
-            const placement = roofPlacementData();
-            if (placement)
-                // Der First startet automatisch parallel zur längeren Hausseite.
-                setRotation(placement.width > placement.depth ? 90 : 0);
-        }
         setWallLengthControls(null);
+        if (builderPartType.value === "roof") {
+            placeOrSelectRoof();
+            return;
+        }
         refreshPlacementPreview();
         updateStatus(["wall", "fence", "floor"].includes(builderPartType.value) ?
             builderPartType.value === "floor" ? "Bodenfläche als Rechteck aus 1 × 1-m-Feldern aufziehen." :
                 `${builderPartType.value === "fence" ? "Neuen Zaun" : "Neue Wand"}: auf dem Raster vom Start- bis zum Endpunkt ziehen.` :
             ["window", "door"].includes(builderPartType.value) ?
                 `${builderTypeLabel(builderPartType.value)}: direkt auf eine Wand tippen.` :
-                builderPartType.value === "roof" ?
-                    "Dachtyp wählen und auf den geschlossenen Wandzug tippen." :
-                    builderPartType.value === "support" ?
+                builderPartType.value === "support" ?
                         "Stütze unter dem Balkon setzen; die Wand darf bis 1 m darüber hinauslaufen." :
                         `${builderTypeLabel(builderPartType.value)}: freie Stelle auf dem Grundstück antippen.`);
     });
@@ -10841,6 +10983,12 @@ function createHouseBuilder() {
     rebuild();
     updateLevelControls();
     builder.root.visible = false;
+    void syncBuilderFromServer(true);
+    window.setInterval(() => void syncBuilderFromServer(false), 6000);
+    document.addEventListener("visibilitychange", () => {
+        if (!document.hidden)
+            void syncBuilderFromServer(false);
+    });
 
     builder.placeAtPointer = placeAtPointer;
     builder.beginPointer = beginPointer;
@@ -10869,6 +11017,9 @@ function createHouseBuilder() {
                 item.type === "wall" && item.level === builder.currentLevel)
                 .every((item) => upperWallAssessment(item).valid),
             automaticCeilings: builder.autoCeilings.children.length,
+            serverRevision: builderServer.revision,
+            serverReady: builderServer.ready,
+            serverDirty: builderServer.dirty,
             selectedId: builder.selectedId,
             placementEnabled: builder.placementEnabled,
             cameraNavigation: builder.cameraNavigation,

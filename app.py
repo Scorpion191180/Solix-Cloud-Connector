@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import hmac
 import os
+from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -75,6 +76,10 @@ class AnimalMotionPose(BaseModel):
 class AnimalMotionCommand(BaseModel):
     client_id: str = Field(min_length=8, max_length=96)
     animals: list[AnimalMotionPose] = Field(max_length=56)
+
+
+class BuilderStateUpdate(BaseModel):
+    items: list[dict[str, Any]] = Field(max_length=500)
 
 
 def _manual_control_configured() -> bool:
@@ -244,6 +249,18 @@ async def animal_motion(command: AnimalMotionCommand):
         [pose.model_dump() if hasattr(pose, "model_dump") else pose.dict()
          for pose in command.animals],
     )
+
+
+@app.get("/api/builder")
+async def builder_state():
+    """Return the shared 3-D house draft for every connected device."""
+    return animal_state.get_builder()
+
+
+@app.put("/api/builder")
+async def update_builder_state(command: BuilderStateUpdate):
+    """Replace the shared draft with one validated browser snapshot."""
+    return animal_state.update_builder(command.items)
 
 
 @app.get("/api/automation")
