@@ -29,6 +29,10 @@ const builderOpenButton = document.getElementById("houseBuilderOpen");
 const builderPanel = document.getElementById("houseBuilderPanel");
 const builderCloseButton = document.getElementById("houseBuilderClose");
 const builderPanelToggle = document.getElementById("builderPanelToggle");
+const builderPanelBody = builderPanel?.querySelector(".house-builder-body");
+const builderLevelSwitcher = document.getElementById("builderLevelSwitcher");
+const builderLevelButtons = Array.from(builderLevelSwitcher?.querySelectorAll("[data-builder-level]") || []);
+const builderOverallButton = builderLevelSwitcher?.querySelector("[data-builder-view='overall']");
 const builderPointerMode = document.getElementById("builderPointerMode");
 const builderWallCutaway = document.getElementById("builderWallCutaway");
 const builderLevelDown = document.getElementById("builderLevelDown");
@@ -79,7 +83,7 @@ const sceneLoaderBar = document.getElementById("sceneLoaderBar");
 const sceneLoaderStatus = document.getElementById("sceneLoaderStatus");
 const sceneLoaderPercent = document.getElementById("sceneLoaderPercent");
 const sceneLoaderVersion = document.getElementById("sceneLoaderVersion");
-const APP_BUILD_VERSION = "139";
+const APP_BUILD_VERSION = "140";
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const INTERIOR_VIEW_ENABLED = false;
 
@@ -289,6 +293,7 @@ const DEFAULT_VIEW = Object.freeze({
     zoom: 0.85
 });
 const MIN_ZOOM = 0.55;
+const BUILDER_MIN_ZOOM = 0.38;
 const MAX_ZOOM = 3.10;
 const MIN_PITCH = -0.28;
 const MAX_PITCH = 0.32;
@@ -3253,6 +3258,9 @@ function createVehicles() {
     // IMG_7378: schwarzer Skoda Yeti mittig, kleiner schwarzer VW Fox ganz rechts.
     const yetiSlot = new THREE.Group();
     yetiSlot.position.set(0, 0.02, 8.72);
+    // Das aufgerichtete Yeti-GLB zeigt lokal nach +Z. Die halbe Drehung stellt
+    // seine Motorhaube wie auf dem Vorbildfoto zur mittleren Garage.
+    yetiSlot.rotation.y = Math.PI;
     yetiSlot.userData.assetLoaded = false;
     world.add(yetiSlot);
 
@@ -8806,7 +8814,7 @@ function createHouseBuilder() {
     const builder = {
         root, ground, active: false, rotation: 0,
         items: safeBuilderItems(), objects: new Map(), previousView: null,
-        currentLevel: 0, autoCeilings, perimeter,
+        currentLevel: 0, overview: false, autoCeilings, perimeter,
         selectedId: null, selectionHelper: null, draggingId: null,
         dragStartClient: null, dragMoved: false,
         drawing: false, drawType: null, drawStart: null, drawEnd: null,
@@ -9574,6 +9582,16 @@ function createHouseBuilder() {
         builder.autoCeilings.add(storeySlab);
     }
 
+    function builderLevelAccessible(targetLevel) {
+        if (targetLevel <= 0)
+            return true;
+        for (let level = 0; level < targetLevel; level += 1) {
+            if (hasRoofAtLevel(level) || !closedWallLoop(level))
+                return false;
+        }
+        return true;
+    }
+
     function updateLevelControls() {
         const level = builder.currentLevel;
         const loopClosed = Boolean(closedWallLoop(level));
@@ -9590,7 +9608,18 @@ function createHouseBuilder() {
             "⌂ Dach gesetzt · weitere Etage gesperrt" :
             "⌂ Dach noch offen · unter „Bauteil“ auswählbar";
         builderRoofState.classList.toggle("is-set", roofPlaced);
+        builderOverallButton?.setAttribute("aria-pressed", String(builder.overview));
+        builderLevelButtons.forEach((button) => {
+            const buttonLevel = Number(button.dataset.builderLevel);
+            const selected = !builder.overview && buttonLevel === level;
+            button.setAttribute("aria-pressed", String(selected));
+            button.disabled = !builderLevelAccessible(buttonLevel);
+            button.title = button.disabled ?
+                "Zuerst die Außenwände der darunterliegenden Etage schließen" :
+                `${BUILDER_LEVEL_NAMES[buttonLevel]} anzeigen`;
+        });
         stage.dataset.builderLevel = String(level);
+        stage.dataset.builderOverview = String(builder.overview);
         stage.dataset.builderLevelClosed = String(loopClosed);
         stage.dataset.builderRoofPlaced = String(roofPlaced);
     }
@@ -9598,7 +9627,8 @@ function createHouseBuilder() {
     function refreshLevelStructures() {
         clearAutomaticCeilings();
         const coveredLevels = new Set();
-        for (let level = 0; level < builder.currentLevel; level += 1) {
+        const visibleTopLevel = builder.overview ? BUILDER_MAX_LEVEL : builder.currentLevel;
+        for (let level = 0; level < visibleTopLevel; level += 1) {
             const loop = closedWallLoop(level);
             if (loop) {
                 addAutomaticCeiling(level, loop);
@@ -9608,7 +9638,7 @@ function createHouseBuilder() {
         // Ein Dach schließt dieselbe Etage ebenfalls automatisch nach oben ab.
         // Die Decke entsteht nur bei wirklich geschlossenen Außenwänden.
         builder.items.filter((item) => item.type === "roof" &&
-            item.level <= builder.currentLevel && !coveredLevels.has(item.level))
+            item.level <= visibleTopLevel && !coveredLevels.has(item.level))
             .forEach((roof) => {
                 const loop = closedWallLoop(roof.level);
                 if (loop)
@@ -9618,16 +9648,16 @@ function createHouseBuilder() {
             });
         builder.objects.forEach((object, id) => {
             const item = itemById(id);
-            object.visible = Boolean(item && item.level <= builder.currentLevel);
+            object.visible = Boolean(item && (builder.overview || item.level <= builder.currentLevel));
         });
-        const base = builder.currentLevel * BUILDER_STOREY_HEIGHT;
+        const base = builder.overview ? 0 : builder.currentLevel * BUILDER_STOREY_HEIGHT;
         builder.ground.position.y = base + 0.025;
         grid.position.y = base + 0.012;
         builder.perimeter.position.y = base - 0.04;
         // Die Etagenhoehe darf nur die Kamera des aktiven Baumodus
         // beeinflussen. Beim Aufbau der normalen Live-Szene wird der Builder
         // ebenfalls einmal erzeugt, ist zu diesem Zeitpunkt aber unsichtbar.
-        if (builder.active)
+        if (builder.active && !builder.overview)
             cameraTarget.y = base + 1.10;
         updateLevelControls();
         updateCameraWallCutaway(0.016, true);
@@ -9636,10 +9666,10 @@ function createHouseBuilder() {
 
     function switchBuilderLevel(targetLevel) {
         const nextLevel = THREE.MathUtils.clamp(Math.round(targetLevel), 0, BUILDER_MAX_LEVEL);
-        if (nextLevel === builder.currentLevel)
+        if (nextLevel === builder.currentLevel && !builder.overview)
             return true;
-        if (nextLevel > builder.currentLevel) {
-            for (let level = builder.currentLevel; level < nextLevel; level += 1) {
+        if (nextLevel > builder.currentLevel || builder.overview) {
+            for (let level = 0; level < nextLevel; level += 1) {
                 if (hasRoofAtLevel(level)) {
                     updateStatus("Über einem bereits gesetzten Dach kann keine weitere Etage entstehen.");
                     return false;
@@ -9651,11 +9681,30 @@ function createHouseBuilder() {
             }
         }
         finishWallDrawing(true);
+        builder.overview = false;
         builder.currentLevel = nextLevel;
         selectItem(null);
         refreshLevelStructures();
+        cameraTarget.y = nextLevel * BUILDER_STOREY_HEIGHT + 1.10;
+        if (state.targetZoom < 0.55)
+            state.targetZoom = 0.72;
         updateStatus(`${BUILDER_LEVEL_NAMES[nextLevel]} aktiv. Decke und Boden zwischen den Etagen wurden automatisch eingefügt.`);
         return true;
+    }
+
+    function showBuilderOverview() {
+        finishWallDrawing(true);
+        selectItem(null);
+        activatePointerMode();
+        builder.overview = true;
+        refreshLevelStructures();
+        cameraTarget.set(0, BUILDER_STOREY_HEIGHT, 0);
+        state.targetYaw = -0.42;
+        state.targetPitch = -0.78;
+        state.targetPanX = 0;
+        state.targetPanY = 0;
+        state.targetZoom = 0.48;
+        updateStatus("Gesamtansicht aktiv: Das komplette Grundstück und alle gebauten Etagen sind sichtbar.");
     }
 
     function wallEndpoints(excludeWallId = null, level = builder.currentLevel) {
@@ -10665,6 +10714,8 @@ function createHouseBuilder() {
 
     function setPanelCollapsed(collapsed) {
         builderPanel.classList.toggle("is-collapsed", collapsed);
+        builderPanelBody?.setAttribute("aria-hidden", String(collapsed));
+        builderStatus.hidden = collapsed;
         builderPanelToggle.setAttribute("aria-expanded", String(!collapsed));
         builderPanelToggle.textContent = collapsed ? "⌃" : "⌄";
         builderPanelToggle.setAttribute("aria-label", collapsed ?
@@ -10676,11 +10727,14 @@ function createHouseBuilder() {
             return;
         builder.active = active;
         builderPanel.hidden = !active;
+        if (builderLevelSwitcher)
+            builderLevelSwitcher.hidden = !active;
         stage.classList.toggle("is-building", active);
         stage.dataset.builderActive = String(active);
         world.visible = !active;
         builder.root.visible = active;
         if (!active) {
+            builder.overview = false;
             setWallCutaway(false, true);
             builder.cameraNavigation = false;
             builderSelectionTools.hidden = true;
@@ -10762,6 +10816,9 @@ function createHouseBuilder() {
     });
     builderLevelDown.addEventListener("click", () => switchBuilderLevel(builder.currentLevel - 1));
     builderLevelUp.addEventListener("click", () => switchBuilderLevel(builder.currentLevel + 1));
+    builderLevelButtons.forEach((button) => button.addEventListener("click", () =>
+        switchBuilderLevel(Number(button.dataset.builderLevel))));
+    builderOverallButton?.addEventListener("click", showBuilderOverview);
     builderTouchBuild?.addEventListener("click", () => {
         if (builder.placementEnabled)
             setCameraNavigation(false);
@@ -11024,6 +11081,7 @@ function createHouseBuilder() {
             placementEnabled: builder.placementEnabled,
             cameraNavigation: builder.cameraNavigation,
             wallCutaway: builder.wallCutaway,
+            overview: builder.overview,
             loweredFrontWalls: Array.from(builder.frontWallIds),
             preview: stage.dataset.builderPlacementPreview,
             items: builder.items.map((item) => ({ ...item }))
@@ -11433,8 +11491,8 @@ function createDomesticVehicleController(id, label, slot, home, options = {}) {
 }
 
 const yetiController = createDomesticVehicleController("yeti", "Skoda Yeti",
-    vehicleModels.yeti.slot, { x: 0, z: 8.72, yaw: 0 },
-    { garageDoor: "middle", frontYawOffset: Math.PI });
+    vehicleModels.yeti.slot, { x: 0, z: 8.72, yaw: Math.PI },
+    { garageDoor: "middle" });
 const karoqController = createDomesticVehicleController("karoq", "Skoda Karoq",
     vehicleModels.karoq.slot, { x: -2.10, z: 8.72, yaw: 0 },
     { garageDoor: "left", frontYawOffset: Math.PI });
@@ -11511,16 +11569,16 @@ function domesticAwayRoute(controller) {
         routePose(controller, x + 0.45, 13.15, yaw - 0.35, "forward"),
         routePose(controller, 4.75, 14.05, Math.PI / 2, "forward"),
         routePose(controller, 8.35, 13.40, 2.05, "forward"),
-        routePose(controller, 10.35, 9.10, Math.PI, "forward"),
-        routePose(controller, 10.35, -18.50, Math.PI, "forward")
+        routePose(controller, 11.45, 9.10, Math.PI, "forward"),
+        routePose(controller, 11.45, -18.50, Math.PI, "forward")
     ];
 }
 
 function domesticReturnRoute(controller) {
     const { x, z, yaw } = controller.home;
     return [
-        routePose(controller, 9.35, -18.50, 0, "forward"),
-        routePose(controller, 9.35, 8.60, 0, "forward"),
+        routePose(controller, 9.45, -18.50, 0, "forward"),
+        routePose(controller, 9.45, 8.60, 0, "forward"),
         routePose(controller, 8.65, 11.70, -0.46, "forward"),
         routePose(controller, 6.70, 13.35, -1.05, "forward"),
         routePose(controller, 4.35, 13.70, -1.58, "forward"),
@@ -13693,6 +13751,72 @@ function markerHiddenByHouse(worldAnchor) {
     return Boolean(hit && markerOcclusionCamera.distanceTo(hit) < anchorDistance - 0.30);
 }
 
+function resolveSceneLabelCollisions(placements, stageRect) {
+    const cards = placements.filter(({ element }) =>
+        !element.classList.contains("outside") &&
+        !element.classList.contains("occluded") &&
+        !element.classList.contains("behind"))
+        .map((placement, index) => {
+            const bounds = placement.element.getBoundingClientRect();
+            return {
+                ...placement,
+                order: index,
+                halfWidth: Math.max(54, bounds.width / 2),
+                height: Math.max(48, bounds.height)
+            };
+        });
+    const padding = state.zoom <= 1.12 ? 12 : 8;
+    // In der entfernten Übersicht wird bevorzugt seitlich ausgewichen. Im
+    // Nahzoom darf eine Karte zusätzlich etwas nach oben oder unten rutschen,
+    // bleibt aber stets in der Nähe ihres realen Bauteils.
+    for (let pass = 0; pass < 9; pass += 1) {
+        let changed = false;
+        for (let first = 0; first < cards.length; first += 1) {
+            for (let second = first + 1; second < cards.length; second += 1) {
+                const a = cards[first];
+                const b = cards[second];
+                const overlapX = a.halfWidth + b.halfWidth + padding - Math.abs(a.x - b.x);
+                const overlapY = Math.min(a.y, b.y) -
+                    Math.max(a.y - a.height, b.y - b.height) + padding;
+                if (overlapX <= 0 || overlapY <= 0)
+                    continue;
+                changed = true;
+                const horizontal = state.zoom <= 1.12 || overlapX <= overlapY * 1.35;
+                const aFixed = a.expanded;
+                const bFixed = b.expanded;
+                if (horizontal) {
+                    const direction = a.x === b.x ? (a.order < b.order ? -1 : 1) :
+                        (a.x < b.x ? -1 : 1);
+                    const shift = overlapX + 0.5;
+                    a.x += direction * (bFixed ? shift : shift * 0.5);
+                    b.x -= direction * (aFixed ? shift : shift * 0.5);
+                }
+                else {
+                    const aCenterY = a.y - a.height / 2;
+                    const bCenterY = b.y - b.height / 2;
+                    const direction = aCenterY === bCenterY ? (a.order < b.order ? -1 : 1) :
+                        (aCenterY < bCenterY ? -1 : 1);
+                    const shift = overlapY + 0.5;
+                    a.y += direction * (bFixed ? shift : shift * 0.5);
+                    b.y -= direction * (aFixed ? shift : shift * 0.5);
+                }
+                [a, b].forEach((card) => {
+                    card.x = THREE.MathUtils.clamp(card.x,
+                        card.halfWidth + 7, stageRect.width - card.halfWidth - 7);
+                    card.y = THREE.MathUtils.clamp(card.y,
+                        card.height + 7, stageRect.height - 20);
+                });
+            }
+        }
+        if (!changed)
+            break;
+    }
+    cards.forEach(({ element, x, y }) => {
+        element.style.left = `${x}px`;
+        element.style.top = `${y}px`;
+    });
+}
+
 function updateLabelPositions() {
     const rect = stage.getBoundingClientRect();
     const rootPosition = new THREE.Vector3();
@@ -13740,6 +13864,7 @@ function updateLabelPositions() {
         animalCleanLabel.classList.toggle("outside", rawX < -70 || rawX > rect.width + 70 ||
             rawY < -55 || rawY > rect.height + 55);
     }
+    const sceneLabelPlacements = [];
     Object.entries(labelAnchors).forEach(([id, localAnchor]) => {
         const anchor = world.localToWorld(localAnchor.clone());
         const cameraSpace = anchor.clone().applyMatrix4(camera.matrixWorldInverse);
@@ -13777,7 +13902,9 @@ function updateLabelPositions() {
             0.94,
             1.78
         ));
+        sceneLabelPlacements.push({ id, element, x, y, rawX, rawY, expanded });
     });
+    resolveSceneLabelCollisions(sceneLabelPlacements, rect);
 
     [...pvPanelAnchors, ...secondaryPvPanelAnchors].forEach((panel) => {
         const anchor = world.localToWorld(panel.anchor.clone());
@@ -13926,23 +14053,35 @@ function normalizedCanvasPoint(clientX, clientY) {
     };
 }
 
+function activeMinimumZoom() {
+    return houseBuilder.active ? BUILDER_MIN_ZOOM : MIN_ZOOM;
+}
+
+function activePanLimits() {
+    return houseBuilder.active ?
+        { minX: -10.5, maxX: 10.5, minY: -7.5, maxY: 8.5 } :
+        { minX: -6.5, maxX: 6.5, minY: -4.0, maxY: 4.5 };
+}
+
 function applyFocalZoom(newZoom, focusX, focusY, startZoom, startPanX, startPanY,
     panOffsetX = 0, panOffsetY = 0) {
-    const safeStartZoom = Math.max(MIN_ZOOM, startZoom);
-    const safeNewZoom = THREE.MathUtils.clamp(newZoom, MIN_ZOOM, MAX_ZOOM);
+    const minimumZoom = activeMinimumZoom();
+    const limits = activePanLimits();
+    const safeStartZoom = Math.max(minimumZoom, startZoom);
+    const safeNewZoom = THREE.MathUtils.clamp(newZoom, minimumZoom, MAX_ZOOM);
     const viewHeight = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) *
         cameraBaseOffset.length();
     const viewWidth = viewHeight * camera.aspect;
     const focalShift = 1 / safeStartZoom - 1 / safeNewZoom;
     state.targetPanX = THREE.MathUtils.clamp(
         startPanX + focusX * viewWidth * focalShift + panOffsetX,
-        -6.5,
-        6.5
+        limits.minX,
+        limits.maxX
     );
     state.targetPanY = THREE.MathUtils.clamp(
         startPanY - focusY * viewHeight * focalShift + panOffsetY,
-        -4.0,
-        4.5
+        limits.minY,
+        limits.maxY
     );
     state.targetZoom = safeNewZoom;
 }
@@ -14007,7 +14146,7 @@ canvas.addEventListener("pointermove", (event) => {
         const nextZoom = state.pinchStartDistance > 0 ?
             THREE.MathUtils.clamp(
                 state.pinchStartZoom * distance / state.pinchStartDistance,
-                MIN_ZOOM,
+                activeMinimumZoom(),
                 MAX_ZOOM
             ) : state.targetZoom;
         const panSpeed = (canvas.clientWidth < 700 ? 0.018 : 0.012) /
@@ -14040,9 +14179,13 @@ canvas.addEventListener("pointermove", (event) => {
         return;
     }
     if (state.pointerMode === "pan") {
-        const panSpeed = 0.012 / Math.max(0.80, state.targetZoom);
-        state.targetPanX = THREE.MathUtils.clamp(state.targetPanX - deltaX * panSpeed, -3.2, 3.2);
-        state.targetPanY = THREE.MathUtils.clamp(state.targetPanY + deltaY * panSpeed, -1.8, 2.2);
+        const limits = activePanLimits();
+        const panSpeed = (houseBuilder.active ? 0.018 : 0.012) /
+            Math.max(houseBuilder.active ? 0.55 : 0.80, state.targetZoom);
+        state.targetPanX = THREE.MathUtils.clamp(
+            state.targetPanX - deltaX * panSpeed, limits.minX, limits.maxX);
+        state.targetPanY = THREE.MathUtils.clamp(
+            state.targetPanY + deltaY * panSpeed, limits.minY, limits.maxY);
     }
     else {
         state.targetYaw += deltaX * 0.009;
@@ -14113,7 +14256,7 @@ canvas.addEventListener("wheel", (event) => {
     const startZoom = state.targetZoom;
     const nextZoom = THREE.MathUtils.clamp(
         state.targetZoom * Math.exp(-event.deltaY * 0.0012),
-        MIN_ZOOM,
+        activeMinimumZoom(),
         MAX_ZOOM
     );
     applyFocalZoom(nextZoom, focus.x, focus.y, startZoom,
@@ -14131,7 +14274,7 @@ canvas.addEventListener("keydown", (event) => {
     if (event.key === "-" || event.key === "_") {
         event.preventDefault();
         beginSceneInteraction();
-        state.targetZoom = Math.max(MIN_ZOOM, state.targetZoom - 0.16);
+        state.targetZoom = Math.max(activeMinimumZoom(), state.targetZoom - 0.16);
         finishSceneInteractionSoon();
         return;
     }

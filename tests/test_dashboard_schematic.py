@@ -21,9 +21,9 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260908-139", dashboard)
-        self.assertIn("house.js?v=20260908-139", dashboard)
-        self.assertIn("app.js?v=20260908-139", dashboard)
+        self.assertIn("style.css?v=20260910-140", dashboard)
+        self.assertIn("house.js?v=20260910-140", dashboard)
+        self.assertIn("app.js?v=20260910-140", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
 
@@ -648,6 +648,7 @@ class DashboardSchematicTests(unittest.TestCase):
             "builderPartType", "builderVariant", "builderColor",
             "builderLevelDown", "builderLevelUp", "builderLevelName",
             "builderLevelPosition", "builderRoofState",
+            "builderLevelSwitcher",
             "builderWallCutaway", "builderPartPalette",
             "builderVariantLabel", "builderWallLengthRow", "builderWallLength",
             "builderWallLengthValue",
@@ -661,8 +662,8 @@ class DashboardSchematicTests(unittest.TestCase):
         ):
             self.assertIn(f'id="{element_id}"', dashboard)
 
-        self.assertIn('const APP_BUILD_VERSION = "139"', script)
-        self.assertIn("Version 139", dashboard)
+        self.assertIn('const APP_BUILD_VERSION = "140"', script)
+        self.assertIn("Version 140", dashboard)
         self.assertIn('localStorage.getItem("solix-scene-labels")', script)
         self.assertIn('stage.classList.toggle("show-scene-labels"', script)
         self.assertIn("hasStoredDogPose", script)
@@ -696,6 +697,7 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('function createHouseBuilder()', script)
         self.assertIn('function createBuilderPart(item)', script)
         self.assertIn('const BUILDER_MIN_PITCH = -1.08', script)
+        self.assertIn('const BUILDER_MIN_ZOOM = 0.38', script)
         self.assertIn('function builderRoofUndersideHeightAtWorldPoint', script)
         self.assertIn('function builderWallRoofExtensions', script)
         self.assertIn('new THREE.ExtrudeGeometry(shape', script)
@@ -727,6 +729,9 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('const BUILDER_STOREY_HEIGHT = 2.9', script)
         self.assertIn('function closedWallLoop(level)', script)
         self.assertIn('function switchBuilderLevel(targetLevel)', script)
+        self.assertIn('function showBuilderOverview()', script)
+        self.assertIn('data-builder-view="overall"', dashboard)
+        self.assertIn('data-builder-level="2"', dashboard)
         self.assertIn('function addAutomaticCeiling(level, loop,', script)
         self.assertIn('function roofPlacementData(level = builder.currentLevel)', script)
         self.assertIn('function placeOrSelectRoof()', script)
@@ -792,6 +797,9 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('.house-builder-panel', stylesheet)
         self.assertIn('.house-builder-selection-tools', stylesheet)
         self.assertIn('.house-builder-panel.is-collapsed', stylesheet)
+        self.assertIn('.house-builder-level-switcher', stylesheet)
+        self.assertIn('bottom:auto;', stylesheet)
+        self.assertIn('builderStatus.hidden = collapsed', script)
         self.assertIn('.house-stage.is-building', stylesheet)
         self.assertIn('bottom:max(12px,env(safe-area-inset-bottom))', stylesheet)
         self.assertIn('scrollbar-gutter:stable', stylesheet)
@@ -804,6 +812,10 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("function orientDomesticRoute(controller, route, destination)", script)
         self.assertIn("controller.route = orientDomesticRoute(controller, route, destination)", script)
         self.assertIn("frontYawOffset: Math.PI", script)
+        self.assertIn('yetiSlot.rotation.y = Math.PI', script)
+        self.assertIn('{ x: 0, z: 8.72, yaw: Math.PI }', script)
+        self.assertIn('routePose(controller, 11.45, -18.50, Math.PI, "forward")', script)
+        self.assertIn('routePose(controller, 9.45, -18.50, 0, "forward")', script)
         self.assertIn('routePose(controller, x + 0.45, 13.15, yaw - 0.35, "forward")', script)
         self.assertIn("const AUDI_DEPARTURE_ROUTE", script)
         self.assertIn("const AUDI_ARRIVAL_ROUTE", script)
@@ -824,6 +836,7 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn("rgba(7,15,27,.50)", stylesheet)
         self.assertIn('function markerHiddenByHouse(worldAnchor)', script)
         self.assertIn('classList.toggle("occluded", occluded)', script)
+        self.assertIn('function resolveSceneLabelCollisions(placements, stageRect)', script)
         self.assertIn('.house-click-marker.occluded', stylesheet)
         self.assertIn('.house-stage.is-building .house-click-marker', stylesheet)
 

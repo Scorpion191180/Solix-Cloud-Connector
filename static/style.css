@@ -1863,7 +1863,11 @@ header p{
 }
 
 .house-builder-panel.is-collapsed{
-    width:min(282px,calc(100vw - 24px));
+    bottom:auto;
+    width:min(252px,calc(100vw - 24px));
+    height:auto;
+    min-height:0;
+    max-height:none;
     padding:9px 10px;
     overflow:hidden;
 }
@@ -1877,15 +1881,63 @@ header p{
 }
 
 .house-builder-panel.is-collapsed .house-builder-head small{
-    font-size:8px;
+    display:none;
 }
 
 .house-builder-panel.is-collapsed .house-builder-status{
-    margin-top:5px;
-    max-width:220px;
-    overflow:hidden;
-    text-overflow:ellipsis;
-    white-space:nowrap;
+    display:none;
+}
+
+.house-builder-level-switcher{
+    position:absolute;
+    z-index:18;
+    top:50%;
+    left:max(12px,env(safe-area-inset-left));
+    display:grid;
+    gap:6px;
+    width:58px;
+    padding:7px;
+    transform:translateY(-50%);
+    border:1px solid rgba(56,189,248,.48);
+    border-radius:16px;
+    background:rgba(7,15,27,.88);
+    box-shadow:0 14px 38px rgba(2,6,23,.52);
+    backdrop-filter:blur(13px) saturate(1.15);
+    -webkit-backdrop-filter:blur(13px) saturate(1.15);
+}
+
+.house-builder-level-switcher[hidden]{display:none!important;}
+
+.house-builder-level-switcher button{
+    display:grid;
+    min-height:48px;
+    place-items:center;
+    padding:4px 2px;
+    border:1px solid rgba(148,163,184,.30);
+    border-radius:11px;
+    background:rgba(30,41,59,.78);
+    color:#cbd5e1;
+    font:900 12px/1 system-ui,sans-serif;
+}
+
+.house-builder-level-switcher button span{
+    font-size:14px;
+}
+
+.house-builder-level-switcher button small{
+    font-size:7px;
+    letter-spacing:.04em;
+}
+
+.house-builder-level-switcher button[aria-pressed="true"]{
+    border-color:#67e8f9;
+    background:linear-gradient(145deg,rgba(8,145,178,.76),rgba(13,148,136,.60));
+    color:#ecfeff;
+    box-shadow:0 0 18px rgba(34,211,238,.24);
+}
+
+.house-builder-level-switcher button:disabled{
+    opacity:.30;
 }
 
 .house-builder-grid{
@@ -3505,7 +3557,29 @@ body{
 .house-builder-panel.is-collapsed{
     right:max(10px,env(safe-area-inset-right));
     left:auto;
-    width:min(270px,calc(100vw - 20px));
+    bottom:auto;
+    width:min(224px,calc(100vw - 20px));
+    height:auto;
+    max-height:none;
+}
+
+.house-builder-level-switcher{
+    top:50%;
+    left:max(7px,env(safe-area-inset-left));
+    width:48px;
+    gap:4px;
+    padding:5px;
+    border-radius:13px;
+}
+
+.house-builder-level-switcher button{
+    min-height:42px;
+    border-radius:9px;
+    font-size:10px;
+}
+
+.house-builder-level-switcher button span{font-size:12px;}
+.house-builder-level-switcher button small{font-size:6px;}
 }
 
 .house-stage.is-building .house-builder-touch-nav{

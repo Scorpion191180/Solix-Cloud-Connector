@@ -14,7 +14,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/solix-home-32.png?v=94">
 <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/solix-home-180.png?v=94">
 <link rel="manifest" href="/static/site.webmanifest?v=94">
-<link rel="stylesheet" href="/static/style.css?v=20260908-139">
+<link rel="stylesheet" href="/static/style.css?v=20260910-140">
 
 <script type="importmap">
 {
@@ -36,7 +36,7 @@
 <p id="sceneLoaderStatus">Haus und 3D-Objekte werden vorbereitet …</p>
 <div class="scene-loader-track" aria-hidden="true"><span id="sceneLoaderBar"></span></div>
 <small id="sceneLoaderPercent">0 %</small>
-<small class="scene-loader-version" id="sceneLoaderVersion">Version 139</small>
+<small class="scene-loader-version" id="sceneLoaderVersion">Version 140</small>
 </div>
 </div>
 
@@ -327,6 +327,21 @@ Signalstärke
 </div>
 <p class="house-builder-status" id="builderStatus" aria-live="polite">Noch keine Bauteile gesetzt.</p>
 </section>
+<nav class="house-builder-level-switcher" id="builderLevelSwitcher"
+    aria-label="Etage oder Gesamtansicht wählen" hidden>
+<button type="button" data-builder-view="overall" aria-label="Gesamtes Grundstück anzeigen" aria-pressed="false">
+<span aria-hidden="true">⌂</span><small>Gesamt</small>
+</button>
+<button type="button" data-builder-level="2" aria-label="Zweites Obergeschoss anzeigen" aria-pressed="false">
+<span>2</span><small>2. OG</small>
+</button>
+<button type="button" data-builder-level="1" aria-label="Erstes Obergeschoss anzeigen" aria-pressed="false">
+<span>1</span><small>1. OG</small>
+</button>
+<button type="button" data-builder-level="0" aria-label="Erdgeschoss anzeigen" aria-pressed="true">
+<span>EG</span><small>Etage</small>
+</button>
+</nav>
 <div class="house-builder-selection-tools" id="builderSelectionTools" role="toolbar" aria-label="Ausgewähltes Bauteil bearbeiten" hidden>
 <button id="builderSelectionRotateLeft" type="button" aria-label="Auswahl um 90 Grad nach links drehen">↶</button>
 <button id="builderSelectionRotateRight" type="button" aria-label="Auswahl um 90 Grad nach rechts drehen">↷</button>
@@ -367,7 +382,7 @@ Dein Browser unterstützt die interaktive Hausansicht nicht.
 <span><strong id="houseWasteTitle">Müllabfuhr</strong><small id="houseWasteText">Termine werden geladen</small></span>
 </div>
 <button class="house-reset" id="houseReset" type="button" aria-label="Zur Standardansicht zurückkehren">↺ Standardansicht</button>
-<span class="house-version" id="houseVersion" aria-label="Aktuell geladene Version 139">Version 139</span>
+<span class="house-version" id="houseVersion" aria-label="Aktuell geladene Version 140">Version 140</span>
 <button class="house-clean-shortcut" id="houseCleanShortcut" type="button"
     data-animal-action="clean" aria-label="Hinterlassenschaften vom Grundstück entfernen"
     aria-live="polite" hidden>
@@ -808,8 +823,8 @@ Einstellungen
 
 </div>
 
-<script type="module" src="/static/house.js?v=20260908-139"></script>
-<script src="/static/app.js?v=20260908-139"></script>
+<script type="module" src="/static/house.js?v=20260910-140"></script>
+<script src="/static/app.js?v=20260910-140"></script>
 
 </body>
 </html>
