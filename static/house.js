@@ -42,6 +42,7 @@ const builderLevelPosition = document.getElementById("builderLevelPosition");
 const builderRoofState = document.getElementById("builderRoofState");
 const builderPartType = document.getElementById("builderPartType");
 const builderPartPalette = document.getElementById("builderPartPalette");
+const builderCatalogTabs = document.getElementById("builderCatalogTabs");
 const builderVariant = document.getElementById("builderVariant");
 const builderVariantLabel = document.getElementById("builderVariantLabel");
 const builderWallLengthRow = document.getElementById("builderWallLengthRow");
@@ -83,7 +84,7 @@ const sceneLoaderBar = document.getElementById("sceneLoaderBar");
 const sceneLoaderStatus = document.getElementById("sceneLoaderStatus");
 const sceneLoaderPercent = document.getElementById("sceneLoaderPercent");
 const sceneLoaderVersion = document.getElementById("sceneLoaderVersion");
-const APP_BUILD_VERSION = "140";
+const APP_BUILD_VERSION = "141";
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const INTERIOR_VIEW_ENABLED = false;
 
@@ -8106,14 +8107,25 @@ const BUILDER_VARIANTS = Object.freeze({
         { id: "wall-corner", label: "Eckwand · 3 × 3 m", length: 3.0, height: 2.75, legacy: true }
     ],
     window: [
-        { id: "window-single", label: "Modern · einflügelig", width: 1.05, height: 1.35 },
-        { id: "window-double", label: "Doppelfenster", width: 1.85, height: 1.35 },
-        { id: "window-panoramic", label: "Panoramafenster", width: 2.55, height: 1.15 }
+        { id: "window-single", label: "Modern · einflügelig", width: 1.05, height: 1.35, mullions: 0 },
+        { id: "window-double", label: "Doppelfenster", width: 1.85, height: 1.35, mullions: 1 },
+        { id: "window-triple", label: "Dreiflügelfenster", width: 2.55, height: 1.40, mullions: 2 },
+        { id: "window-narrow", label: "Schmales Fenster", width: 0.62, height: 1.48, mullions: 0 },
+        { id: "window-panoramic", label: "Panoramafenster", width: 2.75, height: 1.15, mullions: 0 },
+        { id: "window-tall", label: "Bodentiefes Fenster", width: 1.15, height: 2.15, mullions: 0, floorY: 1.12 },
+        { id: "window-transom", label: "Sprossenfenster", width: 1.45, height: 1.45, mullions: 1, transom: true },
+        { id: "window-round", label: "Rundfenster", width: 1.10, height: 1.10, shape: "round", mullions: 2 }
     ],
     door: [
         { id: "door-wood", label: "Holztür", width: 1.02, height: 2.12, style: "wood" },
         { id: "door-glass", label: "Glastür", width: 1.02, height: 2.12, style: "glass" },
-        { id: "door-modern", label: "Moderne Haustür", width: 1.22, height: 2.18, style: "modern" }
+        { id: "door-modern", label: "Moderne Haustür", width: 1.22, height: 2.18, style: "modern" },
+        { id: "door-classic", label: "Klassische Kassettentür", width: 1.08, height: 2.14, style: "panel" },
+        { id: "door-interior", label: "Schlichte Innentür", width: 0.90, height: 2.05, style: "interior" },
+        { id: "door-double", label: "Doppelflügeltür", width: 1.82, height: 2.18, style: "double", leaves: 2 },
+        { id: "door-french", label: "Französische Glastür", width: 1.72, height: 2.18, style: "french", leaves: 2, glazed: true },
+        { id: "door-sliding", label: "Glasschiebetür", width: 2.45, height: 2.18, style: "sliding", leaves: 2, glazed: true },
+        { id: "door-barn", label: "Rustikale Schiebetür", width: 1.28, height: 2.18, style: "barn" }
     ],
     floor: [
         { id: "floor-stone", label: "Steinplatten", width: 1, depth: 1, surface: "stone" },
@@ -8157,6 +8169,61 @@ const BUILDER_VARIANTS = Object.freeze({
         { id: "tree-conifer", label: "Fichte", height: 5.1, crown: 1.45, style: "conifer", foliage: "#315f42" },
         { id: "tree-pine", label: "Kiefer", height: 5.3, crown: 1.32, style: "pine", foliage: "#426f4b" },
         { id: "tree-cypress", label: "Zypresse", height: 4.6, crown: 0.88, style: "cypress", foliage: "#2f6542" }
+    ],
+    path: [
+        { id: "path-garden", label: "Gartenweg · Naturstein", width: 1.15, depth: 4.0, style: "garden", surface: "stone" },
+        { id: "path-paver", label: "Gehweg · Pflaster", width: 1.50, depth: 4.0, style: "paver", surface: "terrazzo" },
+        { id: "path-gravel", label: "Kiesweg", width: 1.35, depth: 4.0, style: "gravel" },
+        { id: "path-road", label: "Straße · Asphalt", width: 4.40, depth: 4.0, style: "road" },
+        { id: "path-road-sidewalk", label: "Straße mit zwei Gehwegen", width: 7.00, depth: 4.0, style: "road-sidewalk" },
+        { id: "path-driveway", label: "Hofeinfahrt", width: 3.20, depth: 4.0, style: "driveway", surface: "stone" }
+    ],
+    outdoor: [
+        { id: "outdoor-streetlamp", label: "Straßenlaterne · silber", style: "streetlamp", height: 4.25 },
+        { id: "outdoor-classic-lamp", label: "Klassische Laterne", style: "classic-lamp", height: 3.10 },
+        { id: "outdoor-bollard", label: "Wegeleuchte", style: "bollard", height: 0.85 },
+        { id: "outdoor-spot", label: "Gartenstrahler", style: "spot", height: 0.34 }
+    ],
+    seat: [
+        { id: "seat-chair", label: "Esszimmerstuhl", style: "chair", width: 0.50 },
+        { id: "seat-armchair", label: "Sessel", style: "armchair", width: 0.88 },
+        { id: "seat-sofa-2", label: "2-Sitzer-Couch", style: "sofa", width: 1.75 },
+        { id: "seat-sofa-3", label: "3-Sitzer-Couch", style: "sofa", width: 2.35 },
+        { id: "seat-bench", label: "Sitzbank", style: "bench", width: 1.55 }
+    ],
+    table: [
+        { id: "table-dining", label: "Esstisch", style: "dining", width: 1.65, depth: 0.90, height: 0.78 },
+        { id: "table-round", label: "Runder Tisch", style: "round", width: 1.25, depth: 1.25, height: 0.76 },
+        { id: "table-coffee", label: "Couchtisch", style: "coffee", width: 1.10, depth: 0.65, height: 0.42 },
+        { id: "table-side", label: "Beistelltisch", style: "side", width: 0.52, depth: 0.52, height: 0.55 }
+    ],
+    storage: [
+        { id: "storage-bookcase", label: "Bücherregal", style: "bookcase", width: 1.05, height: 2.05, depth: 0.34 },
+        { id: "storage-wardrobe", label: "Kleiderschrank", style: "wardrobe", width: 1.62, height: 2.12, depth: 0.62 },
+        { id: "storage-sideboard", label: "Sideboard", style: "sideboard", width: 1.55, height: 0.82, depth: 0.45 }
+    ],
+    media: [
+        { id: "media-tv", label: "Fernseher", style: "tv", width: 1.45, height: 0.86 },
+        { id: "media-tv-board", label: "TV mit Lowboard", style: "tv-board", width: 1.75, height: 0.92 }
+    ],
+    bed: [
+        { id: "bed-single", label: "Einzelbett", style: "bed", width: 1.00, depth: 2.05 },
+        { id: "bed-double", label: "Doppelbett", style: "bed", width: 1.80, depth: 2.10 },
+        { id: "bed-boxspring", label: "Boxspringbett", style: "boxspring", width: 1.90, depth: 2.15 }
+    ],
+    kitchen: [
+        { id: "kitchen-fridge", label: "Kühlschrank", style: "fridge", width: 0.72 },
+        { id: "kitchen-cabinet", label: "Unterschränke + Arbeitsplatte", style: "cabinet", width: 1.80 },
+        { id: "kitchen-sink", label: "Spüle mit Unterschrank", style: "sink", width: 1.20 },
+        { id: "kitchen-stove", label: "Herd mit Backofen", style: "stove", width: 0.72 },
+        { id: "kitchen-island", label: "Kücheninsel", style: "island", width: 1.80 },
+        { id: "kitchen-line", label: "Küchenzeile komplett", style: "line", width: 3.40 }
+    ],
+    light: [
+        { id: "light-pendant", label: "Pendelleuchte", style: "pendant", height: 2.62 },
+        { id: "light-ceiling", label: "Deckenleuchte", style: "ceiling", height: 2.66 },
+        { id: "light-floor", label: "Stehlampe", style: "floor", height: 1.65 },
+        { id: "light-table", label: "Tischlampe", style: "table", height: 0.58 }
     ]
 });
 const BUILDER_COLOR_SWATCHES = Object.freeze([
@@ -8165,12 +8232,18 @@ const BUILDER_COLOR_SWATCHES = Object.freeze([
 const BUILDER_DEFAULT_COLORS = Object.freeze({
     wall: "#f1eee5", window: "#9db5ce", door: "#8e5a43",
     floor: "#9d9487", support: "#b8b2a8", roof: "#a84932",
-    grass: "#5d9b49", fence: "#8e6947", tree: "#4f7d3d"
+    grass: "#5d9b49", fence: "#8e6947", tree: "#4f7d3d",
+    path: "#777b7d", outdoor: "#aeb5bc", seat: "#536b88",
+    table: "#8b6448", storage: "#b08a63", media: "#202936",
+    bed: "#d6d2cb", kitchen: "#d5d7d8", light: "#d7b56d"
 });
 const BUILDER_TYPE_LABELS = Object.freeze({
     wall: "Wand", window: "Fenster", door: "Tür",
     floor: "Boden", support: "Stütze", roof: "Dach",
-    grass: "Grasfläche", fence: "Zaun", tree: "Baum"
+    grass: "Grasfläche", fence: "Zaun", tree: "Baum",
+    path: "Weg oder Straße", outdoor: "Außenleuchte",
+    seat: "Sitzmöbel", table: "Tisch", storage: "Schrank",
+    media: "TV und Medien", bed: "Bett", kitchen: "Küchenmöbel", light: "Lampe"
 });
 const BUILDER_SURFACE_TEXTURE_CACHE = new Map();
 
@@ -8404,25 +8477,47 @@ function createBuilderPart(item) {
             transparent: true, opacity: 0.88, transmission: renderProfileName === "mobile" ? 0 : 0.10,
             clearcoat: 0.78, depthWrite: true
         });
-        const y = 1.48;
+        const y = variant.floorY || 1.48;
         // Paneel und Rahmen reichen durch die komplette Wandstärke. Dadurch ist
         // dieselbe Öffnung innen wie außen sichtbar und bleibt ein einziges Objekt.
-        addBox(part, [variant.width, variant.height, 0.26], glassMaterial, [0, y, 0],
-            { castShadow: false });
         const border = 0.075;
-        [-1, 1].forEach((side) => {
-            addBox(part, [border, variant.height + border * 2, 0.32], frameMaterial,
-                [side * variant.width / 2, y, 0]);
-            addBox(part, [variant.width + border * 2, border, 0.32], frameMaterial,
-                [0, y + side * variant.height / 2, 0]);
-        });
-        if (item.variant === "window-double")
-            addBox(part, [border, variant.height, 0.325], frameMaterial, [0, y, 0]);
-        addBox(part, [variant.width + 0.18, 0.08, 0.38], frameMaterial,
-            [0, y - variant.height / 2 - 0.05, 0]);
+        if (variant.shape === "round") {
+            const radius = variant.width / 2;
+            addMesh(part, new THREE.CircleGeometry(radius, 28), glassMaterial,
+                0, y, 0.145, { castShadow: false });
+            addMesh(part, new THREE.CircleGeometry(radius, 28), glassMaterial,
+                0, y, -0.145, { rotation: [0, Math.PI, 0], castShadow: false });
+            addMesh(part, new THREE.TorusGeometry(radius, border, 8, 32), frameMaterial,
+                0, y, 0.17);
+            addMesh(part, new THREE.TorusGeometry(radius, border, 8, 32), frameMaterial,
+                0, y, -0.17);
+            addBox(part, [border, variant.height * 0.88, 0.35], frameMaterial, [0, y, 0]);
+            addBox(part, [variant.width * 0.88, border, 0.35], frameMaterial, [0, y, 0]);
+        }
+        else {
+            addBox(part, [variant.width, variant.height, 0.26], glassMaterial, [0, y, 0],
+                { castShadow: false });
+            [-1, 1].forEach((side) => {
+                addBox(part, [border, variant.height + border * 2, 0.32], frameMaterial,
+                    [side * variant.width / 2, y, 0]);
+                addBox(part, [variant.width + border * 2, border, 0.32], frameMaterial,
+                    [0, y + side * variant.height / 2, 0]);
+            });
+            const mullions = Math.max(0, variant.mullions || 0);
+            for (let index = 1; index <= mullions; index += 1) {
+                const x = -variant.width / 2 + variant.width * index / (mullions + 1);
+                addBox(part, [border, variant.height, 0.325], frameMaterial, [x, y, 0]);
+            }
+            if (variant.transom)
+                addBox(part, [variant.width, border, 0.325], frameMaterial,
+                    [0, y + variant.height * 0.17, 0]);
+            addBox(part, [variant.width + 0.18, 0.08, 0.38], frameMaterial,
+                [0, y - variant.height / 2 - 0.05, 0]);
+        }
     }
     else if (item.type === "door") {
-        const doorMaterial = variant.style === "glass" ? new THREE.MeshPhysicalMaterial({
+        const glassDoor = variant.style === "glass" || variant.glazed;
+        const doorMaterial = glassDoor ? new THREE.MeshPhysicalMaterial({
             color: 0x789fb2, roughness: 0.10, transparent: true, opacity: 0.80,
             transmission: renderProfileName === "mobile" ? 0 : 0.16, clearcoat: 0.72
         }) : new THREE.MeshStandardMaterial({
@@ -8438,7 +8533,10 @@ function createBuilderPart(item) {
                 [side * (variant.width / 2 + frame / 2), variant.height / 2, 0]));
         addBox(part, [variant.width + frame * 2, frame, 0.34], frameMaterial,
             [0, variant.height + frame / 2, 0]);
-        if (variant.style === "wood") {
+        if ((variant.leaves || 1) > 1)
+            addBox(part, [frame, variant.height, 0.34], frameMaterial,
+                [0, variant.height / 2, 0]);
+        if (["wood", "panel", "interior"].includes(variant.style)) {
             for (let panel = -0.32; panel <= 0.32; panel += 0.32) {
                 const panelY = variant.height * (0.52 + panel * 0.32);
                 addBox(part, [variant.width * 0.72, 0.035, 0.018], frameMaterial,
@@ -8447,9 +8545,23 @@ function createBuilderPart(item) {
                     [0, panelY, -0.151], { castShadow: false });
             }
         }
+        if (variant.style === "barn") {
+            [-1, 1].forEach((side) => addBox(part,
+                [variant.width * 1.04, 0.075, 0.045], frameMaterial,
+                [0, variant.height * 0.52, side * 0.166],
+                { rotation: [0, 0, THREE.MathUtils.degToRad(54)], castShadow: false }));
+            addBox(part, [variant.width + 0.32, 0.08, 0.12], frameMaterial,
+                [0, variant.height + 0.16, 0]);
+        }
+        if (variant.style === "sliding") {
+            const railMaterial = new THREE.MeshStandardMaterial({ color: 0x2e343a, metalness: 0.72, roughness: 0.28 });
+            addBox(part, [variant.width + 0.18, 0.07, 0.09], railMaterial,
+                [0, variant.height + 0.13, 0]);
+        }
         const handle = new THREE.MeshStandardMaterial({ color: 0xd7dde0, metalness: 0.82, roughness: 0.20 });
+        const handleX = (variant.leaves || 1) > 1 ? variant.width * 0.10 : variant.width * 0.30;
         [-1, 1].forEach((side) => addMesh(part, new THREE.SphereGeometry(0.055, 12, 8), handle,
-            side * variant.width * 0.30, variant.height * 0.52, side * 0.18, { castShadow: false }));
+            side * handleX, variant.height * 0.52, side * 0.18, { castShadow: false }));
     }
     else if (item.type === "support") {
         const supportHeight = BUILDER_STOREY_HEIGHT - 0.08;
@@ -8476,6 +8588,251 @@ function createBuilderPart(item) {
             [0.07, supportHeight - 0.07].forEach((y) =>
                 addBox(part, [variant.width + 0.14, 0.14, variant.width + 0.14], capMaterial,
                     [0, y, 0], { radius: 0.025 }));
+        }
+    }
+    else if (item.type === "path") {
+        const pathWidth = variant.width;
+        const pathDepth = variant.depth;
+        const asphaltMaterial = new THREE.MeshStandardMaterial({ color: 0x32383d, roughness: 0.96 });
+        const pavementTexture = builderSurfaceTexture(variant.surface, color);
+        const pavementMaterial = new THREE.MeshStandardMaterial({
+            color: pavementTexture ? 0xffffff : color,
+            map: pavementTexture, bumpMap: pavementTexture,
+            bumpScale: pavementTexture ? 0.022 : 0, roughness: 0.92
+        });
+        const curbMaterial = new THREE.MeshStandardMaterial({ color: 0xb9b8ae, roughness: 0.88 });
+        if (["road", "road-sidewalk"].includes(variant.style)) {
+            const roadWidth = variant.style === "road-sidewalk" ? 4.40 : pathWidth;
+            addBox(part, [roadWidth, 0.075, pathDepth], asphaltMaterial, [0, 0.035, 0], { castShadow: false });
+            const lineMaterial = new THREE.MeshBasicMaterial({ color: 0xf4f1d1 });
+            [-1.35, 0, 1.35].forEach((z) => addBox(part, [0.06, 0.01, 0.70], lineMaterial,
+                [0, 0.081, z], { castShadow: false }));
+            if (variant.style === "road-sidewalk") {
+                [-1, 1].forEach((side) => {
+                    const sidewalkX = side * (roadWidth / 2 + 0.65);
+                    addBox(part, [1.20, 0.13, pathDepth], pavementMaterial,
+                        [sidewalkX, 0.065, 0], { castShadow: false });
+                    addBox(part, [0.10, 0.18, pathDepth], curbMaterial,
+                        [side * (roadWidth / 2 + 0.05), 0.09, 0], { castShadow: false });
+                });
+            }
+        }
+        else {
+            addBox(part, [pathWidth, 0.09, pathDepth], pavementMaterial,
+                [0, 0.045, 0], { castShadow: false, radius: variant.style === "gravel" ? 0.12 : 0.025 });
+            if (variant.style !== "gravel") {
+                const seamMaterial = new THREE.MeshBasicMaterial({ color: 0x595955, transparent: true, opacity: 0.52 });
+                for (let z = -pathDepth / 2 + 0.5; z < pathDepth / 2; z += 0.5)
+                    addBox(part, [pathWidth, 0.007, 0.012], seamMaterial,
+                        [0, 0.096, z], { castShadow: false });
+            }
+        }
+    }
+    else if (item.type === "outdoor") {
+        const metal = new THREE.MeshStandardMaterial({ color, roughness: 0.32, metalness: 0.72 });
+        const darkMetal = new THREE.MeshStandardMaterial({ color: 0x2f353a, roughness: 0.40, metalness: 0.62 });
+        const glow = new THREE.MeshStandardMaterial({
+            color: 0xfff1bd, emissive: 0xffc85a, emissiveIntensity: 1.35,
+            roughness: 0.22, transparent: true, opacity: 0.94
+        });
+        if (variant.style === "streetlamp") {
+            addMesh(part, new THREE.CylinderGeometry(0.10, 0.16, variant.height, 16), metal,
+                0, variant.height / 2, 0);
+            addBox(part, [0.95, 0.09, 0.09], metal, [0.39, variant.height - 0.08, 0], { radius: 0.03 });
+            addBox(part, [0.42, 0.18, 0.28], darkMetal, [0.78, variant.height - 0.20, 0], { radius: 0.06 });
+            addBox(part, [0.31, 0.035, 0.20], glow, [0.78, variant.height - 0.31, 0], { castShadow: false });
+            addMesh(part, new THREE.CylinderGeometry(0.25, 0.31, 0.12, 18), darkMetal, 0, 0.06, 0);
+        }
+        else if (variant.style === "classic-lamp") {
+            addMesh(part, new THREE.CylinderGeometry(0.075, 0.13, variant.height, 14), darkMetal,
+                0, variant.height / 2, 0);
+            addMesh(part, new THREE.CylinderGeometry(0.31, 0.23, 0.48, 6), glow,
+                0, variant.height - 0.18, 0, { castShadow: false });
+            addMesh(part, new THREE.ConeGeometry(0.38, 0.22, 6), darkMetal,
+                0, variant.height + 0.15, 0);
+        }
+        else if (variant.style === "bollard") {
+            addMesh(part, new THREE.CylinderGeometry(0.10, 0.13, variant.height, 14), darkMetal,
+                0, variant.height / 2, 0);
+            addMesh(part, new THREE.CylinderGeometry(0.13, 0.13, 0.20, 14), glow,
+                0, variant.height - 0.18, 0, { castShadow: false });
+            addMesh(part, new THREE.CylinderGeometry(0.16, 0.16, 0.06, 14), darkMetal,
+                0, variant.height - 0.05, 0);
+        }
+        else {
+            addMesh(part, new THREE.CylinderGeometry(0.08, 0.12, 0.24, 12), darkMetal,
+                0, 0.12, 0, { rotation: [0, 0, -0.48] });
+            addMesh(part, new THREE.CylinderGeometry(0.11, 0.15, 0.16, 12), glow,
+                0.09, 0.31, 0, { rotation: [0, 0, -0.48], castShadow: false });
+        }
+    }
+    else if (item.type === "seat") {
+        const fabric = new THREE.MeshStandardMaterial({ color, roughness: 0.93 });
+        const fabricLight = new THREE.MeshStandardMaterial({ color: color.clone().multiplyScalar(1.16), roughness: 0.96 });
+        const wood = new THREE.MeshStandardMaterial({ color: 0x6d4933, roughness: 0.88 });
+        if (variant.style === "chair") {
+            addBox(part, [0.50, 0.10, 0.50], fabric, [0, 0.47, 0], { radius: 0.055 });
+            [[-0.19, -0.19], [0.19, -0.19], [-0.19, 0.19], [0.19, 0.19]].forEach(([x, z]) =>
+                addBox(part, [0.055, 0.45, 0.055], wood, [x, 0.225, z], { radius: 0.015 }));
+            addBox(part, [0.50, 0.62, 0.09], fabric, [0, 0.76, 0.205], { radius: 0.07 });
+        }
+        else if (variant.style === "bench") {
+            addBox(part, [variant.width, 0.13, 0.52], wood, [0, 0.48, 0], { radius: 0.055 });
+            [-variant.width * 0.38, variant.width * 0.38].forEach((x) =>
+                addBox(part, [0.10, 0.46, 0.46], wood, [x, 0.23, 0], { radius: 0.025 }));
+            addBox(part, [variant.width, 0.56, 0.10], wood, [0, 0.76, 0.21], { radius: 0.04 });
+        }
+        else {
+            const width = variant.width;
+            addBox(part, [width, 0.34, 0.78], fabric, [0, 0.29, 0], { radius: 0.12 });
+            addBox(part, [width - 0.18, 0.62, 0.22], fabric, [0, 0.70, 0.29], { radius: 0.12 });
+            [-1, 1].forEach((side) => addBox(part, [0.18, 0.43, 0.77], fabric,
+                [side * (width / 2 - 0.08), 0.44, 0], { radius: 0.09 }));
+            const cushions = variant.style === "armchair" ? 1 : (width > 2 ? 3 : 2);
+            for (let index = 0; index < cushions; index += 1) {
+                const cushionWidth = (width - 0.32) / cushions;
+                const x = -width / 2 + 0.16 + cushionWidth * (index + 0.5);
+                addBox(part, [cushionWidth - 0.04, 0.13, 0.58], fabricLight,
+                    [x, 0.51, -0.06], { radius: 0.07 });
+            }
+        }
+    }
+    else if (item.type === "table") {
+        const top = new THREE.MeshStandardMaterial({ color, roughness: 0.76 });
+        const leg = new THREE.MeshStandardMaterial({ color: color.clone().multiplyScalar(0.62), roughness: 0.82 });
+        if (variant.style === "round") {
+            addMesh(part, new THREE.CylinderGeometry(variant.width / 2, variant.width / 2, 0.10, 28), top,
+                0, variant.height, 0);
+            addMesh(part, new THREE.CylinderGeometry(0.09, 0.13, variant.height, 16), leg,
+                0, variant.height / 2, 0);
+            addMesh(part, new THREE.CylinderGeometry(0.34, 0.34, 0.06, 20), leg, 0, 0.03, 0);
+        }
+        else {
+            addBox(part, [variant.width, 0.11, variant.depth], top,
+                [0, variant.height, 0], { radius: 0.05 });
+            const insetX = variant.width / 2 - 0.13;
+            const insetZ = variant.depth / 2 - 0.13;
+            [[-insetX, -insetZ], [insetX, -insetZ], [-insetX, insetZ], [insetX, insetZ]].forEach(([x, z]) =>
+                addBox(part, [0.075, variant.height, 0.075], leg,
+                    [x, variant.height / 2, z], { radius: 0.018 }));
+        }
+    }
+    else if (item.type === "storage") {
+        const body = new THREE.MeshStandardMaterial({ color, roughness: 0.82 });
+        const inset = new THREE.MeshStandardMaterial({ color: color.clone().multiplyScalar(0.58), roughness: 0.78 });
+        addBox(part, [variant.width, variant.height, variant.depth], body,
+            [0, variant.height / 2, 0], { radius: 0.035 });
+        if (variant.style === "bookcase") {
+            for (let shelf = 0.24; shelf < variant.height; shelf += 0.36)
+                addBox(part, [variant.width - 0.10, 0.045, variant.depth + 0.025], inset,
+                    [0, shelf, -0.015], { castShadow: false });
+        }
+        else {
+            addBox(part, [0.035, variant.height * 0.84, variant.depth + 0.018], inset,
+                [0, variant.height * 0.52, -0.012], { castShadow: false });
+            [-0.10, 0.10].forEach((x) => addMesh(part, new THREE.SphereGeometry(0.035, 10, 7), inset,
+                x, variant.height * 0.52, -variant.depth / 2 - 0.02, { castShadow: false }));
+        }
+    }
+    else if (item.type === "media") {
+        const screen = new THREE.MeshStandardMaterial({ color: 0x080d13, roughness: 0.16, metalness: 0.18 });
+        const bezel = new THREE.MeshStandardMaterial({ color: 0x2c3138, roughness: 0.36, metalness: 0.42 });
+        if (variant.style === "tv-board") {
+            const board = new THREE.MeshStandardMaterial({ color, roughness: 0.78 });
+            addBox(part, [variant.width, 0.42, 0.42], board, [0, 0.23, 0.06], { radius: 0.045 });
+            [-0.48, 0, 0.48].forEach((ratio) => addBox(part, [0.025, 0.32, 0.44], bezel,
+                [ratio * variant.width * 0.58, 0.23, 0.05], { castShadow: false }));
+        }
+        const tvY = variant.style === "tv-board" ? 1.12 : 1.05;
+        addBox(part, [variant.width, variant.height, 0.085], bezel, [0, tvY, 0], { radius: 0.035 });
+        addBox(part, [variant.width - 0.07, variant.height - 0.07, 0.02], screen,
+            [0, tvY, -0.052], { castShadow: false, radius: 0.02 });
+        addBox(part, [0.08, 0.42, 0.08], bezel, [0, 0.63, 0], { radius: 0.02 });
+        addBox(part, [0.55, 0.055, 0.24], bezel, [0, 0.44, 0], { radius: 0.02 });
+    }
+    else if (item.type === "bed") {
+        const frame = new THREE.MeshStandardMaterial({ color: 0x76543d, roughness: 0.86 });
+        const mattress = new THREE.MeshStandardMaterial({ color, roughness: 0.95 });
+        const linen = new THREE.MeshStandardMaterial({ color: color.clone().multiplyScalar(1.18), roughness: 0.98 });
+        const baseHeight = variant.style === "boxspring" ? 0.38 : 0.24;
+        addBox(part, [variant.width, baseHeight, variant.depth], frame,
+            [0, baseHeight / 2, 0], { radius: 0.06 });
+        addBox(part, [variant.width - 0.08, 0.24, variant.depth - 0.12], mattress,
+            [0, baseHeight + 0.12, -0.02], { radius: 0.09 });
+        addBox(part, [variant.width, 0.85, 0.12], frame,
+            [0, 0.56, variant.depth / 2 - 0.03], { radius: 0.05 });
+        const pillowCount = variant.width > 1.4 ? 2 : 1;
+        for (let index = 0; index < pillowCount; index += 1) {
+            const x = pillowCount === 1 ? 0 : (index ? 0.42 : -0.42);
+            addBox(part, [Math.min(0.68, variant.width / pillowCount - 0.10), 0.13, 0.38], linen,
+                [x, baseHeight + 0.33, variant.depth * 0.30], { radius: 0.10 });
+        }
+    }
+    else if (item.type === "kitchen") {
+        const cabinet = new THREE.MeshStandardMaterial({ color, roughness: 0.72 });
+        const worktop = new THREE.MeshStandardMaterial({ color: 0x4b4d4f, roughness: 0.44, metalness: 0.10 });
+        const steel = new THREE.MeshStandardMaterial({ color: 0xbfc6ca, roughness: 0.28, metalness: 0.72 });
+        const dark = new THREE.MeshStandardMaterial({ color: 0x171b20, roughness: 0.24, metalness: 0.28 });
+        if (variant.style === "fridge") {
+            addBox(part, [variant.width, 1.96, 0.70], cabinet, [0, 0.98, 0], { radius: 0.055 });
+            addBox(part, [variant.width - 0.05, 0.025, 0.73], dark, [0, 0.68, -0.01], { castShadow: false });
+            addBox(part, [0.035, 0.56, 0.04], steel, [variant.width * 0.34, 1.24, -0.37], { castShadow: false });
+        }
+        else {
+            const width = variant.width;
+            const depth = variant.style === "island" ? 0.92 : 0.64;
+            addBox(part, [width, 0.82, depth], cabinet, [0, 0.41, 0], { radius: 0.035 });
+            addBox(part, [width + 0.08, 0.075, depth + 0.08], worktop, [0, 0.86, 0], { radius: 0.025 });
+            const doorCount = Math.max(1, Math.round(width / 0.62));
+            for (let index = 1; index < doorCount; index += 1)
+                addBox(part, [0.025, 0.70, depth + 0.02], worktop,
+                    [-width / 2 + width * index / doorCount, 0.43, -0.01], { castShadow: false });
+            if (["sink", "line"].includes(variant.style)) {
+                addBox(part, [0.54, 0.035, 0.42], steel, [variant.style === "line" ? -0.72 : 0, 0.91, -0.02], { radius: 0.06 });
+                addMesh(part, new THREE.TorusGeometry(0.18, 0.025, 7, 16, Math.PI), steel,
+                    variant.style === "line" ? -0.72 : 0, 1.08, 0.07, { rotation: [Math.PI / 2, 0, 0] });
+            }
+            if (["stove", "line"].includes(variant.style)) {
+                const stoveX = variant.style === "line" ? 0.76 : 0;
+                addBox(part, [0.56, 0.025, 0.47], dark, [stoveX, 0.91, -0.02], { radius: 0.025 });
+                [[-0.16, -0.13], [0.16, -0.13], [-0.16, 0.13], [0.16, 0.13]].forEach(([x, z]) =>
+                    addMesh(part, new THREE.TorusGeometry(0.075, 0.012, 6, 14), steel,
+                        stoveX + x, 0.93, z - 0.02, { rotation: [Math.PI / 2, 0, 0], castShadow: false }));
+            }
+        }
+    }
+    else if (item.type === "light") {
+        const fixture = new THREE.MeshStandardMaterial({ color, roughness: 0.38, metalness: 0.46 });
+        const glow = new THREE.MeshStandardMaterial({
+            color: 0xfff4cb, emissive: 0xffc85a, emissiveIntensity: 1.45,
+            roughness: 0.18, transparent: true, opacity: 0.96
+        });
+        if (variant.style === "pendant") {
+            addMesh(part, new THREE.CylinderGeometry(0.012, 0.012, 0.66, 8), fixture,
+                0, variant.height - 0.33, 0);
+            addMesh(part, new THREE.ConeGeometry(0.30, 0.32, 20, 1, true), fixture,
+                0, variant.height - 0.76, 0);
+            addMesh(part, new THREE.SphereGeometry(0.11, 14, 10), glow,
+                0, variant.height - 0.78, 0, { castShadow: false });
+        }
+        else if (variant.style === "ceiling") {
+            addMesh(part, new THREE.CylinderGeometry(0.31, 0.31, 0.10, 24), fixture,
+                0, variant.height, 0);
+            addMesh(part, new THREE.CylinderGeometry(0.25, 0.25, 0.045, 24), glow,
+                0, variant.height - 0.075, 0, { castShadow: false });
+        }
+        else {
+            const tableLamp = variant.style === "table";
+            const lampHeight = variant.height;
+            addMesh(part, new THREE.CylinderGeometry(tableLamp ? 0.07 : 0.12,
+                tableLamp ? 0.12 : 0.22, 0.06, 18), fixture, 0, 0.03, 0);
+            addMesh(part, new THREE.CylinderGeometry(0.025, 0.035, lampHeight * 0.72, 10), fixture,
+                0, lampHeight * 0.36, 0);
+            addMesh(part, new THREE.ConeGeometry(tableLamp ? 0.18 : 0.30,
+                tableLamp ? 0.25 : 0.38, 18, 1, true), fixture,
+                0, lampHeight * 0.83, 0);
+            addMesh(part, new THREE.SphereGeometry(tableLamp ? 0.065 : 0.10, 12, 9), glow,
+                0, lampHeight * 0.80, 0, { castShadow: false });
         }
     }
     else if (["floor", "grass"].includes(item.type)) {
@@ -8827,6 +9184,7 @@ function createHouseBuilder() {
         selectionBox: new THREE.Box3(), selectionAnchor: new THREE.Vector3()
     };
     let builderCategory = "wall";
+    let builderSection = "structure";
     // Wandecken innerhalb eines sichtbaren 1-m-Rasterfeldes werden zu einem
     // gemeinsamen, exakt deckungsgleichen Eckpunkt zusammengezogen.
     const WALL_ENDPOINT_SNAP_DISTANCE = 0.95;
@@ -9023,6 +9381,10 @@ function createHouseBuilder() {
         builderPartType.value = item.type;
         builderCategory = item.type === "wall" &&
             variantForItem(item)?.surface?.startsWith("wallpaper-") ? "wallpaper" : item.type;
+        const matchingPaletteButton = Array.from(
+            builderPartPalette?.querySelectorAll(`[data-builder-type="${item.type}"]`) || []
+        ).find((button) => (button.dataset.builderCategory || button.dataset.builderType) === builderCategory);
+        builderSection = matchingPaletteButton?.dataset.builderSection || "structure";
         refreshVariants(item.variant);
         builderColor.value = item.color || BUILDER_DEFAULT_COLORS[item.type] || "#f1eee5";
         builderSwatches.querySelectorAll("button").forEach((button) =>
@@ -9043,10 +9405,16 @@ function createHouseBuilder() {
         stage.dataset.builderCamera = String(builder.cameraNavigation);
         stage.dataset.builderTool = builder.cameraNavigation ? "camera" :
             selectionOnly ? "select" : builderPartType.value;
+        builderCatalogTabs?.querySelectorAll("[data-builder-section]").forEach((button) => {
+            const selected = button.dataset.builderSection === builderSection;
+            button.classList.toggle("selected", selected);
+            button.setAttribute("aria-pressed", String(selected));
+        });
         builderPartPalette?.querySelectorAll("[data-builder-type]").forEach((button) => {
             const buttonCategory = button.dataset.builderCategory || button.dataset.builderType;
             const selected = button.dataset.builderType === builderPartType.value &&
                 buttonCategory === builderCategory;
+            button.hidden = button.dataset.builderSection !== builderSection;
             button.classList.toggle("selected", selected);
             button.setAttribute("aria-pressed", String(selected));
         });
@@ -10206,14 +10574,17 @@ function createHouseBuilder() {
         }));
         if (preferredVariant && variants.some((variant) => variant.id === preferredVariant))
             builderVariant.value = preferredVariant;
+        const variantLabels = {
+            floor: "Bodenbelag", grass: "Grasart", roof: "Dachform",
+            support: "Stützenart", tree: "Baumart", fence: "Zaunart",
+            window: "Fenstermodell", door: "Türmodell", path: "Weg- oder Straßentyp",
+            outdoor: "Außenleuchte", seat: "Sitzmöbel", table: "Tischmodell",
+            storage: "Schrankmodell", media: "Medienmöbel", bed: "Bettmodell",
+            kitchen: "Küchenelement", light: "Leuchtenart"
+        };
         builderVariantLabel.textContent = builderPartType.value === "wall" ?
             builderCategory === "wallpaper" ? "Tapetenmuster" : "Wandhöhe" :
-            builderPartType.value === "floor" ? "Bodenbelag" :
-                builderPartType.value === "grass" ? "Grasart" :
-                builderPartType.value === "roof" ? "Dachform" :
-                    builderPartType.value === "support" ? "Stützenart" :
-                        builderPartType.value === "tree" ? "Baumart" :
-                            builderPartType.value === "fence" ? "Zaunart" : "Ausführung";
+            variantLabels[builderPartType.value] || "Ausführung";
     }
 
     function setRotation(value) {
@@ -10481,8 +10852,8 @@ function createHouseBuilder() {
         const selectedType = builderPartType.value;
         const openingType = ["window", "door"].includes(selectedType);
         const openingPlacement = openingType ? openingPlacementAtPointer(event) : null;
-        if (["grass", "fence", "tree"].includes(selectedType) && builder.currentLevel > 0) {
-            updateStatus("Grasflächen, Grundstückszäune und Bäume können nur im Erdgeschoss platziert werden.");
+        if (["grass", "fence", "tree", "path", "outdoor"].includes(selectedType) && builder.currentLevel > 0) {
+            updateStatus("Außenanlagen, Wege, Zäune, Bäume und Außenleuchten können nur im Erdgeschoss platziert werden.");
             return false;
         }
         if (selectedType === "support" &&
@@ -10564,9 +10935,9 @@ function createHouseBuilder() {
         const hit = builderItemHitAtPointer(event);
         const id = hit?.id || null;
         const drawType = builderPartType.value;
-        if (builder.placementEnabled && ["grass", "fence", "tree"].includes(drawType) &&
+        if (builder.placementEnabled && ["grass", "fence", "tree", "path", "outdoor"].includes(drawType) &&
             builder.currentLevel > 0) {
-            updateStatus("Grasflächen, Grundstückszäune und Bäume können nur im Erdgeschoss platziert werden.");
+            updateStatus("Außenanlagen, Wege, Zäune, Bäume und Außenleuchten können nur im Erdgeschoss platziert werden.");
             return true;
         }
         if (builder.placementEnabled && drawType === "wall" &&
@@ -10807,8 +11178,29 @@ function createHouseBuilder() {
         setPanelCollapsed(!builderPanel.classList.contains("is-collapsed")));
     builderPointerMode.addEventListener("click", activatePointerMode);
     builderWallCutaway?.addEventListener("click", () => setWallCutaway(!builder.wallCutaway));
+    builderCatalogTabs?.querySelectorAll("[data-builder-section]").forEach((button) => {
+        button.addEventListener("click", () => {
+            builderSection = button.dataset.builderSection || "structure";
+            const activeButton = Array.from(builderPartPalette?.querySelectorAll("[data-builder-type]") || [])
+                .find((entry) => !entry.hidden && entry.dataset.builderSection === builderSection);
+            const selectedButton = Array.from(builderPartPalette?.querySelectorAll("[data-builder-type]") || [])
+                .find((entry) => entry.dataset.builderSection === builderSection &&
+                    entry.dataset.builderType === builderPartType.value &&
+                    (entry.dataset.builderCategory || entry.dataset.builderType) === builderCategory);
+            const nextButton = selectedButton || activeButton || builderPartPalette?.querySelector(
+                `[data-builder-section="${builderSection}"]`);
+            if (nextButton) {
+                builderCategory = nextButton.dataset.builderCategory || nextButton.dataset.builderType;
+                builderPartType.value = nextButton.dataset.builderType;
+                builderPartType.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+            else
+                updateBuilderToolUi();
+        });
+    });
     builderPartPalette?.querySelectorAll("[data-builder-type]").forEach((button) => {
         button.addEventListener("click", () => {
+            builderSection = button.dataset.builderSection || builderSection;
             builderCategory = button.dataset.builderCategory || button.dataset.builderType;
             builderPartType.value = button.dataset.builderType;
             builderPartType.dispatchEvent(new Event("change", { bubbles: true }));

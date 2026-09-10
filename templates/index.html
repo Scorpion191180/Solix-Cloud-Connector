@@ -14,7 +14,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/solix-home-32.png?v=94">
 <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/solix-home-180.png?v=94">
 <link rel="manifest" href="/static/site.webmanifest?v=94">
-<link rel="stylesheet" href="/static/style.css?v=20260910-140">
+<link rel="stylesheet" href="/static/style.css?v=20260910-141">
 
 <script type="importmap">
 {
@@ -36,7 +36,7 @@
 <p id="sceneLoaderStatus">Haus und 3D-Objekte werden vorbereitet …</p>
 <div class="scene-loader-track" aria-hidden="true"><span id="sceneLoaderBar"></span></div>
 <small id="sceneLoaderPercent">0 %</small>
-<small class="scene-loader-version" id="sceneLoaderVersion">Version 140</small>
+<small class="scene-loader-version" id="sceneLoaderVersion">Version 141</small>
 </div>
 </div>
 
@@ -281,20 +281,45 @@ Signalstärke
 <option value="grass">▧ Grasfläche</option>
 <option value="fence">▥ Zaun</option>
 <option value="tree">♣ Baum</option>
+<option value="path">═ Weg &amp; Straße</option>
+<option value="outdoor">♧ Außenleuchte</option>
+<option value="seat">▰ Sitzmöbel</option>
+<option value="table">▱ Tisch</option>
+<option value="storage">▤ Schrank</option>
+<option value="media">▣ TV &amp; Medien</option>
+<option value="bed">▭ Bett</option>
+<option value="kitchen">▥ Küche</option>
+<option value="light">☼ Lampe</option>
 </select>
 </label>
+<nav class="house-builder-catalog-tabs" id="builderCatalogTabs" aria-label="Baubereich wählen">
+<button type="button" data-builder-section="structure" aria-pressed="true"><span aria-hidden="true">⌂</span>Bauen</button>
+<button type="button" data-builder-section="outdoor" aria-pressed="false"><span aria-hidden="true">♧</span>Außen</button>
+<button type="button" data-builder-section="furniture" aria-pressed="false"><span aria-hidden="true">▰</span>Möbel</button>
+<button type="button" data-builder-section="kitchen" aria-pressed="false"><span aria-hidden="true">▥</span>Küche</button>
+<button type="button" data-builder-section="lighting" aria-pressed="false"><span aria-hidden="true">☼</span>Licht</button>
+</nav>
 <fieldset class="house-builder-part-palette" id="builderPartPalette">
-<legend>Bauteil wählen</legend>
-<button type="button" data-builder-type="wall" data-builder-category="wall"><span aria-hidden="true">▰</span>Wand</button>
-<button type="button" data-builder-type="wall" data-builder-category="wallpaper"><span aria-hidden="true">▧</span>Tapete</button>
-<button type="button" data-builder-type="window"><span aria-hidden="true">▣</span>Fenster</button>
-<button type="button" data-builder-type="door"><span aria-hidden="true">▯</span>Tür</button>
-<button type="button" data-builder-type="floor"><span aria-hidden="true">▦</span>Boden</button>
-<button type="button" data-builder-type="support"><span aria-hidden="true">║</span>Stütze</button>
-<button type="button" data-builder-type="roof"><span aria-hidden="true">⌂</span>Dach</button>
-<button type="button" data-builder-type="grass"><span aria-hidden="true">♒</span>Gras</button>
-<button type="button" data-builder-type="fence"><span aria-hidden="true">▥</span>Zaun</button>
-<button type="button" data-builder-type="tree"><span aria-hidden="true">♣</span>Baum</button>
+<legend>Objekt wählen</legend>
+<button type="button" data-builder-section="structure" data-builder-type="wall" data-builder-category="wall"><span aria-hidden="true">▰</span>Wand</button>
+<button type="button" data-builder-section="structure" data-builder-type="wall" data-builder-category="wallpaper"><span aria-hidden="true">▧</span>Tapete</button>
+<button type="button" data-builder-section="structure" data-builder-type="window"><span aria-hidden="true">▣</span>Fenster</button>
+<button type="button" data-builder-section="structure" data-builder-type="door"><span aria-hidden="true">▯</span>Tür</button>
+<button type="button" data-builder-section="structure" data-builder-type="floor"><span aria-hidden="true">▦</span>Boden</button>
+<button type="button" data-builder-section="structure" data-builder-type="support"><span aria-hidden="true">║</span>Stütze</button>
+<button type="button" data-builder-section="structure" data-builder-type="roof"><span aria-hidden="true">⌂</span>Dach</button>
+<button type="button" data-builder-section="outdoor" data-builder-type="grass"><span aria-hidden="true">♒</span>Gras</button>
+<button type="button" data-builder-section="outdoor" data-builder-type="fence"><span aria-hidden="true">▥</span>Zaun</button>
+<button type="button" data-builder-section="outdoor" data-builder-type="tree"><span aria-hidden="true">♣</span>Baum</button>
+<button type="button" data-builder-section="outdoor" data-builder-type="path"><span aria-hidden="true">═</span>Wege</button>
+<button type="button" data-builder-section="outdoor" data-builder-type="outdoor"><span aria-hidden="true">♧</span>Laternen</button>
+<button type="button" data-builder-section="furniture" data-builder-type="seat"><span aria-hidden="true">▰</span>Sitzen</button>
+<button type="button" data-builder-section="furniture" data-builder-type="table"><span aria-hidden="true">▱</span>Tische</button>
+<button type="button" data-builder-section="furniture" data-builder-type="storage"><span aria-hidden="true">▤</span>Schränke</button>
+<button type="button" data-builder-section="furniture" data-builder-type="media"><span aria-hidden="true">▣</span>TV</button>
+<button type="button" data-builder-section="furniture" data-builder-type="bed"><span aria-hidden="true">▭</span>Betten</button>
+<button type="button" data-builder-section="kitchen" data-builder-type="kitchen"><span aria-hidden="true">▥</span>Küchen</button>
+<button type="button" data-builder-section="lighting" data-builder-type="light"><span aria-hidden="true">☼</span>Lampen</button>
 </fieldset>
 <div class="house-builder-grid house-builder-variant-grid">
 <label><span id="builderVariantLabel">Ausführung</span>
@@ -382,7 +407,7 @@ Dein Browser unterstützt die interaktive Hausansicht nicht.
 <span><strong id="houseWasteTitle">Müllabfuhr</strong><small id="houseWasteText">Termine werden geladen</small></span>
 </div>
 <button class="house-reset" id="houseReset" type="button" aria-label="Zur Standardansicht zurückkehren">↺ Standardansicht</button>
-<span class="house-version" id="houseVersion" aria-label="Aktuell geladene Version 140">Version 140</span>
+<span class="house-version" id="houseVersion" aria-label="Aktuell geladene Version 141">Version 141</span>
 <button class="house-clean-shortcut" id="houseCleanShortcut" type="button"
     data-animal-action="clean" aria-label="Hinterlassenschaften vom Grundstück entfernen"
     aria-live="polite" hidden>
@@ -823,8 +848,8 @@ Einstellungen
 
 </div>
 
-<script type="module" src="/static/house.js?v=20260910-140"></script>
-<script src="/static/app.js?v=20260910-140"></script>
+<script type="module" src="/static/house.js?v=20260910-141"></script>
+<script src="/static/app.js?v=20260910-141"></script>
 
 </body>
 </html>

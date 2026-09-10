@@ -1957,6 +1957,49 @@ header p{
     white-space:nowrap!important;
 }
 
+.house-builder-catalog-tabs{
+    display:grid;
+    grid-template-columns:repeat(5,minmax(0,1fr));
+    gap:5px;
+    margin-top:10px;
+    padding:4px;
+    border:1px solid rgba(148,163,184,.24);
+    border-radius:12px;
+    background:rgba(2,6,23,.34);
+}
+
+.house-builder-catalog-tabs button{
+    display:grid;
+    min-width:0;
+    min-height:42px;
+    place-items:center;
+    gap:1px;
+    padding:4px 2px;
+    border:1px solid transparent;
+    border-radius:9px;
+    background:transparent;
+    color:#94a3b8;
+    font-size:7.5px;
+    font-weight:950;
+}
+
+.house-builder-catalog-tabs button span{
+    display:grid;
+    width:22px;
+    height:20px;
+    place-items:center;
+    color:#dbeafe;
+    font-size:18px;
+    line-height:1;
+}
+
+.house-builder-catalog-tabs button.selected{
+    border-color:rgba(94,234,212,.52);
+    background:linear-gradient(145deg,rgba(13,148,136,.38),rgba(15,118,110,.18));
+    color:#f0fdfa;
+    box-shadow:inset 0 1px rgba(255,255,255,.06),0 0 12px rgba(45,212,191,.11);
+}
+
 .house-builder-part-palette{
     display:grid;
     grid-template-columns:repeat(5,minmax(0,1fr));
@@ -1990,7 +2033,16 @@ header p{
     font-weight:900;
 }
 
+.house-builder-part-palette button[hidden]{display:none!important;}
+
 .house-builder-part-palette button span{
+    display:grid;
+    width:calc(100% - 8px);
+    height:27px;
+    place-items:center;
+    border:1px solid rgba(125,211,252,.14);
+    border-radius:7px;
+    background:radial-gradient(circle at 50% 35%,rgba(125,211,252,.15),rgba(15,23,42,.10) 72%);
     color:#f8fafc;
     font-size:24px;
     line-height:.9;
@@ -2002,6 +2054,11 @@ header p{
     background:linear-gradient(145deg,rgba(13,148,136,.46),rgba(15,118,110,.28));
     color:#f0fdfa;
     box-shadow:0 0 0 2px rgba(45,212,191,.13),0 0 16px rgba(45,212,191,.12);
+}
+
+.house-builder-part-palette button.selected span{
+    border-color:rgba(94,234,212,.30);
+    background:radial-gradient(circle at 50% 35%,rgba(94,234,212,.28),rgba(15,118,110,.08) 74%);
 }
 
 .house-builder-variant-grid{

@@ -21,9 +21,9 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260910-140", dashboard)
-        self.assertIn("house.js?v=20260910-140", dashboard)
-        self.assertIn("app.js?v=20260910-140", dashboard)
+        self.assertIn("style.css?v=20260910-141", dashboard)
+        self.assertIn("house.js?v=20260910-141", dashboard)
+        self.assertIn("app.js?v=20260910-141", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
 
@@ -649,7 +649,7 @@ class DashboardSchematicTests(unittest.TestCase):
             "builderLevelDown", "builderLevelUp", "builderLevelName",
             "builderLevelPosition", "builderRoofState",
             "builderLevelSwitcher",
-            "builderWallCutaway", "builderPartPalette",
+            "builderWallCutaway", "builderPartPalette", "builderCatalogTabs",
             "builderVariantLabel", "builderWallLengthRow", "builderWallLength",
             "builderWallLengthValue",
             "builderPanelToggle", "builderRotateLeft", "builderRotateRight",
@@ -662,8 +662,8 @@ class DashboardSchematicTests(unittest.TestCase):
         ):
             self.assertIn(f'id="{element_id}"', dashboard)
 
-        self.assertIn('const APP_BUILD_VERSION = "140"', script)
-        self.assertIn("Version 140", dashboard)
+        self.assertIn('const APP_BUILD_VERSION = "141"', script)
+        self.assertIn("Version 141", dashboard)
         self.assertIn('localStorage.getItem("solix-scene-labels")', script)
         self.assertIn('stage.classList.toggle("show-scene-labels"', script)
         self.assertIn("hasStoredDogPose", script)
@@ -758,6 +758,19 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('id: "grass-lawn"', script)
         self.assertIn('id: "fence-picket"', script)
         self.assertIn('id: "tree-deciduous"', script)
+        for builder_type in (
+            "path", "outdoor", "seat", "table", "storage", "media", "bed", "kitchen", "light",
+        ):
+            self.assertIn(f'data-builder-type="{builder_type}"', dashboard)
+            self.assertIn(f'else if (item.type === "{builder_type}")', script)
+        for section in ("structure", "outdoor", "furniture", "kitchen", "lighting"):
+            self.assertIn(f'data-builder-section="{section}"', dashboard)
+        self.assertIn('id: "window-panoramic"', script)
+        self.assertIn('id: "door-sliding"', script)
+        self.assertIn('id: "path-road-sidewalk"', script)
+        self.assertIn('id: "outdoor-streetlamp"', script)
+        self.assertIn('id: "kitchen-line"', script)
+        self.assertIn('id: "light-pendant"', script)
         self.assertIn('id: "tree-birch"', script)
         self.assertIn('id: "floor-herringbone"', script)
         self.assertIn('id: "floor-marble"', script)

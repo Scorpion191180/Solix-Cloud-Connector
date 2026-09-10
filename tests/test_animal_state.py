@@ -149,6 +149,17 @@ class AnimalStateStoreTests(unittest.TestCase):
                 # Abgeleitete Renderdaten dürfen nicht auf dem Server landen.
                 "roofExtensions": [{"height": 99}],
             }, {
+                "id": "path-one",
+                "type": "path",
+                "variant": "path-road-sidewalk",
+                "color": "#60656a",
+                "level": 0,
+                "x": -3.0,
+                "z": 4.5,
+                "rotation": 0,
+                "width": 6.8,
+                "depth": 4.0,
+            }, {
                 "id": "bad-type",
                 "type": "spaceship",
                 "variant": "unknown",
@@ -163,7 +174,7 @@ class AnimalStateStoreTests(unittest.TestCase):
 
             self.assertEqual(saved["revision"], 1)
             self.assertEqual(unchanged["revision"], 1)
-            self.assertEqual(len(saved["items"]), 1)
+            self.assertEqual(len(saved["items"]), 2)
             self.assertNotIn("roofExtensions", saved["items"][0])
 
             with patch("animal.state.time.time", return_value=1_000_000):
@@ -172,6 +183,8 @@ class AnimalStateStoreTests(unittest.TestCase):
                 animal = restored.get()
             self.assertEqual(shared["items"][0]["id"], "wall-one")
             self.assertEqual(shared["items"][0]["rotation"], 90)
+            self.assertEqual(shared["items"][1]["id"], "path-one")
+            self.assertEqual(shared["items"][1]["type"], "path")
             # Bauänderungen beeinflussen den getrennten Hundezustand nicht.
             self.assertEqual(animal["dog_food"], 55)
 

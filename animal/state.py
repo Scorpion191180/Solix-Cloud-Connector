@@ -37,7 +37,8 @@ MAX_MOTION_ANIMALS = 56
 MAX_BUILDER_ITEMS = 500
 BUILDER_ITEM_TYPES = {
     "wall", "window", "door", "floor", "support", "roof",
-    "grass", "fence", "tree",
+    "grass", "fence", "tree", "path", "outdoor",
+    "seat", "table", "storage", "media", "bed", "kitchen", "light",
 }
 BUILDER_TEXT_FIELDS = {
     "id": 96,
