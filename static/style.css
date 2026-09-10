@@ -386,6 +386,89 @@ header p{
     box-shadow:inset 0 0 0 3px rgba(45,212,191,.7);
 }
 
+.house-builder-magnifier{
+    position:absolute;
+    z-index:32;
+    width:118px;
+    height:118px;
+    overflow:hidden;
+    pointer-events:none;
+    border:3px solid rgba(94,234,212,.96);
+    border-radius:50%;
+    background:#07111f;
+    box-shadow:
+        0 15px 34px rgba(2,6,23,.62),
+        0 0 0 4px rgba(7,15,27,.72),
+        0 0 24px rgba(45,212,191,.38);
+    transform:translateZ(0);
+    animation:builder-magnifier-in .14s ease-out;
+}
+
+.house-builder-magnifier[hidden]{display:none!important;}
+
+.house-builder-magnifier canvas{
+    display:block;
+    width:100%;
+    height:100%;
+    border-radius:50%;
+}
+
+.house-builder-magnifier-crosshair,
+.house-builder-magnifier-crosshair::before,
+.house-builder-magnifier-crosshair::after{
+    position:absolute;
+    pointer-events:none;
+    content:"";
+}
+
+.house-builder-magnifier-crosshair{
+    inset:50% auto auto 50%;
+    width:15px;
+    height:15px;
+    border:2px solid #fff;
+    border-radius:50%;
+    box-shadow:0 0 0 2px rgba(15,23,42,.62),0 0 9px rgba(94,234,212,.92);
+    transform:translate(-50%,-50%);
+}
+
+.house-builder-magnifier-crosshair::before{
+    top:50%;
+    left:-8px;
+    width:27px;
+    height:2px;
+    background:#fff;
+    box-shadow:0 1px 1px rgba(2,6,23,.9);
+    transform:translateY(-50%);
+}
+
+.house-builder-magnifier-crosshair::after{
+    top:-8px;
+    left:50%;
+    width:2px;
+    height:27px;
+    background:#fff;
+    box-shadow:1px 0 1px rgba(2,6,23,.9);
+    transform:translateX(-50%);
+}
+
+.house-builder-magnifier small{
+    position:absolute;
+    right:13px;
+    bottom:9px;
+    padding:2px 5px;
+    border-radius:999px;
+    background:rgba(7,15,27,.76);
+    color:#ccfbf1;
+    font-size:8px;
+    font-weight:950;
+    letter-spacing:.04em;
+}
+
+@keyframes builder-magnifier-in{
+    from{opacity:0;transform:scale(.82);}
+    to{opacity:1;transform:scale(1);}
+}
+
 .house-scene-label{
     position:absolute;
     z-index:4;

@@ -21,9 +21,9 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260910-141", dashboard)
-        self.assertIn("house.js?v=20260910-141", dashboard)
-        self.assertIn("app.js?v=20260910-141", dashboard)
+        self.assertIn("style.css?v=20260910-142", dashboard)
+        self.assertIn("house.js?v=20260910-142", dashboard)
+        self.assertIn("app.js?v=20260910-142", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
 
@@ -52,7 +52,14 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('id="houseReset"', dashboard)
         self.assertIn('id="builderTouchBuild"', dashboard)
         self.assertIn('id="builderTouchCamera"', dashboard)
+        self.assertIn('id="builderMagnifier"', dashboard)
+        self.assertIn('id="builderMagnifierCanvas"', dashboard)
         self.assertIn('addEventListener("pointermove"', script)
+        self.assertIn('function showBuilderMagnifier(event)', script)
+        self.assertIn('function paintBuilderMagnifier()', script)
+        self.assertIn('state.pointerMode === "builder-place"', script)
+        self.assertIn('event.pointerType === "touch"', script)
+        self.assertIn('.house-builder-magnifier', stylesheet)
         self.assertIn('addEventListener("wheel"', script)
         self.assertIn("pointerDistance", script)
         self.assertIn("cameraNavigation", script)
@@ -658,12 +665,12 @@ class DashboardSchematicTests(unittest.TestCase):
             "builderSelectionRotateRight", "builderSelectionDelete",
             "sceneLoader", "sceneLoaderBar", "sceneLoaderStatus", "sceneLoaderPercent",
             "sceneLoaderVersion",
-            "sceneLabelToggle", "houseVersion",
+            "sceneLabelToggle", "houseVersion", "builderMagnifier", "builderMagnifierCanvas",
         ):
             self.assertIn(f'id="{element_id}"', dashboard)
 
-        self.assertIn('const APP_BUILD_VERSION = "141"', script)
-        self.assertIn("Version 141", dashboard)
+        self.assertIn('const APP_BUILD_VERSION = "142"', script)
+        self.assertIn("Version 142", dashboard)
         self.assertIn('localStorage.getItem("solix-scene-labels")', script)
         self.assertIn('stage.classList.toggle("show-scene-labels"', script)
         self.assertIn("hasStoredDogPose", script)
@@ -710,6 +717,8 @@ class DashboardSchematicTests(unittest.TestCase):
         self.assertIn('function snapOpeningToWall(item, rawX, rawZ, onlyWallId = null)', script)
         self.assertIn('function updateWallPreview(point)', script)
         self.assertIn('function finishWallDrawing(cancelled = false)', script)
+        self.assertIn('bleibt zum weiteren Aufziehen aktiv', script)
+        self.assertIn('bleibt für die nächste Platzierung ausgewählt', script)
         self.assertIn('fenceDrawPreview.name = "Zaun-Zeichenvorschau"', script)
         self.assertIn('function showFenceDrawPreview(length, center, rotation)', script)
         self.assertIn('["wall", "fence", "floor"].includes(drawType)', script)

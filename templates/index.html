@@ -14,7 +14,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/solix-home-32.png?v=94">
 <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/solix-home-180.png?v=94">
 <link rel="manifest" href="/static/site.webmanifest?v=94">
-<link rel="stylesheet" href="/static/style.css?v=20260910-141">
+<link rel="stylesheet" href="/static/style.css?v=20260910-142">
 
 <script type="importmap">
 {
@@ -36,7 +36,7 @@
 <p id="sceneLoaderStatus">Haus und 3D-Objekte werden vorbereitet …</p>
 <div class="scene-loader-track" aria-hidden="true"><span id="sceneLoaderBar"></span></div>
 <small id="sceneLoaderPercent">0 %</small>
-<small class="scene-loader-version" id="sceneLoaderVersion">Version 141</small>
+<small class="scene-loader-version" id="sceneLoaderVersion">Version 142</small>
 </div>
 </div>
 
@@ -389,6 +389,11 @@ Signalstärke
 >
 Dein Browser unterstützt die interaktive Hausansicht nicht.
 </canvas>
+<div class="house-builder-magnifier" id="builderMagnifier" aria-hidden="true" hidden>
+<canvas id="builderMagnifierCanvas" width="240" height="240"></canvas>
+<span class="house-builder-magnifier-crosshair" aria-hidden="true"></span>
+<small aria-hidden="true">2,2×</small>
+</div>
 <div class="house-gesture" id="houseInstructions">Ziehen: drehen · Zwei Finger/Rechtsklick: verschieben · Zoom: Details</div>
 <div class="house-weather" id="houseWeather" aria-live="polite">
 <div class="house-weather-main">
@@ -407,7 +412,7 @@ Dein Browser unterstützt die interaktive Hausansicht nicht.
 <span><strong id="houseWasteTitle">Müllabfuhr</strong><small id="houseWasteText">Termine werden geladen</small></span>
 </div>
 <button class="house-reset" id="houseReset" type="button" aria-label="Zur Standardansicht zurückkehren">↺ Standardansicht</button>
-<span class="house-version" id="houseVersion" aria-label="Aktuell geladene Version 141">Version 141</span>
+<span class="house-version" id="houseVersion" aria-label="Aktuell geladene Version 142">Version 142</span>
 <button class="house-clean-shortcut" id="houseCleanShortcut" type="button"
     data-animal-action="clean" aria-label="Hinterlassenschaften vom Grundstück entfernen"
     aria-live="polite" hidden>
@@ -848,8 +853,8 @@ Einstellungen
 
 </div>
 
-<script type="module" src="/static/house.js?v=20260910-141"></script>
-<script src="/static/app.js?v=20260910-141"></script>
+<script type="module" src="/static/house.js?v=20260910-142"></script>
+<script src="/static/app.js?v=20260910-142"></script>
 
 </body>
 </html>

@@ -64,6 +64,8 @@ const builderSelectionRotateRight = document.getElementById("builderSelectionRot
 const builderSelectionDelete = document.getElementById("builderSelectionDelete");
 const builderTouchBuild = document.getElementById("builderTouchBuild");
 const builderTouchCamera = document.getElementById("builderTouchCamera");
+const builderMagnifier = document.getElementById("builderMagnifier");
+const builderMagnifierCanvas = document.getElementById("builderMagnifierCanvas");
 const houseInstructions = document.getElementById("houseInstructions");
 const menuCleanStatus = document.getElementById("houseCleanStatus");
 const houseCleanShortcut = document.getElementById("houseCleanShortcut");
@@ -84,7 +86,7 @@ const sceneLoaderBar = document.getElementById("sceneLoaderBar");
 const sceneLoaderStatus = document.getElementById("sceneLoaderStatus");
 const sceneLoaderPercent = document.getElementById("sceneLoaderPercent");
 const sceneLoaderVersion = document.getElementById("sceneLoaderVersion");
-const APP_BUILD_VERSION = "141";
+const APP_BUILD_VERSION = "142";
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const INTERIOR_VIEW_ENABLED = false;
 
@@ -10765,7 +10767,7 @@ function createHouseBuilder() {
             builder.items.push(item);
             addItemObject(item);
             save();
-            selectItem(item.id, `Boden aus ${width * depth} einzelnen 1 × 1-m-Feldern gesetzt.`);
+            selectItem(null, `Boden aus ${width * depth} einzelnen 1 × 1-m-Feldern gesetzt. Boden bleibt zum weiteren Aufziehen aktiv.`);
             refreshLevelStructures();
             return true;
         }
@@ -10799,7 +10801,7 @@ function createHouseBuilder() {
         const placementMessage = drawType === "wall" && connectedCorners ?
             `Wand mit ${item.length.toLocaleString("de-DE")} m Länge und ${connectedCorners} eingerasteten ${connectedCorners === 1 ? "Ecke" : "Ecken"} gesetzt.` :
             `${drawType === "wall" ? "Freie " : ""}${itemLabel} mit ${item.length.toLocaleString("de-DE")} m Länge gesetzt.`;
-        selectItem(item.id, drawType === "wall" ? `${placementMessage} ${structureHint(assessment)}` : placementMessage);
+        selectItem(null, `${drawType === "wall" ? `${placementMessage} ${structureHint(assessment)}` : placementMessage} ${itemLabel} bleibt zum weiteren Aufziehen aktiv.`);
         refreshLevelStructures();
         renderer.shadowMap.needsUpdate = true;
         return true;
@@ -10923,7 +10925,11 @@ function createHouseBuilder() {
         else
             addItemObject(item);
         save();
-        selectItem(item.id, `${variant.label}${snapped?.wallId ? " an Wand eingerastet" : " gesetzt"}.`);
+        const placementMessage = `${variant.label}${snapped?.wallId ? " an Wand eingerastet" : " gesetzt"}.`;
+        if (item.type === "roof")
+            selectItem(item.id, placementMessage);
+        else
+            selectItem(null, `${placementMessage} ${variant.label} bleibt für die nächste Platzierung ausgewählt.`);
         refreshLevelStructures();
         renderer.shadowMap.needsUpdate = true;
         return true;
@@ -14491,6 +14497,93 @@ function finishSceneInteractionSoon() {
         stage.classList.remove("is-interacting"), 180);
 }
 
+const builderMagnifierContext = builderMagnifierCanvas?.getContext("2d", { alpha: false });
+let builderMagnifierPointer = null;
+
+function canShowBuilderMagnifier(event) {
+    return Boolean(
+        builderMagnifier && builderMagnifierCanvas && builderMagnifierContext &&
+        event?.pointerType === "touch" && houseBuilder.active &&
+        !houseBuilder.navigationOnly() && state.pointers.size <= 1
+    );
+}
+
+function positionBuilderMagnifier(event) {
+    const stageRect = stage.getBoundingClientRect();
+    const size = 118;
+    const gap = 24;
+    const localX = event.clientX - stageRect.left;
+    const localY = event.clientY - stageRect.top;
+    const onLeftHalf = localX < stageRect.width / 2;
+    let left = onLeftHalf ? localX + gap : localX - size - gap;
+    let top = localY - size - 28;
+    if (top < 8)
+        top = localY + 30;
+    left = THREE.MathUtils.clamp(left, 8, Math.max(8, stageRect.width - size - 8));
+    top = THREE.MathUtils.clamp(top, 8, Math.max(8, stageRect.height - size - 8));
+    builderMagnifier.style.left = `${left}px`;
+    builderMagnifier.style.top = `${top}px`;
+    builderMagnifier.dataset.side = onLeftHalf ? "right" : "left";
+}
+
+function showBuilderMagnifier(event) {
+    if (!canShowBuilderMagnifier(event)) {
+        hideBuilderMagnifier();
+        return;
+    }
+    builderMagnifierPointer = { clientX: event.clientX, clientY: event.clientY };
+    positionBuilderMagnifier(event);
+    builderMagnifier.hidden = false;
+    stage.dataset.builderMagnifier = "visible";
+}
+
+function hideBuilderMagnifier() {
+    builderMagnifierPointer = null;
+    if (builderMagnifier)
+        builderMagnifier.hidden = true;
+    stage.dataset.builderMagnifier = "hidden";
+}
+
+function paintBuilderMagnifier() {
+    if (!builderMagnifierPointer || builderMagnifier?.hidden || !builderMagnifierContext)
+        return;
+    const canvasRect = canvas.getBoundingClientRect();
+    if (!canvasRect.width || !canvasRect.height)
+        return;
+    const localX = THREE.MathUtils.clamp(
+        builderMagnifierPointer.clientX - canvasRect.left, 0, canvasRect.width);
+    const localY = THREE.MathUtils.clamp(
+        builderMagnifierPointer.clientY - canvasRect.top, 0, canvasRect.height);
+    const cropSize = 54;
+    const half = cropSize / 2;
+    const sourceLeft = Math.max(0, localX - half);
+    const sourceTop = Math.max(0, localY - half);
+    const sourceRight = Math.min(canvasRect.width, localX + half);
+    const sourceBottom = Math.min(canvasRect.height, localY + half);
+    const sourceScaleX = canvas.width / canvasRect.width;
+    const sourceScaleY = canvas.height / canvasRect.height;
+    const destinationScale = builderMagnifierCanvas.width / cropSize;
+    builderMagnifierContext.fillStyle = "#07111f";
+    builderMagnifierContext.fillRect(0, 0,
+        builderMagnifierCanvas.width, builderMagnifierCanvas.height);
+    try {
+        builderMagnifierContext.drawImage(
+            canvas,
+            sourceLeft * sourceScaleX,
+            sourceTop * sourceScaleY,
+            (sourceRight - sourceLeft) * sourceScaleX,
+            (sourceBottom - sourceTop) * sourceScaleY,
+            (sourceLeft - (localX - half)) * destinationScale,
+            (sourceTop - (localY - half)) * destinationScale,
+            (sourceRight - sourceLeft) * destinationScale,
+            (sourceBottom - sourceTop) * destinationScale
+        );
+    }
+    catch (_error) {
+        // Einzelne externe 3D-Texturen dürfen die Bedienung nie blockieren.
+    }
+}
+
 canvas.addEventListener("pointerdown", (event) => {
     beginSceneInteraction();
     houseBuilder.hoverPointer(event);
@@ -14505,12 +14598,15 @@ canvas.addEventListener("pointerdown", (event) => {
         const mouse = event.pointerType === "mouse";
         const builderNavigation = houseBuilder.active && houseBuilder.navigationOnly();
         state.pointerMode = builderDrag ? "builder-drag" :
+            event.pointerType === "touch" && houseBuilder.active && !builderNavigation ? "builder-place" :
             mouse && houseBuilder.active && event.button === 2 ? "rotate" :
                 mouse && (event.button === 1 || (builderNavigation && event.button === 0) ||
                     (!houseBuilder.active && event.button === 2)) ? "pan" : "rotate";
         state.pointerMoved = false;
+        showBuilderMagnifier(event);
     }
     else if (state.pointers.size === 2) {
+        hideBuilderMagnifier();
         houseBuilder.endPointer(true);
         state.pinchStartDistance = pointerDistance();
         state.pinchStartZoom = state.targetZoom;
@@ -14532,7 +14628,9 @@ canvas.addEventListener("pointermove", (event) => {
     if (!state.pointers.has(event.pointerId))
         return;
     state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    showBuilderMagnifier(event);
     if (state.pointers.size >= 2) {
+        hideBuilderMagnifier();
         const distance = pointerDistance();
         const center = pointerCenter();
         const nextZoom = state.pinchStartDistance > 0 ?
@@ -14570,6 +14668,11 @@ canvas.addEventListener("pointermove", (event) => {
         state.lastPointerY = event.clientY;
         return;
     }
+    if (state.pointerMode === "builder-place") {
+        state.lastPointerX = event.clientX;
+        state.lastPointerY = event.clientY;
+        return;
+    }
     if (state.pointerMode === "pan") {
         const limits = activePanLimits();
         const panSpeed = (houseBuilder.active ? 0.018 : 0.012) /
@@ -14595,8 +14698,10 @@ function finishPointer(event) {
     if (!state.pointers.has(event.pointerId))
         return;
     const handledBuilderPointer = houseBuilder.endPointer(event.type === "pointercancel");
+    const touchBuilderPlacement = state.pointerMode === "builder-place";
     const placeBuilderPart = houseBuilder.active && state.pointers.size === 1 &&
-        !handledBuilderPointer && !state.pointerMoved && event.button === 0 && event.type === "pointerup";
+        !handledBuilderPointer && (touchBuilderPlacement || !state.pointerMoved) &&
+        event.button === 0 && event.type === "pointerup";
     const selectScenePart = !houseBuilder.active && state.pointers.size === 1 &&
         !state.pointerMoved && event.button === 0 && event.type === "pointerup";
     if (canvas.hasPointerCapture(event.pointerId))
@@ -14626,13 +14731,16 @@ function finishPointer(event) {
         else
             closeSceneCards();
     }
+    hideBuilderMagnifier();
 }
 
 canvas.addEventListener("pointerup", finishPointer);
 canvas.addEventListener("pointercancel", finishPointer);
 canvas.addEventListener("pointerleave", () => {
-    if (!state.pointers.size)
+    if (!state.pointers.size) {
         houseBuilder.leavePointer();
+        hideBuilderMagnifier();
+    }
 });
 stage.addEventListener("touchmove", (event) => {
     // Menüs und Formulare müssen auf kleinen iPhones eigenständig scrollbar
@@ -14949,6 +15057,7 @@ function animate(time) {
     if (!houseBuilder.active && renderedFrame % renderProfile.labelInterval === 0)
         updateLabelPositions();
     renderer.render(scene, camera);
+    paintBuilderMagnifier();
 }
 
 resize();
