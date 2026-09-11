@@ -123,14 +123,25 @@ class SolixOutputTests(unittest.IsolatedAsyncioTestCase):
     async def test_existing_grid_limit_is_verified_without_rewriting(self):
         client = self.make_client()
         client.api.grid_settings.update(
-            {"feed_switch": 1, "cached_power": 450, "feed_upper_limit": 450}
+            {"feed_switch": 1, "cached_power": 0, "feed_upper_limit": 450}
         )
 
-        await client.set_solarbank_output_power(200)
+        result = await client.set_solarbank_output_power(200)
 
         self.assertEqual(
             [call[0] for call in client.api.grid_calls],
             ["get"],
+        )
+        self.assertEqual(result["grid_output_limit_w"], 450)
+
+    def test_unlimited_sentinel_falls_back_to_cached_app_value(self):
+        client = self.make_client()
+
+        self.assertEqual(
+            client._gen4_grid_limit_w(
+                {"cached_power": 250, "feed_upper_limit": 4294967295}
+            ),
+            250,
         )
 
     async def test_output_is_not_changed_when_grid_limit_verification_fails(self):

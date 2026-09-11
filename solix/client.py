@@ -363,7 +363,7 @@ class SolixClient:
         current = await self._read_gen4_grid_export_settings_locked(
             site_id=site_id, serial=serial
         )
-        required = {"feed_switch", "cached_power", "feed_upper_limit"}
+        required = {"feed_switch", "feed_upper_limit"}
         if not required.issubset(current):
             raise RuntimeError(
                 "Netz-Leistungsbegrenzung hat ein unbekanntes Datenformat"
@@ -397,10 +397,7 @@ class SolixClient:
                     "Netz-Leistungsbegrenzung wurde nicht korrekt übernommen"
                 )
 
-        if (
-            self._optional_number(verified.get("cached_power")) != limit_w
-            or self._optional_number(verified.get("feed_upper_limit")) != limit_w
-        ):
+        if self._gen4_grid_limit_w(verified) != limit_w:
             result = await self.api.set_device_parm(
                 siteId=site_id,
                 deviceSn=serial,
@@ -422,8 +419,7 @@ class SolixClient:
             )
 
         if (
-            self._optional_number(verified.get("cached_power")) != limit_w
-            or self._optional_number(verified.get("feed_upper_limit")) != limit_w
+            self._gen4_grid_limit_w(verified) != limit_w
             or self._as_switch_state(verified.get("feed_switch")) is not True
         ):
             _LOGGER.warning(
@@ -1121,8 +1117,8 @@ class SolixClient:
             "battery_temperature_history": temperature_history,
             "system_output_power": to_int(solarbank.get("output_power")),
             "manual_output_preset_w": self._manual_output_preset_locked(solarbank),
-            "grid_output_limit_w": self._optional_number(
-                self._gen4_grid_export_settings.get("cached_power")
+            "grid_output_limit_w": self._gen4_grid_limit_w(
+                self._gen4_grid_export_settings
             ),
             "grid_export_enabled": self._as_switch_state(
                 self._gen4_grid_export_settings.get("feed_switch")
@@ -1260,6 +1256,19 @@ class SolixClient:
         if text in {"0", "off", "false", "disabled"}:
             return False
         return None
+
+    @classmethod
+    def _gen4_grid_limit_w(cls, settings: dict[str, Any]) -> int | float | None:
+        """Return AE103's effective limit, ignoring its unlimited sentinel.
+
+        ``cached_power`` is only the value remembered by the mobile-app UI
+        and can remain stale after a successful cloud write. The separately
+        returned ``feed_upper_limit`` is the effective device ceiling.
+        """
+        upper_limit = cls._optional_number(settings.get("feed_upper_limit"))
+        if upper_limit is not None and upper_limit != 0xFFFFFFFF:
+            return upper_limit
+        return cls._optional_number(settings.get("cached_power"))
 
     @staticmethod
     def _optional_number(value: Any) -> int | float | None:
@@ -1488,9 +1497,7 @@ class SolixClient:
                 "manual_output_preset_w": (
                     power_w if observed is None else observed
                 ),
-                "grid_output_limit_w": self._optional_number(
-                    grid_settings.get("cached_power")
-                ),
+                "grid_output_limit_w": self._gen4_grid_limit_w(grid_settings),
                 "grid_export_enabled": self._as_switch_state(
                     grid_settings.get("feed_switch")
                 ),
