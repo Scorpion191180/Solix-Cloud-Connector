@@ -102,7 +102,7 @@ class ExportPolicyTests(unittest.TestCase):
         self.assertEqual(decision.reason, "battery_at_or_below_stop_soc")
         self.assertFalse(decision.cycle_active)
 
-    def test_active_cycle_follows_lower_pv_instead_of_stopping(self):
+    def test_active_cycle_uses_battery_buffer_when_pv_falls(self):
         decision = decide_export_output(
             enabled=True,
             battery_percent=96,
@@ -111,8 +111,9 @@ class ExportPolicyTests(unittest.TestCase):
             cycle_active=True,
         )
 
-        self.assertEqual(decision.target_w, 200)
-        self.assertEqual(decision.reason, "pv_output_adjusted")
+        self.assertIsNone(decision.target_w)
+        self.assertEqual(decision.reason, "battery_buffer_already_holding")
+        self.assertTrue(decision.cycle_active)
 
     def test_active_cycle_survives_zero_pv_until_stop_soc(self):
         decision = decide_export_output(
@@ -123,17 +124,31 @@ class ExportPolicyTests(unittest.TestCase):
             cycle_active=True,
         )
 
-        self.assertEqual(decision.target_w, 0)
+        self.assertIsNone(decision.target_w)
+        self.assertEqual(decision.reason, "battery_buffer_already_holding")
         self.assertTrue(decision.cycle_active)
 
         resumed = decide_export_output(
             enabled=True,
             battery_percent=96,
             pv_power_w=120,
-            current_output_w=0,
+            current_output_w=200,
             cycle_active=decision.cycle_active,
         )
-        self.assertEqual(resumed.target_w, 120)
+        self.assertIsNone(resumed.target_w)
+        self.assertEqual(resumed.reason, "battery_buffer_already_holding")
+
+    def test_active_cycle_can_increase_output_when_pv_rises(self):
+        decision = decide_export_output(
+            enabled=True,
+            battery_percent=96,
+            pv_power_w=420,
+            current_output_w=200,
+            cycle_active=True,
+        )
+
+        self.assertEqual(decision.target_w, 420)
+        self.assertEqual(decision.reason, "pv_output_increased")
 
     def test_unknown_telemetry_only_stops_an_active_output(self):
         active = decide_export_output(

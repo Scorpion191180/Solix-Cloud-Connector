@@ -24,7 +24,7 @@ class FakeOutputApi:
 
     async def set_device_parm(self, **kwargs):
         self.grid_calls.append(("set", kwargs))
-        self.grid_settings = dict(kwargs["paramData"])
+        self.grid_settings.update(kwargs["paramData"])
         return {}
 
     async def set_sb2_home_load(self, **kwargs):
@@ -87,9 +87,10 @@ class SolixOutputTests(unittest.IsolatedAsyncioTestCase):
         )
         set_call = client.api.grid_calls[1][1]
         self.assertEqual(set_call["paramType"], "28")
-        self.assertEqual(set_call["paramData"]["cached_power"], 450)
-        self.assertEqual(set_call["paramData"]["feed_switch"], 1)
-        self.assertEqual(set_call["paramData"]["feed_upper_limit"], 4294967295)
+        self.assertEqual(
+            set_call["paramData"],
+            {"feed_switch": 1, "cached_power": 450},
+        )
         self.assertEqual(result["manual_output_preset_w"], 450)
         self.assertEqual(result["grid_output_limit_w"], 450)
         self.assertTrue(result["grid_export_enabled"])

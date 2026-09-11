@@ -85,9 +85,9 @@ class ExportControllerTests(unittest.IsolatedAsyncioTestCase):
         solix.soc = 90
         stopped = await controller.evaluate()
 
-        self.assertEqual(solix.commands, [450, 200, 0])
+        self.assertEqual(solix.commands, [450, 0])
         self.assertEqual(started["last_action"], "set_450_w")
-        self.assertEqual(adjusted["last_action"], "set_200_w")
+        self.assertEqual(adjusted["reason"], "battery_buffer_already_holding")
         self.assertEqual(stopped["last_action"], "set_0_w")
 
     async def test_cycle_resumes_after_zero_pv_without_returning_to_98(self):
@@ -101,7 +101,8 @@ class ExportControllerTests(unittest.IsolatedAsyncioTestCase):
         solix.pv = 125
         status = await controller.evaluate()
 
-        self.assertEqual(solix.commands, [200, 0, 125])
+        self.assertEqual(solix.commands, [200])
+        self.assertEqual(status["reason"], "battery_buffer_already_holding")
         self.assertTrue(status["cycle_active"])
 
     async def test_full_bank_releases_output_when_pv_is_hidden(self):

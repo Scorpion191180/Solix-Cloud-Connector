@@ -33,12 +33,12 @@ def decide_export_output(
     stop_soc: int = 90,
     max_output_w: int = 450,
 ) -> ExportDecision:
-    """Track available PV after the start SOC until the lower stop SOC.
+    """Export surplus and bridge PV dips from 98 down to 90 percent SOC.
 
     The active cycle is an explicit latch instead of being inferred from the
-    current output.  That matters when PV temporarily reaches 0 W: the cycle
-    must resume tracking PV without waiting for the battery to reach 98 % a
-    second time.
+    current output. Once active, the target can rise with newly available PV,
+    but is not lowered for a short PV dip. The battery may bridge that gap
+    until the hard 90-percent stop. Grid import is always blocked separately.
     """
     if not enabled:
         return ExportDecision(None, "automation_disabled", False)
@@ -90,9 +90,10 @@ def decide_export_output(
         return ExportDecision(None, "waiting_for_start_soc", False)
 
     # A full Solarbank can curtail its PV inputs and consequently report 0 W,
-    # even though sunlight is still available. Keeping the manual output at
-    # the configured ceiling opens that path again. As soon as Anker reports
-    # a positive PV value, the output follows the measured input as before.
+    # even though sunlight is still available. Opening the configured ceiling
+    # lets PV flow again. During an active cycle, keep the greatest output
+    # already reached so the intentional 8-percent battery buffer smooths
+    # short sunlight fluctuations. Never raise above measured PV after start.
     pv_hidden_by_full_bank = (
         battery_percent >= start_soc
         and (pv_power_w is None or pv_power_w <= 0)
@@ -103,18 +104,29 @@ def decide_export_output(
     else:
         # Whole watts are required by the Anker setting. Flooring guarantees
         # that a visible PV value is never exceeded.
-        target_w = min(max_output_w, max(0, int(pv_power_w or 0)))
-        action_reason = (
-            "export_cycle_started" if just_started else "pv_output_adjusted"
+        pv_target_w = min(max_output_w, max(0, int(pv_power_w or 0)))
+        previous_target_w = (
+            min(max_output_w, max(0, int(current_output_w or 0)))
+            if cycle_active
+            else 0
         )
+        target_w = max(pv_target_w, previous_target_w)
+        if just_started:
+            action_reason = "export_cycle_started"
+        elif target_w > previous_target_w:
+            action_reason = "pv_output_increased"
+        else:
+            action_reason = "battery_buffer_holds_output"
     if current_output_w == target_w:
+        if pv_hidden_by_full_bank:
+            already_reason = "full_bank_export_already_released"
+        elif action_reason == "battery_buffer_holds_output":
+            already_reason = "battery_buffer_already_holding"
+        else:
+            already_reason = "pv_output_already_matched"
         return ExportDecision(
             None,
-            (
-                "full_bank_export_already_released"
-                if pv_hidden_by_full_bank
-                else "pv_output_already_matched"
-            ),
+            already_reason,
             True,
         )
 

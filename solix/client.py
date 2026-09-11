@@ -31,6 +31,7 @@ SMARTPLUG_TELEMETRY_WAIT_SECONDS = 1.0
 SOLARBANK_TELEMETRY_WAIT_SECONDS = 1.2
 GEN4_GRID_EXPORT_PARAM_TYPE = "28"
 GEN4_GRID_EXPORT_REFRESH_SECONDS = 5 * 60
+GEN4_GRID_EXPORT_VERIFY_WAIT_SECONDS = 1.0
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -368,9 +369,12 @@ class SolixClient:
                 "Netz-Leistungsbegrenzung hat ein unbekanntes Datenformat"
             )
 
-        desired = dict(current)
-        desired["feed_switch"] = 1
-        desired["cached_power"] = limit_w
+        # Param type 28 also contains read-only/default values such as
+        # ``feed_upper_limit``.  The Anker app updates only the two mutable
+        # fields; echoing the complete read response can make AE103 accept the
+        # request without applying it.  Use the same narrow PATCH-style
+        # payload here.
+        desired = {"feed_switch": 1, "cached_power": limit_w}
         if (
             self._optional_number(current.get("cached_power")) != limit_w
             or self._as_switch_state(current.get("feed_switch")) is not True
@@ -385,6 +389,9 @@ class SolixClient:
                 raise RuntimeError(
                     "Netz-Leistungsbegrenzung wurde nicht bestätigt"
                 )
+            # The cloud write is asynchronous. An immediate GET can still
+            # return the old value even though the command was accepted.
+            await asyncio.sleep(GEN4_GRID_EXPORT_VERIFY_WAIT_SECONDS)
 
         verified = await self._read_gen4_grid_export_settings_locked(
             site_id=site_id, serial=serial
@@ -393,6 +400,13 @@ class SolixClient:
             self._optional_number(verified.get("cached_power")) != limit_w
             or self._as_switch_state(verified.get("feed_switch")) is not True
         ):
+            _LOGGER.warning(
+                "Gen-4 grid-export verification mismatch: requested=%sW, "
+                "reported=%sW, enabled=%s",
+                limit_w,
+                self._optional_number(verified.get("cached_power")),
+                self._as_switch_state(verified.get("feed_switch")),
+            )
             raise RuntimeError(
                 "Netz-Leistungsbegrenzung wurde nicht korrekt übernommen"
             )

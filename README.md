@@ -24,15 +24,15 @@ der Anker Smart Plug über die von `anker-solix-api` unterstützte MQTT-Methode.
 
 Eine zweite, von der Audi-Ladeautomatik unabhängige Automatik kann die
 benutzerdefinierte AC-Ausgabe der ausgewählten **Solarbank 4 (AE103)** steuern.
-Ab 98 % beginnt ein Einspeisezyklus. Die Ausgabe folgt dann der aktuell
-gemessenen PV-Leistung, ist aber hart auf 450 W begrenzt: 200 W PV ergeben
-200 W Ausgabe, 700 W PV ergeben höchstens 450 W Ausgabe. Bei 90 % endet der
-Zyklus und die Ausgabe wird auf 0 W gesetzt, damit die Solarbank wieder lädt.
-Meldet eine volle, abregelnde Solarbank 0 W PV, werden trotzdem 450 W
-freigegeben, damit die PV-Leistung wieder abfließen kann. Zwischen 98 und
-90 Prozent darf der Speicher kurze Schwankungen der Sonneneinstrahlung aus
-seinem bewusst vorgesehenen 8-Prozent-Puffer überbrücken. Bei 90 Prozent wird
-die Ausgabe beendet. Ein angeschlossener, noch nicht voller Audi hat dabei
+Ab 98 % beginnt ein Einspeisezyklus. Beim Start folgt die Ausgabe der aktuell
+gemessenen PV-Leistung und bleibt hart auf 450 W begrenzt: 200 W PV ergeben
+zunächst 200 W Ausgabe, 700 W PV ergeben höchstens 450 W Ausgabe. Steigt die
+PV-Leistung, darf die Ausgabe mitsteigen. Fällt die Sonneneinstrahlung danach
+kurz ab, hält die Solarbank die bereits erreichte Ausgabe aus ihrem bewusst
+vorgesehenen 8-Prozent-Puffer. Bei 90 % endet der Zyklus sofort und die Ausgabe
+wird auf 0 W gesetzt. Meldet eine volle, abregelnde Solarbank 0 W PV, werden
+trotzdem 450 W freigegeben, damit die PV-Leistung wieder abfließen kann. Ein
+angeschlossener, noch nicht voller Audi hat dabei
 Vorrang; ein voller oder nicht angeschlossener Audi blockiert den Export nicht.
 
 Die Einstellung ist eine AC-/Hausausgabe, keine Messung am öffentlichen

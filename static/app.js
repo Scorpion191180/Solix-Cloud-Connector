@@ -674,7 +674,11 @@ async function updateAutomation() {
             full_bank_export_already_released: "Solarbank voll: Die 450-W-Freigabe ist aktiv.",
             audi_charging_has_priority: "Der angeschlossene Audi hat Ladepriorität; die Netzeinspeisung wartet.",
             pv_output_adjusted: "Ausgabe wurde an die aktuelle PV-Leistung angepasst.",
+            pv_output_increased: "Die Ausgabe wurde mit der gestiegenen PV-Leistung erhöht.",
+            battery_buffer_holds_output: "Der 98–90-%-Puffer gleicht die aktuelle PV-Schwankung aus.",
+            battery_buffer_already_holding: "Der 98–90-%-Puffer hält die Ausgabe trotz PV-Schwankung stabil.",
             pv_output_already_matched: "Ausgabe entspricht bereits der aktuellen PV-Leistung.",
+            grid_import_blocks_export: "Netzbezug erkannt: Die Ausgabe bleibt zur Sicherheit ausgeschaltet.",
             battery_at_or_below_stop_soc: "Ausgabe wegen erreichtem Stopp-Ladestand beendet.",
             solix_telemetry_unknown: "Keine sicheren Solix-Livedaten; Ausgabe wird nicht gestartet.",
         };
