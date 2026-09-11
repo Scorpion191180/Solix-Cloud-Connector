@@ -25,6 +25,7 @@ def decide_export_output(
     enabled: bool,
     battery_percent: int | float | None,
     pv_power_w: int | float | None,
+    grid_import_w: int | float | None = None,
     current_output_w: int | float | None,
     audi_charge_priority: bool = False,
     cycle_active: bool = False,
@@ -64,6 +65,16 @@ def decide_export_output(
             0 if current_output_w != 0 else None,
             "audi_charging_has_priority",
             False,
+        )
+
+    # Never command an AC output while the Solarbank reports grid charging.
+    # The 98->90 percent battery buffer may bridge PV fluctuations, but mains
+    # power must not be routed back through this export automation.
+    if grid_import_w is not None and grid_import_w > 0:
+        return ExportDecision(
+            0 if current_output_w != 0 else None,
+            "grid_import_blocks_export",
+            cycle_active,
         )
 
     if pv_power_w is None and battery_percent < start_soc:

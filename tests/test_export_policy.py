@@ -63,6 +63,20 @@ class ExportPolicyTests(unittest.TestCase):
 
         self.assertEqual(decision.target_w, 200)
 
+    def test_grid_import_blocks_output_without_discarding_active_buffer(self):
+        decision = decide_export_output(
+            enabled=True,
+            battery_percent=96,
+            pv_power_w=300,
+            grid_import_w=75,
+            current_output_w=300,
+            cycle_active=True,
+        )
+
+        self.assertEqual(decision.target_w, 0)
+        self.assertEqual(decision.reason, "grid_import_blocks_export")
+        self.assertTrue(decision.cycle_active)
+
     def test_waits_below_98_even_when_pv_is_available(self):
         decision = decide_export_output(
             enabled=True,

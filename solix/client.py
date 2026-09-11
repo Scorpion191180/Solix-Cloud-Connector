@@ -29,6 +29,8 @@ DEFAULT_FAILURE_RETRY_SECONDS = 120
 DEFAULT_AUTH_FAILURE_RETRY_SECONDS = 30 * 60
 SMARTPLUG_TELEMETRY_WAIT_SECONDS = 1.0
 SOLARBANK_TELEMETRY_WAIT_SECONDS = 1.2
+GEN4_GRID_EXPORT_PARAM_TYPE = "28"
+GEN4_GRID_EXPORT_REFRESH_SECONDS = 5 * 60
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -84,6 +86,8 @@ class SolixClient:
             "SOLIX_ACTIVE_TELEMETRY", default=True
         )
         self._last_solarbank_telemetry_request = 0.0
+        self._gen4_grid_export_settings: dict[str, Any] = {}
+        self._last_gen4_grid_export_refresh = 0.0
         self._last_refresh_at: datetime | None = None
         self._last_refresh_attempt = 0.0
         self._last_refresh_error: str | None = None
@@ -279,6 +283,8 @@ class SolixClient:
         self.api = None
         self._last_smartplug_telemetry_request = 0.0
         self._last_solarbank_telemetry_request = 0.0
+        self._gen4_grid_export_settings = {}
+        self._last_gen4_grid_export_refresh = 0.0
 
     async def _poll_cloud_locked(self) -> None:
         assert self.api is not None
@@ -286,6 +292,113 @@ class SolixClient:
         await self.api.update_site_details()
         await self.api.update_device_details()
         await self._request_solarbank_telemetry_locked()
+        await self._refresh_gen4_grid_export_settings_locked()
+
+    async def _read_gen4_grid_export_settings_locked(
+        self, *, site_id: str, serial: str
+    ) -> dict[str, Any]:
+        """Read the AE103 grid-export settings without exposing identifiers."""
+        assert self.api is not None
+        response = await self.api.get_device_parm(
+            siteId=site_id,
+            paramType=GEN4_GRID_EXPORT_PARAM_TYPE,
+            deviceSn=serial,
+        )
+        param_data = response.get("param_data") if isinstance(response, dict) else None
+        if isinstance(param_data, str):
+            try:
+                param_data = json.loads(param_data)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(
+                    "Netz-Leistungsbegrenzung konnte nicht gelesen werden"
+                ) from exc
+        if not isinstance(param_data, dict):
+            raise RuntimeError("Netz-Leistungsbegrenzung konnte nicht gelesen werden")
+        return dict(param_data)
+
+    async def _refresh_gen4_grid_export_settings_locked(self) -> None:
+        """Cache the separate Gen-4 grid limit at a conservative cadence."""
+        if self.api is None:
+            return
+        devices = getattr(self.api, "devices", None)
+        if not isinstance(devices, dict) or not callable(
+            getattr(self.api, "get_device_parm", None)
+        ):
+            return
+        age = time.monotonic() - self._last_gen4_grid_export_refresh
+        if age < GEN4_GRID_EXPORT_REFRESH_SECONDS:
+            return
+        self._last_gen4_grid_export_refresh = time.monotonic()
+        try:
+            solarbank, _, _ = self._select_solarbank_locked()
+            if solarbank.get("device_pn") != "AE103":
+                return
+            serial = next(
+                (
+                    device_serial
+                    for device_serial, device in self.api.devices.items()
+                    if device is solarbank
+                ),
+                None,
+            )
+            site_id = str(solarbank.get("site_id") or "")
+            if serial is None or not site_id:
+                return
+            self._gen4_grid_export_settings = (
+                await self._read_gen4_grid_export_settings_locked(
+                    site_id=site_id, serial=serial
+                )
+            )
+        except Exception:
+            # The extra diagnostic read must never make ordinary Solix live
+            # data unavailable. A write path below performs strict checks.
+            _LOGGER.warning("Gen-4 grid-export settings refresh failed", exc_info=True)
+
+    async def _set_gen4_grid_export_limit_locked(
+        self, *, site_id: str, serial: str, limit_w: int
+    ) -> dict[str, Any]:
+        """Set and re-read AE103's independent grid-export ceiling."""
+        assert self.api is not None
+        current = await self._read_gen4_grid_export_settings_locked(
+            site_id=site_id, serial=serial
+        )
+        required = {"feed_switch", "cached_power"}
+        if not required.issubset(current):
+            raise RuntimeError(
+                "Netz-Leistungsbegrenzung hat ein unbekanntes Datenformat"
+            )
+
+        desired = dict(current)
+        desired["feed_switch"] = 1
+        desired["cached_power"] = limit_w
+        if (
+            self._optional_number(current.get("cached_power")) != limit_w
+            or self._as_switch_state(current.get("feed_switch")) is not True
+        ):
+            result = await self.api.set_device_parm(
+                siteId=site_id,
+                deviceSn=serial,
+                paramType=GEN4_GRID_EXPORT_PARAM_TYPE,
+                paramData=desired,
+            )
+            if result is False:
+                raise RuntimeError(
+                    "Netz-Leistungsbegrenzung wurde nicht bestätigt"
+                )
+
+        verified = await self._read_gen4_grid_export_settings_locked(
+            site_id=site_id, serial=serial
+        )
+        if (
+            self._optional_number(verified.get("cached_power")) != limit_w
+            or self._as_switch_state(verified.get("feed_switch")) is not True
+        ):
+            raise RuntimeError(
+                "Netz-Leistungsbegrenzung wurde nicht korrekt übernommen"
+            )
+        self._gen4_grid_export_settings = dict(verified)
+        self._last_gen4_grid_export_refresh = time.monotonic()
+        return verified
 
     async def _request_solarbank_telemetry_locked(self) -> None:
         """Trigger fresh device telemetry without changing Solarbank settings."""
@@ -967,6 +1080,12 @@ class SolixClient:
             "battery_temperature_history": temperature_history,
             "system_output_power": to_int(solarbank.get("output_power")),
             "manual_output_preset_w": self._manual_output_preset_locked(solarbank),
+            "grid_output_limit_w": self._optional_number(
+                self._gen4_grid_export_settings.get("cached_power")
+            ),
+            "grid_export_enabled": self._as_switch_state(
+                self._gen4_grid_export_settings.get("feed_switch")
+            ),
             "output_mode": (
                 self._optional_number(solarbank.get("schedule", {}).get("mode_type"))
                 if isinstance(solarbank.get("schedule"), dict)
@@ -1031,6 +1150,8 @@ class SolixClient:
             "battery_flow_direction": "unknown",
             "system_output_power": None,
             "manual_output_preset_w": None,
+            "grid_output_limit_w": None,
+            "grid_export_enabled": None,
             "output_mode": None,
             "charging_status": None,
             "pv_total": None,
@@ -1265,7 +1386,7 @@ class SolixClient:
             return self._smartplug_status_locked(device, state=enabled)
 
     async def set_solarbank_output_power(self, power_w: int) -> dict[str, Any]:
-        """Set the selected AE103 manual AC output, capped at 450 watts."""
+        """Set the selected AE103 output and matching grid limit."""
         if isinstance(power_w, bool) or not isinstance(power_w, int):
             raise ValueError("Solarbank-Ausgabe muss eine ganze Wattzahl sein")
         if not 0 <= power_w <= 450:
@@ -1295,6 +1416,16 @@ class SolixClient:
             if not site_id:
                 raise RuntimeError("Solarbank 4 besitzt keine Site-Zuordnung")
 
+            # The AE103 stores its grid-export ceiling separately from the
+            # manual output schedule. Keep the ceiling fixed at the configured
+            # safety maximum; the schedule below remains the actual target.
+            # The Gen-4 write is always read back before the output is changed.
+            grid_settings = await self._set_gen4_grid_export_limit_locked(
+                site_id=site_id,
+                serial=serial,
+                limit_w=450,
+            )
+
             result = await self.api.set_sb2_home_load(
                 siteId=site_id,
                 deviceSn=serial,
@@ -1315,6 +1446,12 @@ class SolixClient:
                 "model": solarbank.get("device_pn"),
                 "manual_output_preset_w": (
                     power_w if observed is None else observed
+                ),
+                "grid_output_limit_w": self._optional_number(
+                    grid_settings.get("cached_power")
+                ),
+                "grid_export_enabled": self._as_switch_state(
+                    grid_settings.get("feed_switch")
                 ),
                 "output_mode": 3,
                 "selection": selection,

@@ -77,7 +77,10 @@ class SolarExportAutomation:
         self._last_attempted_w: int | None = None
         self._battery_percent: int | float | None = None
         self._pv_power_w: int | float | None = None
+        self._grid_import_w: int | float | None = None
         self._observed_output_w: int | float | None = None
+        self._observed_grid_limit_w: int | float | None = None
+        self._grid_export_enabled: bool | None = None
         self._target_output_w: int | None = None
         self._cycle_active = False
         self._evaluated_once = False
@@ -175,6 +178,20 @@ class SolarExportAutomation:
             self._pv_power_w = (
                 None if self._solix_stale else self._number(live.get("pv_total"))
             )
+            self._grid_import_w = (
+                None if self._solix_stale else self._number(live.get("grid_power"))
+            )
+            self._observed_grid_limit_w = (
+                None
+                if self._solix_stale
+                else self._number(live.get("grid_output_limit_w"))
+            )
+            self._grid_export_enabled = (
+                live.get("grid_export_enabled")
+                if not self._solix_stale
+                and isinstance(live.get("grid_export_enabled"), bool)
+                else None
+            )
             observed_output = (
                 None
                 if self._solix_stale
@@ -201,6 +218,7 @@ class SolarExportAutomation:
                 enabled=self._enabled,
                 battery_percent=self._battery_percent,
                 pv_power_w=self._pv_power_w,
+                grid_import_w=self._grid_import_w,
                 current_output_w=self._observed_output_w,
                 audi_charge_priority=self._audi_charge_priority,
                 cycle_active=self._cycle_active,
@@ -208,6 +226,24 @@ class SolarExportAutomation:
                 stop_soc=self._stop_soc,
                 max_output_w=self._max_output_w,
             )
+            # The manual output and the AE103's grid ceiling are independent.
+            # If the desired output already matches, still perform one guarded
+            # write when the separately read ceiling remains at 0 W.
+            if (
+                self._enabled
+                and decision.target_w is None
+                and self._observed_output_w is not None
+                and (
+                    self._observed_grid_limit_w is not None
+                    and self._observed_grid_limit_w != self._max_output_w
+                    or self._grid_export_enabled is False
+                )
+            ):
+                decision = ExportDecision(
+                    int(self._observed_output_w),
+                    "grid_limit_resync_required",
+                    decision.cycle_active,
+                )
             self._cycle_active = decision.cycle_active
             await self._apply(decision)
             return self.status()
@@ -243,6 +279,8 @@ class SolarExportAutomation:
 
         self._last_error_at = 0.0
         self._observed_output_w = result.get("manual_output_preset_w")
+        self._observed_grid_limit_w = result.get("grid_output_limit_w")
+        self._grid_export_enabled = result.get("grid_export_enabled")
         self._last_action = f"set_{decision.target_w}_w"
 
     @staticmethod
@@ -263,6 +301,10 @@ class SolarExportAutomation:
             "Solarbank 4 ist in diesem Konto nicht als Administrator steuerbar",
             "Solarbank 4 besitzt keine Site-Zuordnung",
             "Benutzerdefinierte Solarbank-Ausgabe wurde nicht bestätigt",
+            "Netz-Leistungsbegrenzung konnte nicht gelesen werden",
+            "Netz-Leistungsbegrenzung hat ein unbekanntes Datenformat",
+            "Netz-Leistungsbegrenzung wurde nicht bestätigt",
+            "Netz-Leistungsbegrenzung wurde nicht korrekt übernommen",
         }
         if message in allowed:
             return message
@@ -289,6 +331,9 @@ class SolarExportAutomation:
             "audi_charge_priority": self._audi_charge_priority,
             "battery_percent": self._battery_percent,
             "pv_power_w": self._pv_power_w,
+            "grid_import_w": self._grid_import_w,
             "observed_output_w": self._observed_output_w,
+            "observed_grid_limit_w": self._observed_grid_limit_w,
+            "grid_export_enabled": self._grid_export_enabled,
             "target_output_w": self._target_output_w,
         }

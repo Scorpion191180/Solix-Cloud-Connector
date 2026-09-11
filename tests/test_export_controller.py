@@ -6,11 +6,17 @@ from export_automation.controller import SolarExportAutomation
 
 
 class FakeSolixClient:
-    def __init__(self, soc=98, pv=600, output=0, stale=False):
+    def __init__(
+        self, soc=98, pv=600, output=0, stale=False, grid_import=0,
+        grid_limit=450, grid_export_enabled=True,
+    ):
         self.soc = soc
         self.pv = pv
         self.output = output
         self.stale = stale
+        self.grid_import = grid_import
+        self.grid_limit = grid_limit
+        self.grid_export_enabled = grid_export_enabled
         self.commands = []
 
     async def get_live(self):
@@ -18,15 +24,22 @@ class FakeSolixClient:
             "battery_percent": self.soc,
             "pv_total": self.pv,
             "manual_output_preset_w": self.output,
+            "grid_power": self.grid_import,
+            "grid_output_limit_w": self.grid_limit,
+            "grid_export_enabled": self.grid_export_enabled,
             "stale": self.stale,
         }
 
     async def set_solarbank_output_power(self, power_w):
         self.commands.append(power_w)
         self.output = power_w
+        self.grid_limit = 450
+        self.grid_export_enabled = True
         return {
             "model": "AE103",
             "manual_output_preset_w": power_w,
+            "grid_output_limit_w": 450,
+            "grid_export_enabled": True,
             "output_mode": 3,
         }
 
@@ -113,6 +126,31 @@ class ExportControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status["reason"], "audi_charging_has_priority")
         self.assertTrue(status["audi_charge_priority"])
 
+    async def test_grid_import_stops_output_but_keeps_buffer_cycle_ready(self):
+        solix = FakeSolixClient(
+            soc=96, pv=300, output=300, grid_import=120
+        )
+        controller = self.make_controller(solix)
+
+        status = await controller.evaluate()
+
+        self.assertEqual(solix.commands, [0])
+        self.assertEqual(status["reason"], "grid_import_blocks_export")
+        self.assertTrue(status["cycle_active"])
+
+    async def test_zero_grid_limit_is_resynced_even_if_output_matches(self):
+        solix = FakeSolixClient(
+            soc=100, pv=450, output=450,
+            grid_limit=0, grid_export_enabled=False,
+        )
+        controller = self.make_controller(solix)
+
+        status = await controller.evaluate()
+
+        self.assertEqual(solix.commands, [450])
+        self.assertEqual(status["reason"], "grid_limit_resync_required")
+        self.assertEqual(status["observed_grid_limit_w"], 450)
+
     async def test_disconnected_non_full_audi_allows_export(self):
         solix = FakeSolixClient(soc=100, pv=0, output=0)
         audi = FakeAudiClient(battery=75, plugged=False)
@@ -155,7 +193,7 @@ class ExportControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status["reason"], "solix_telemetry_unknown")
 
     async def test_disabled_controller_does_not_write(self):
-        solix = FakeSolixClient()
+        solix = FakeSolixClient(grid_limit=0, grid_export_enabled=False)
         controller = self.make_controller(solix, enabled="false")
 
         status = await controller.evaluate()

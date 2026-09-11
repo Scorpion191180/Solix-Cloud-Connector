@@ -29,15 +29,19 @@ gemessenen PV-Leistung, ist aber hart auf 450 W begrenzt: 200 W PV ergeben
 200 W Ausgabe, 700 W PV ergeben höchstens 450 W Ausgabe. Bei 90 % endet der
 Zyklus und die Ausgabe wird auf 0 W gesetzt, damit die Solarbank wieder lädt.
 Meldet eine volle, abregelnde Solarbank 0 W PV, werden trotzdem 450 W
-freigegeben, damit die PV-Leistung wieder abfließen kann. Ein angeschlossener,
-noch nicht voller Audi hat dabei Vorrang; ein voller oder nicht angeschlossener
-Audi blockiert den Export nicht.
+freigegeben, damit die PV-Leistung wieder abfließen kann. Zwischen 98 und
+90 Prozent darf der Speicher kurze Schwankungen der Sonneneinstrahlung aus
+seinem bewusst vorgesehenen 8-Prozent-Puffer überbrücken. Bei 90 Prozent wird
+die Ausgabe beendet. Ein angeschlossener, noch nicht voller Audi hat dabei
+Vorrang; ein voller oder nicht angeschlossener Audi blockiert den Export nicht.
 
 Die Einstellung ist eine AC-/Hausausgabe, keine Messung am öffentlichen
 Netzübergabepunkt: Der aktuelle Hausverbrauch wird zuerst versorgt. Nur der
-danach verbleibende Anteil kann tatsächlich ins Netz fließen. Die App schreibt
-keine undokumentierten Gen-4-Netzparameter und überschreitet die lokale
-450-W-Sicherheitsgrenze nicht.
+danach verbleibende Anteil kann tatsächlich ins Netz fließen. Erkennt die App
+eine Netzladung der Solarbank, wird die Ausgabe sofort auf 0 W gesetzt. Die
+separate Gen-4-Netzleistungsgrenze wird auf 450 W gesetzt, unverändert
+zurückgelesen und nur bei erfolgreicher Bestätigung mit der manuellen Ausgabe
+gekoppelt. Die lokale 450-W-Sicherheitsgrenze wird nie überschritten.
 
 Die Prüfung läuft nach der Bereitstellung zunächst im Testbetrieb und bleibt
 dabei ohne Schreibzugriff. Empfohlene Render-Konfiguration:
