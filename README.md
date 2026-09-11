@@ -20,6 +20,44 @@ Render-Secret gespeichert.
 Die Audi-Verbindung bleibt vollständig lesend. Geschaltet wird ausschließlich
 der Anker Smart Plug über die von `anker-solix-api` unterstützte MQTT-Methode.
 
+## Solarbank-Überschussausgabe
+
+Eine zweite, von der Audi-Ladeautomatik unabhängige Automatik kann die
+benutzerdefinierte AC-Ausgabe der ausgewählten **Solarbank 4 (AE103)** auf
+höchstens **450 W** setzen. Sie startet standardmäßig erst ab 98 % Akkustand
+und mindestens 450 W aktueller PV-Leistung. Bei höchstens 95 % Akkustand oder
+weniger als 250 W PV-Leistung setzt sie die Ausgabe wieder auf 0 W. Die beiden
+Stoppwerte bilden eine Hysterese gegen häufiges Umschalten und verhindern eine
+ungewollte Entladung bei Dunkelheit oder starkem Leistungsabfall.
+
+Die Einstellung ist eine AC-/Hausausgabe, keine Messung am öffentlichen
+Netzübergabepunkt: Der aktuelle Hausverbrauch wird zuerst versorgt. Nur der
+danach verbleibende Anteil kann tatsächlich ins Netz fließen. Die App schreibt
+keine undokumentierten Gen-4-Netzparameter und überschreitet die lokale
+450-W-Sicherheitsgrenze nicht.
+
+Die Prüfung läuft nach der Bereitstellung zunächst im Testbetrieb und bleibt
+dabei ohne Schreibzugriff. Empfohlene Render-Konfiguration:
+
+```text
+SOLAR_EXPORT_AUTOMATION_ENABLED=true
+SOLAR_EXPORT_AUTOMATION_DRY_RUN=true
+SOLAR_EXPORT_START_SOC=98
+SOLAR_EXPORT_STOP_SOC=95
+SOLAR_EXPORT_POWER_W=450
+SOLAR_EXPORT_START_PV_W=450
+SOLAR_EXPORT_STOP_PV_W=250
+SOLAR_EXPORT_INTERVAL_SECONDS=60
+SOLAR_EXPORT_ERROR_RETRY_SECONDS=900
+```
+
+Im Testbetrieb meldet `GET /api/automation` unter `solar_export` die geplanten
+0-/450-W-Aktionen. Erst wenn diese Entscheidungen stimmen, darf
+`SOLAR_EXPORT_AUTOMATION_DRY_RUN=false` gesetzt werden. Schlägt ein
+Schreibversuch fehl, wartet der Controller standardmäßig 15 Minuten bis zum
+nächsten Versuch; die bestehende Audi-/Smart-Plug-Automatik läuft unabhängig
+weiter.
+
 ## Ladeautomatik
 
 Die App bewertet die Ladebedingungen standardmäßig jede Minute. Audi Connect

@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from animal.state import AnimalStateStore
 from audi.client import AudiClient
 from automation.controller import ChargingAutomation
+from export_automation.controller import SolarExportAutomation
 from solix.client import SolixClient
 from smartlife.client import SmartLifeGarageClient
 from waste.client import WasteCalendarClient
@@ -20,6 +21,7 @@ from weather.client import WeatherClient
 client = SolixClient()
 audi_client = AudiClient()
 charging_automation = ChargingAutomation(client, audi_client)
+solar_export_automation = SolarExportAutomation(client)
 weather_client = WeatherClient()
 waste_calendar_client = WasteCalendarClient()
 animal_state = AnimalStateStore()
@@ -119,7 +121,9 @@ async def lifespan(_app: FastAPI):
     await audi_client.start()
     await client.start_telemetry()
     await charging_automation.start()
+    await solar_export_automation.start()
     yield
+    await solar_export_automation.stop()
     await charging_automation.stop()
     await audi_client.close()
     await client.close()
@@ -268,6 +272,7 @@ async def automation():
     """Return the safe public status of the background charging controller."""
     status = charging_automation.status()
     status["manual_control_available"] = _manual_control_configured()
+    status["solar_export"] = solar_export_automation.status()
     return status
 
 

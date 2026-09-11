@@ -656,6 +656,30 @@ async function updateAutomation() {
             smartPlug.state === false ? "Ausgeschaltet" :
             smartPlug.available ? "Bereit" : "Nicht gefunden";
 
+        const solarExport = data.solar_export || {};
+        const observedExport = Number(solarExport.observed_output_w);
+        document.getElementById("solarExportOutput").innerText =
+            solarExport.observed_output_w != null && Number.isFinite(observedExport)
+                ? observedExport + " W" : "--";
+        document.getElementById("solarExportStatus").innerText =
+            solarExport.error ? "Fehler" :
+            solarExport.enabled && solarExport.dry_run ? "Testbetrieb" :
+            solarExport.enabled && solarExport.running ? "Automatisch" : "Inaktiv";
+        const exportReasons = {
+            automation_disabled: "Überschussautomatik ist noch nicht freigeschaltet.",
+            waiting_for_first_evaluation: "Erste Solarbank-Prüfung steht noch aus.",
+            waiting_for_start_conditions: "Wartet auf fast vollen Akku und genügend PV-Leistung.",
+            battery_nearly_full_and_pv_available: "Akku fast voll: 450 W Ausgabe vorgesehen.",
+            surplus_output_already_active: "450 W Ausgabe ist aktiv.",
+            within_hysteresis_band: "Ausgabe bleibt innerhalb der sicheren Hysterese aktiv.",
+            battery_at_or_below_stop_soc: "Ausgabe wegen erreichtem Stopp-Ladestand beendet.",
+            pv_below_stop_threshold: "Ausgabe wegen zu geringer PV-Leistung beendet.",
+            solix_telemetry_unknown: "Keine sicheren Solix-Livedaten; Ausgabe wird nicht gestartet.",
+        };
+        document.getElementById("solarExportReason").innerText =
+            solarExport.error || exportReasons[solarExport.reason] ||
+            "Überschussautomatik wartet auf Daten.";
+
         const manualAvailable = data.manual_control_available === true;
         thresholdControlAvailable = manualAvailable;
         document.getElementById("controlToken").disabled = !manualAvailable;
@@ -700,6 +724,10 @@ async function updateAutomation() {
         badge.innerText = "Fehler";
         document.getElementById("automationReason").innerText =
             "Automatikstatus konnte nicht geladen werden.";
+        document.getElementById("solarExportOutput").innerText = "--";
+        document.getElementById("solarExportStatus").innerText = "Fehler";
+        document.getElementById("solarExportReason").innerText =
+            "Überschussautomatikstatus konnte nicht geladen werden.";
         console.log(e);
 
     }

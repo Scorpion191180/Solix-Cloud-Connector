@@ -519,6 +519,61 @@ class SolixClient:
         )
         return selected, "auto_largest_system", len(banks)
 
+    def _manual_output_preset_locked(
+        self, solarbank: dict[str, Any]
+    ) -> int | float | None:
+        """Read the active manual output slot without exposing account IDs."""
+        schedule = solarbank.get("schedule")
+        if (
+            not isinstance(schedule, dict)
+            or self._optional_number(schedule.get("mode_type")) != 3
+        ):
+            return None
+
+        plan = schedule.get("custom_rate_plan")
+        if not isinstance(plan, list) or not plan:
+            return self._optional_number(schedule.get("default_home_load"))
+
+        assert self.api is not None
+        site = self.api.sites.get(str(solarbank.get("site_id") or ""), {})
+        offset_seconds = self._number(site.get("energy_offset_tz"))
+        local_now = datetime.now(timezone.utc) + timedelta(seconds=offset_seconds)
+        weekday = int(local_now.strftime("%w"))
+        minute = local_now.hour * 60 + local_now.minute
+
+        def minute_of_day(value: Any, *, end: bool = False) -> int | None:
+            text = str(value or "").strip()
+            if end and text == "24:00":
+                return 24 * 60
+            try:
+                hour, minute_value = (int(part) for part in text.split(":", 1))
+            except (TypeError, ValueError):
+                return None
+            if not (0 <= hour <= 23 and 0 <= minute_value <= 59):
+                return None
+            return hour * 60 + minute_value
+
+        for day_plan in plan:
+            if not isinstance(day_plan, dict):
+                continue
+            weekdays = day_plan.get("week")
+            if isinstance(weekdays, list) and weekday not in weekdays:
+                continue
+            for slot in day_plan.get("ranges") or []:
+                if not isinstance(slot, dict):
+                    continue
+                start = minute_of_day(slot.get("start_time"))
+                end = minute_of_day(slot.get("end_time"), end=True)
+                if start is None or end is None or not (start <= minute < end):
+                    continue
+                power = self._optional_number(slot.get("power"))
+                if power is None:
+                    appliance_loads = slot.get("appliance_loads") or []
+                    if appliance_loads and isinstance(appliance_loads[0], dict):
+                        power = self._optional_number(appliance_loads[0].get("power"))
+                return power
+        return None
+
     @staticmethod
     def _number(value: Any) -> int:
         try:
@@ -911,6 +966,12 @@ class SolixClient:
             "battery_temperatures_c": temperatures,
             "battery_temperature_history": temperature_history,
             "system_output_power": to_int(solarbank.get("output_power")),
+            "manual_output_preset_w": self._manual_output_preset_locked(solarbank),
+            "output_mode": (
+                self._optional_number(solarbank.get("schedule", {}).get("mode_type"))
+                if isinstance(solarbank.get("schedule"), dict)
+                else None
+            ),
             "charging_status": solarbank.get("charging_status_desc"),
             "pv_total": pv_total,
             "pv1": pv_values[0],
@@ -969,6 +1030,8 @@ class SolixClient:
             "battery_discharge_power": None,
             "battery_flow_direction": "unknown",
             "system_output_power": None,
+            "manual_output_preset_w": None,
+            "output_mode": None,
             "charging_status": None,
             "pv_total": None,
             "pv1": None,
@@ -1200,6 +1263,63 @@ class SolixClient:
             self._last_smartplug_state = enabled
             device.setdefault("mqtt_data", {})["ac_output_switch"] = int(enabled)
             return self._smartplug_status_locked(device, state=enabled)
+
+    async def set_solarbank_output_power(self, power_w: int) -> dict[str, Any]:
+        """Set the selected AE103 manual AC output, capped at 450 watts."""
+        if isinstance(power_w, bool) or not isinstance(power_w, int):
+            raise ValueError("Solarbank-Ausgabe muss eine ganze Wattzahl sein")
+        if not 0 <= power_w <= 450:
+            raise ValueError("Solarbank-Ausgabe muss zwischen 0 und 450 W liegen")
+
+        await self.refresh()
+        async with self._lock:
+            assert self.api is not None
+            solarbank, selection, solarbank_count = self._select_solarbank_locked()
+            serial = next(
+                (
+                    device_serial
+                    for device_serial, device in self.api.devices.items()
+                    if device is solarbank
+                ),
+                None,
+            )
+            if serial is None or solarbank.get("device_pn") != "AE103":
+                raise RuntimeError(
+                    "Ausgabeautomatik unterstützt ausschließlich die Solarbank 4 (AE103)"
+                )
+            if solarbank.get("is_admin") is False:
+                raise RuntimeError(
+                    "Solarbank 4 ist in diesem Konto nicht als Administrator steuerbar"
+                )
+            site_id = str(solarbank.get("site_id") or "")
+            if not site_id:
+                raise RuntimeError("Solarbank 4 besitzt keine Site-Zuordnung")
+
+            result = await self.api.set_sb2_home_load(
+                siteId=site_id,
+                deviceSn=serial,
+                preset=power_w,
+                usage_mode=3,
+                plan_name="custom_rate_plan",
+            )
+            if result is False:
+                raise RuntimeError(
+                    "Benutzerdefinierte Solarbank-Ausgabe wurde nicht bestätigt"
+                )
+
+            # set_sb2_home_load re-reads the complete schedule into the API
+            # cache. A later live poll can therefore verify the active slot.
+            observed = self._manual_output_preset_locked(solarbank)
+            self._last_refresh = 0.0
+            return {
+                "model": solarbank.get("device_pn"),
+                "manual_output_preset_w": (
+                    power_w if observed is None else observed
+                ),
+                "output_mode": 3,
+                "selection": selection,
+                "solarbank_count": solarbank_count,
+            }
 
     async def close(self) -> None:
         if self._telemetry_task is not None:
