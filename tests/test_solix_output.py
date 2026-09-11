@@ -83,14 +83,16 @@ class SolixOutputTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             [call[0] for call in client.api.grid_calls],
-            ["get", "set", "get"],
+            ["get", "set", "get", "set", "get"],
         )
-        set_call = client.api.grid_calls[1][1]
-        self.assertEqual(set_call["paramType"], "28")
+        switch_call = client.api.grid_calls[1][1]
+        limit_call = client.api.grid_calls[3][1]
+        self.assertEqual(switch_call["paramType"], "28")
+        self.assertEqual(limit_call["paramType"], "28")
         self.assertEqual(
-            set_call["paramData"],
-            {"feed_switch": 1, "cached_power": 450},
+            switch_call["paramData"], {"feed_switch": 1}
         )
+        self.assertEqual(limit_call["paramData"], {"cached_power": 450})
         self.assertEqual(result["manual_output_preset_w"], 450)
         self.assertEqual(result["grid_output_limit_w"], 450)
         self.assertTrue(result["grid_export_enabled"])
@@ -123,7 +125,7 @@ class SolixOutputTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             [call[0] for call in client.api.grid_calls],
-            ["get", "get"],
+            ["get"],
         )
 
     async def test_output_is_not_changed_when_grid_limit_verification_fails(self):

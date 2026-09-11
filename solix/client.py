@@ -374,16 +374,36 @@ class SolixClient:
         # fields; echoing the complete read response can make AE103 accept the
         # request without applying it.  Use the same narrow PATCH-style
         # payload here.
-        desired = {"feed_switch": 1, "cached_power": limit_w}
-        if (
-            self._optional_number(current.get("cached_power")) != limit_w
-            or self._as_switch_state(current.get("feed_switch")) is not True
-        ):
+        verified = dict(current)
+        # AE103 applies the switch transition but can ignore ``cached_power``
+        # when both fields are changed in the same request.  Commit and verify
+        # the switch first, then send the limit as its own cloud transaction.
+        if self._as_switch_state(verified.get("feed_switch")) is not True:
             result = await self.api.set_device_parm(
                 siteId=site_id,
                 deviceSn=serial,
                 paramType=GEN4_GRID_EXPORT_PARAM_TYPE,
-                paramData=desired,
+                paramData={"feed_switch": 1},
+            )
+            if result is False:
+                raise RuntimeError(
+                    "Netz-Leistungsbegrenzung wurde nicht bestätigt"
+                )
+            await asyncio.sleep(GEN4_GRID_EXPORT_VERIFY_WAIT_SECONDS)
+            verified = await self._read_gen4_grid_export_settings_locked(
+                site_id=site_id, serial=serial
+            )
+            if self._as_switch_state(verified.get("feed_switch")) is not True:
+                raise RuntimeError(
+                    "Netz-Leistungsbegrenzung wurde nicht korrekt übernommen"
+                )
+
+        if self._optional_number(verified.get("cached_power")) != limit_w:
+            result = await self.api.set_device_parm(
+                siteId=site_id,
+                deviceSn=serial,
+                paramType=GEN4_GRID_EXPORT_PARAM_TYPE,
+                paramData={"cached_power": limit_w},
             )
             if result is False:
                 raise RuntimeError(
@@ -392,10 +412,10 @@ class SolixClient:
             # The cloud write is asynchronous. An immediate GET can still
             # return the old value even though the command was accepted.
             await asyncio.sleep(GEN4_GRID_EXPORT_VERIFY_WAIT_SECONDS)
+            verified = await self._read_gen4_grid_export_settings_locked(
+                site_id=site_id, serial=serial
+            )
 
-        verified = await self._read_gen4_grid_export_settings_locked(
-            site_id=site_id, serial=serial
-        )
         if (
             self._optional_number(verified.get("cached_power")) != limit_w
             or self._as_switch_state(verified.get("feed_switch")) is not True
