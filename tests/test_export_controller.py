@@ -37,10 +37,8 @@ class ExportControllerTests(unittest.IsolatedAsyncioTestCase):
             "SOLAR_EXPORT_AUTOMATION_ENABLED": enabled,
             "SOLAR_EXPORT_AUTOMATION_DRY_RUN": dry_run,
             "SOLAR_EXPORT_START_SOC": "98",
-            "SOLAR_EXPORT_STOP_SOC": "95",
+            "SOLAR_EXPORT_STOP_SOC": "90",
             "SOLAR_EXPORT_POWER_W": "450",
-            "SOLAR_EXPORT_START_PV_W": "450",
-            "SOLAR_EXPORT_STOP_PV_W": "250",
             "SOLAR_EXPORT_INTERVAL_SECONDS": "900",
         }
         env = patch.dict(os.environ, settings, clear=False)
@@ -53,12 +51,39 @@ class ExportControllerTests(unittest.IsolatedAsyncioTestCase):
         controller = self.make_controller(solix)
 
         started = await controller.evaluate()
-        solix.soc = 95
+        solix.pv = 200
+        adjusted = await controller.evaluate()
+        solix.soc = 90
         stopped = await controller.evaluate()
 
-        self.assertEqual(solix.commands, [450, 0])
+        self.assertEqual(solix.commands, [450, 200, 0])
         self.assertEqual(started["last_action"], "set_450_w")
+        self.assertEqual(adjusted["last_action"], "set_200_w")
         self.assertEqual(stopped["last_action"], "set_0_w")
+
+    async def test_cycle_resumes_after_zero_pv_without_returning_to_98(self):
+        solix = FakeSolixClient(soc=98, pv=200, output=0)
+        controller = self.make_controller(solix)
+
+        await controller.evaluate()
+        solix.soc = 96
+        solix.pv = 0
+        await controller.evaluate()
+        solix.pv = 125
+        status = await controller.evaluate()
+
+        self.assertEqual(solix.commands, [200, 0, 125])
+        self.assertTrue(status["cycle_active"])
+
+    async def test_restart_recovers_nonzero_active_output_and_stops_at_90(self):
+        solix = FakeSolixClient(soc=90, pv=300, output=200)
+        controller = self.make_controller(solix)
+
+        status = await controller.evaluate()
+
+        self.assertEqual(solix.commands, [0])
+        self.assertFalse(status["cycle_active"])
+        self.assertEqual(status["reason"], "battery_at_or_below_stop_soc")
 
     async def test_dry_run_reports_without_writing(self):
         solix = FakeSolixClient()

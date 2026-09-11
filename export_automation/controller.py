@@ -46,23 +46,15 @@ class SolarExportAutomation:
             "SOLAR_EXPORT_START_SOC", 98, 90, 100
         )
         self._stop_soc = _integer_setting(
-            "SOLAR_EXPORT_STOP_SOC", 95, 80, 99
+            "SOLAR_EXPORT_STOP_SOC", 90, 80, 99
         )
         if self._stop_soc >= self._start_soc:
-            _LOGGER.warning("Invalid export SOC thresholds; using 95/98")
-            self._stop_soc = 95
+            _LOGGER.warning("Invalid export SOC thresholds; using 90/98")
+            self._stop_soc = 90
             self._start_soc = 98
-        self._output_w = _integer_setting(
+        self._max_output_w = _integer_setting(
             "SOLAR_EXPORT_POWER_W", 450, 0, 450
         )
-        self._start_pv_w = _integer_setting(
-            "SOLAR_EXPORT_START_PV_W", 450, 0, 2500
-        )
-        self._stop_pv_w = _integer_setting(
-            "SOLAR_EXPORT_STOP_PV_W", 250, 0, 2500
-        )
-        if self._stop_pv_w > self._start_pv_w:
-            self._stop_pv_w = self._start_pv_w
         self._interval_seconds = _integer_setting(
             "SOLAR_EXPORT_INTERVAL_SECONDS", 60, 60, 3600
         )
@@ -86,6 +78,8 @@ class SolarExportAutomation:
         self._pv_power_w: int | float | None = None
         self._observed_output_w: int | float | None = None
         self._target_output_w: int | None = None
+        self._cycle_active = False
+        self._evaluated_once = False
         self._solix_stale = False
 
     async def start(self) -> None:
@@ -141,17 +135,28 @@ class SolarExportAutomation:
             if observed_output is not None:
                 self._observed_output_w = observed_output
 
+            # Recover a running cycle after a service restart whenever the
+            # Solarbank still exposes a non-zero manual output.  A zero-output
+            # night-time cycle intentionally stays fail-safe and waits for the
+            # next 98-% start after a process restart.
+            if not self._evaluated_once:
+                self._cycle_active = bool(
+                    self._observed_output_w is not None
+                    and self._observed_output_w > 0
+                )
+                self._evaluated_once = True
+
             decision = decide_export_output(
                 enabled=self._enabled,
                 battery_percent=self._battery_percent,
                 pv_power_w=self._pv_power_w,
                 current_output_w=self._observed_output_w,
+                cycle_active=self._cycle_active,
                 start_soc=self._start_soc,
                 stop_soc=self._stop_soc,
-                output_w=self._output_w,
-                start_pv_w=self._start_pv_w,
-                stop_pv_w=self._stop_pv_w,
+                max_output_w=self._max_output_w,
             )
+            self._cycle_active = decision.cycle_active
             await self._apply(decision)
             return self.status()
 
@@ -219,9 +224,8 @@ class SolarExportAutomation:
             "interval_seconds": self._interval_seconds,
             "start_soc_percent": self._start_soc,
             "stop_soc_percent": self._stop_soc,
-            "max_output_w": self._output_w,
-            "start_pv_w": self._start_pv_w,
-            "stop_pv_w": self._stop_pv_w,
+            "max_output_w": self._max_output_w,
+            "cycle_active": self._cycle_active,
             "last_evaluation": self._last_evaluation,
             "last_action": self._last_action,
             "reason": self._last_reason,

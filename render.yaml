@@ -43,13 +43,9 @@ services:
       - key: SOLAR_EXPORT_START_SOC
         value: "98"
       - key: SOLAR_EXPORT_STOP_SOC
-        value: "95"
+        value: "90"
       - key: SOLAR_EXPORT_POWER_W
         value: "450"
-      - key: SOLAR_EXPORT_START_PV_W
-        value: "450"
-      - key: SOLAR_EXPORT_STOP_PV_W
-        value: "250"
       - key: SOLAR_EXPORT_INTERVAL_SECONDS
         value: "60"
       - key: SOLAR_EXPORT_ERROR_RETRY_SECONDS

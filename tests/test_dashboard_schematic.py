@@ -21,9 +21,9 @@ class DashboardSchematicTests(unittest.TestCase):
             self.assertIn(f'id="{component_id}"', dashboard)
 
         self.assertIn("Energiefluss im Gesamtsystem", dashboard)
-        self.assertIn("style.css?v=20260911-143", dashboard)
-        self.assertIn("house.js?v=20260911-143", dashboard)
-        self.assertIn("app.js?v=20260911-143", dashboard)
+        self.assertIn("style.css?v=20260911-144", dashboard)
+        self.assertIn("house.js?v=20260911-144", dashboard)
+        self.assertIn("app.js?v=20260911-144", dashboard)
         self.assertIn('type="module" src="/static/house.js', dashboard)
         self.assertIn("three@0.185.1", dashboard)
 
@@ -669,8 +669,8 @@ class DashboardSchematicTests(unittest.TestCase):
         ):
             self.assertIn(f'id="{element_id}"', dashboard)
 
-        self.assertIn('const APP_BUILD_VERSION = "143"', script)
-        self.assertIn("Version 143", dashboard)
+        self.assertIn('const APP_BUILD_VERSION = "144"', script)
+        self.assertIn("Version 144", dashboard)
         self.assertIn('localStorage.getItem("solix-scene-labels")', script)
         self.assertIn('stage.classList.toggle("show-scene-labels"', script)
         self.assertIn("hasStoredDogPose", script)

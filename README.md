@@ -23,12 +23,12 @@ der Anker Smart Plug über die von `anker-solix-api` unterstützte MQTT-Methode.
 ## Solarbank-Überschussausgabe
 
 Eine zweite, von der Audi-Ladeautomatik unabhängige Automatik kann die
-benutzerdefinierte AC-Ausgabe der ausgewählten **Solarbank 4 (AE103)** auf
-höchstens **450 W** setzen. Sie startet standardmäßig erst ab 98 % Akkustand
-und mindestens 450 W aktueller PV-Leistung. Bei höchstens 95 % Akkustand oder
-weniger als 250 W PV-Leistung setzt sie die Ausgabe wieder auf 0 W. Die beiden
-Stoppwerte bilden eine Hysterese gegen häufiges Umschalten und verhindern eine
-ungewollte Entladung bei Dunkelheit oder starkem Leistungsabfall.
+benutzerdefinierte AC-Ausgabe der ausgewählten **Solarbank 4 (AE103)** steuern.
+Ab 98 % beginnt ein Einspeisezyklus. Die Ausgabe folgt dann der aktuell
+gemessenen PV-Leistung, ist aber hart auf 450 W begrenzt: 200 W PV ergeben
+200 W Ausgabe, 700 W PV ergeben höchstens 450 W Ausgabe. Bei 90 % endet der
+Zyklus und die Ausgabe wird auf 0 W gesetzt, damit die Solarbank wieder lädt.
+Auch bei vorübergehend 0 W PV bleibt der Zyklus bis zur 90-%-Grenze vorgemerkt.
 
 Die Einstellung ist eine AC-/Hausausgabe, keine Messung am öffentlichen
 Netzübergabepunkt: Der aktuelle Hausverbrauch wird zuerst versorgt. Nur der
@@ -43,16 +43,14 @@ dabei ohne Schreibzugriff. Empfohlene Render-Konfiguration:
 SOLAR_EXPORT_AUTOMATION_ENABLED=true
 SOLAR_EXPORT_AUTOMATION_DRY_RUN=true
 SOLAR_EXPORT_START_SOC=98
-SOLAR_EXPORT_STOP_SOC=95
+SOLAR_EXPORT_STOP_SOC=90
 SOLAR_EXPORT_POWER_W=450
-SOLAR_EXPORT_START_PV_W=450
-SOLAR_EXPORT_STOP_PV_W=250
 SOLAR_EXPORT_INTERVAL_SECONDS=60
 SOLAR_EXPORT_ERROR_RETRY_SECONDS=900
 ```
 
-Im Testbetrieb meldet `GET /api/automation` unter `solar_export` die geplanten
-0-/450-W-Aktionen. Erst wenn diese Entscheidungen stimmen, darf
+Im Testbetrieb meldet `GET /api/automation` unter `solar_export` die geplante,
+PV-geführte Ausgabe. Erst wenn diese Entscheidungen stimmen, darf
 `SOLAR_EXPORT_AUTOMATION_DRY_RUN=false` gesetzt werden. Schlägt ein
 Schreibversuch fehl, wartet der Controller standardmäßig 15 Minuten bis zum
 nächsten Versuch; die bestehende Audi-/Smart-Plug-Automatik läuft unabhängig

@@ -668,12 +668,11 @@ async function updateAutomation() {
         const exportReasons = {
             automation_disabled: "Überschussautomatik ist noch nicht freigeschaltet.",
             waiting_for_first_evaluation: "Erste Solarbank-Prüfung steht noch aus.",
-            waiting_for_start_conditions: "Wartet auf fast vollen Akku und genügend PV-Leistung.",
-            battery_nearly_full_and_pv_available: "Akku fast voll: 450 W Ausgabe vorgesehen.",
-            surplus_output_already_active: "450 W Ausgabe ist aktiv.",
-            within_hysteresis_band: "Ausgabe bleibt innerhalb der sicheren Hysterese aktiv.",
+            waiting_for_start_soc: "Wartet darauf, dass der Akku 98 % erreicht.",
+            export_cycle_started: "98 % erreicht: Die Ausgabe folgt jetzt der PV-Leistung (maximal 450 W).",
+            pv_output_adjusted: "Ausgabe wurde an die aktuelle PV-Leistung angepasst.",
+            pv_output_already_matched: "Ausgabe entspricht bereits der aktuellen PV-Leistung.",
             battery_at_or_below_stop_soc: "Ausgabe wegen erreichtem Stopp-Ladestand beendet.",
-            pv_below_stop_threshold: "Ausgabe wegen zu geringer PV-Leistung beendet.",
             solix_telemetry_unknown: "Keine sicheren Solix-Livedaten; Ausgabe wird nicht gestartet.",
         };
         document.getElementById("solarExportReason").innerText =
