@@ -28,7 +28,10 @@ Ab 98 % beginnt ein Einspeisezyklus. Die Ausgabe folgt dann der aktuell
 gemessenen PV-Leistung, ist aber hart auf 450 W begrenzt: 200 W PV ergeben
 200 W Ausgabe, 700 W PV ergeben höchstens 450 W Ausgabe. Bei 90 % endet der
 Zyklus und die Ausgabe wird auf 0 W gesetzt, damit die Solarbank wieder lädt.
-Auch bei vorübergehend 0 W PV bleibt der Zyklus bis zur 90-%-Grenze vorgemerkt.
+Meldet eine volle, abregelnde Solarbank 0 W PV, werden trotzdem 450 W
+freigegeben, damit die PV-Leistung wieder abfließen kann. Ein angeschlossener,
+noch nicht voller Audi hat dabei Vorrang; ein voller oder nicht angeschlossener
+Audi blockiert den Export nicht.
 
 Die Einstellung ist eine AC-/Hausausgabe, keine Messung am öffentlichen
 Netzübergabepunkt: Der aktuelle Hausverbrauch wird zuerst versorgt. Nur der

@@ -32,8 +32,9 @@ def _integer_setting(name: str, default: int, minimum: int, maximum: int) -> int
 class SolarExportAutomation:
     """Set the AE103 manual output only when the bank is nearly full."""
 
-    def __init__(self, solix_client: Any) -> None:
+    def __init__(self, solix_client: Any, audi_client: Any | None = None) -> None:
         self._solix = solix_client
+        self._audi = audi_client
         # Monitoring starts automatically, but the default dry-run below
         # guarantees that a new deployment cannot write a setting by itself.
         self._enabled = _boolean_setting(
@@ -81,6 +82,10 @@ class SolarExportAutomation:
         self._cycle_active = False
         self._evaluated_once = False
         self._solix_stale = False
+        self._audi_battery_percent: int | float | None = None
+        self._audi_plug_connected: bool | None = None
+        self._audi_data_stale = False
+        self._audi_charge_priority = False
 
     async def start(self) -> None:
         if self._enabled and self._task is None:
@@ -116,7 +121,53 @@ class SolarExportAutomation:
             self._last_action = "none"
             self._last_error = None
 
-            live = await self._solix.get_live()
+            if self._audi is None:
+                live = await self._solix.get_live()
+                audi_data: dict[str, Any] = {}
+            else:
+                solix_result, audi_result = await asyncio.gather(
+                    self._solix.get_live(),
+                    self._audi.get_live(),
+                    return_exceptions=True,
+                )
+                if isinstance(solix_result, BaseException):
+                    raise solix_result
+                live = solix_result
+                if isinstance(audi_result, BaseException):
+                    _LOGGER.warning(
+                        "Audi status unavailable during export evaluation",
+                        exc_info=(
+                            type(audi_result),
+                            audi_result,
+                            audi_result.__traceback__,
+                        ),
+                    )
+                    audi_data = {}
+                else:
+                    audi_data = audi_result
+
+            self._audi_data_stale = audi_data.get("stale") is True
+            audi_available = (
+                audi_data.get("available") is True and not self._audi_data_stale
+            )
+            self._audi_plug_connected = (
+                audi_data.get("plug_connected")
+                if audi_available
+                and isinstance(audi_data.get("plug_connected"), bool)
+                else None
+            )
+            self._audi_battery_percent = (
+                self._number(audi_data.get("battery_percent"))
+                if audi_available
+                else None
+            )
+            self._audi_charge_priority = bool(
+                self._audi_plug_connected is True
+                and (
+                    self._audi_battery_percent is None
+                    or self._audi_battery_percent < 100
+                )
+            )
             self._solix_stale = live.get("stale") is True
             self._battery_percent = (
                 None if self._solix_stale else self._number(live.get("battery_percent"))
@@ -151,6 +202,7 @@ class SolarExportAutomation:
                 battery_percent=self._battery_percent,
                 pv_power_w=self._pv_power_w,
                 current_output_w=self._observed_output_w,
+                audi_charge_priority=self._audi_charge_priority,
                 cycle_active=self._cycle_active,
                 start_soc=self._start_soc,
                 stop_soc=self._stop_soc,
@@ -231,6 +283,10 @@ class SolarExportAutomation:
             "reason": self._last_reason,
             "error": self._last_error,
             "solix_data_stale": self._solix_stale,
+            "audi_battery_percent": self._audi_battery_percent,
+            "audi_plug_connected": self._audi_plug_connected,
+            "audi_data_stale": self._audi_data_stale,
+            "audi_charge_priority": self._audi_charge_priority,
             "battery_percent": self._battery_percent,
             "pv_power_w": self._pv_power_w,
             "observed_output_w": self._observed_output_w,

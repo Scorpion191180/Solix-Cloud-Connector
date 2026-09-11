@@ -21,7 +21,7 @@ from weather.client import WeatherClient
 client = SolixClient()
 audi_client = AudiClient()
 charging_automation = ChargingAutomation(client, audi_client)
-solar_export_automation = SolarExportAutomation(client)
+solar_export_automation = SolarExportAutomation(client, audi_client)
 weather_client = WeatherClient()
 waste_calendar_client = WasteCalendarClient()
 animal_state = AnimalStateStore()

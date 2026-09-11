@@ -31,8 +31,24 @@ class FakeSolixClient:
         }
 
 
+class FakeAudiClient:
+    def __init__(self, battery=100, plugged=True, available=True, stale=False):
+        self.battery = battery
+        self.plugged = plugged
+        self.available = available
+        self.stale = stale
+
+    async def get_live(self):
+        return {
+            "available": self.available,
+            "battery_percent": self.battery,
+            "plug_connected": self.plugged,
+            "stale": self.stale,
+        }
+
+
 class ExportControllerTests(unittest.IsolatedAsyncioTestCase):
-    def make_controller(self, solix, enabled="true", dry_run="false"):
+    def make_controller(self, solix, enabled="true", dry_run="false", audi=None):
         settings = {
             "SOLAR_EXPORT_AUTOMATION_ENABLED": enabled,
             "SOLAR_EXPORT_AUTOMATION_DRY_RUN": dry_run,
@@ -44,7 +60,7 @@ class ExportControllerTests(unittest.IsolatedAsyncioTestCase):
         env = patch.dict(os.environ, settings, clear=False)
         env.start()
         self.addCleanup(env.stop)
-        return SolarExportAutomation(solix)
+        return SolarExportAutomation(solix, audi)
 
     async def test_evaluation_starts_and_later_stops_output(self):
         solix = FakeSolixClient()
@@ -74,6 +90,38 @@ class ExportControllerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(solix.commands, [200, 0, 125])
         self.assertTrue(status["cycle_active"])
+
+    async def test_full_bank_releases_output_when_pv_is_hidden(self):
+        solix = FakeSolixClient(soc=100, pv=0, output=0)
+        audi = FakeAudiClient(battery=100, plugged=True)
+        controller = self.make_controller(solix, audi=audi)
+
+        status = await controller.evaluate()
+
+        self.assertEqual(solix.commands, [450])
+        self.assertEqual(status["reason"], "full_bank_export_released")
+        self.assertFalse(status["audi_charge_priority"])
+
+    async def test_connected_non_full_audi_blocks_export(self):
+        solix = FakeSolixClient(soc=100, pv=0, output=450)
+        audi = FakeAudiClient(battery=75, plugged=True)
+        controller = self.make_controller(solix, audi=audi)
+
+        status = await controller.evaluate()
+
+        self.assertEqual(solix.commands, [0])
+        self.assertEqual(status["reason"], "audi_charging_has_priority")
+        self.assertTrue(status["audi_charge_priority"])
+
+    async def test_disconnected_non_full_audi_allows_export(self):
+        solix = FakeSolixClient(soc=100, pv=0, output=0)
+        audi = FakeAudiClient(battery=75, plugged=False)
+        controller = self.make_controller(solix, audi=audi)
+
+        status = await controller.evaluate()
+
+        self.assertEqual(solix.commands, [450])
+        self.assertFalse(status["audi_charge_priority"])
 
     async def test_restart_recovers_nonzero_active_output_and_stops_at_90(self):
         solix = FakeSolixClient(soc=90, pv=300, output=200)

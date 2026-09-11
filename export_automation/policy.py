@@ -26,6 +26,7 @@ def decide_export_output(
     battery_percent: int | float | None,
     pv_power_w: int | float | None,
     current_output_w: int | float | None,
+    audi_charge_priority: bool = False,
     cycle_active: bool = False,
     start_soc: int = 98,
     stop_soc: int = 90,
@@ -41,7 +42,7 @@ def decide_export_output(
     if not enabled:
         return ExportDecision(None, "automation_disabled", False)
 
-    if battery_percent is None or pv_power_w is None:
+    if battery_percent is None:
         return ExportDecision(
             0 if cycle_active and current_output_w != 0 else None,
             "solix_telemetry_unknown",
@@ -55,23 +56,59 @@ def decide_export_output(
             False,
         )
 
+    # A connected Audi that still needs energy always wins over exporting to
+    # the public grid. As soon as it is full or disconnected, the normal
+    # Solarbank export policy is allowed to take over again.
+    if audi_charge_priority:
+        return ExportDecision(
+            0 if current_output_w != 0 else None,
+            "audi_charging_has_priority",
+            False,
+        )
+
+    if pv_power_w is None and battery_percent < start_soc:
+        return ExportDecision(
+            0 if cycle_active and current_output_w != 0 else None,
+            "solix_telemetry_unknown",
+            cycle_active,
+        )
+
     just_started = not cycle_active and battery_percent >= start_soc
     active = cycle_active or just_started
     if not active:
         return ExportDecision(None, "waiting_for_start_soc", False)
 
-    # Whole watts are required by the Anker setting. Flooring guarantees that
-    # the requested output never exceeds the measured PV input.
-    target_w = min(max_output_w, max(0, int(pv_power_w)))
+    # A full Solarbank can curtail its PV inputs and consequently report 0 W,
+    # even though sunlight is still available. Keeping the manual output at
+    # the configured ceiling opens that path again. As soon as Anker reports
+    # a positive PV value, the output follows the measured input as before.
+    pv_hidden_by_full_bank = (
+        battery_percent >= start_soc
+        and (pv_power_w is None or pv_power_w <= 0)
+    )
+    if pv_hidden_by_full_bank:
+        target_w = max_output_w
+        action_reason = "full_bank_export_released"
+    else:
+        # Whole watts are required by the Anker setting. Flooring guarantees
+        # that a visible PV value is never exceeded.
+        target_w = min(max_output_w, max(0, int(pv_power_w or 0)))
+        action_reason = (
+            "export_cycle_started" if just_started else "pv_output_adjusted"
+        )
     if current_output_w == target_w:
         return ExportDecision(
             None,
-            "pv_output_already_matched",
+            (
+                "full_bank_export_already_released"
+                if pv_hidden_by_full_bank
+                else "pv_output_already_matched"
+            ),
             True,
         )
 
     return ExportDecision(
         target_w,
-        "export_cycle_started" if just_started else "pv_output_adjusted",
+        action_reason,
         True,
     )

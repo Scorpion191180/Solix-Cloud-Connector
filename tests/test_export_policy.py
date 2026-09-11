@@ -26,6 +26,43 @@ class ExportPolicyTests(unittest.TestCase):
 
         self.assertEqual(decision.target_w, 450)
 
+    def test_full_bank_releases_450_w_when_pv_is_curtailed(self):
+        decision = decide_export_output(
+            enabled=True,
+            battery_percent=100,
+            pv_power_w=0,
+            current_output_w=0,
+        )
+
+        self.assertEqual(decision.target_w, 450)
+        self.assertEqual(decision.reason, "full_bank_export_released")
+        self.assertTrue(decision.cycle_active)
+
+    def test_connected_audi_with_charge_demand_has_priority(self):
+        decision = decide_export_output(
+            enabled=True,
+            battery_percent=100,
+            pv_power_w=0,
+            current_output_w=450,
+            audi_charge_priority=True,
+            cycle_active=True,
+        )
+
+        self.assertEqual(decision.target_w, 0)
+        self.assertEqual(decision.reason, "audi_charging_has_priority")
+        self.assertFalse(decision.cycle_active)
+
+    def test_disconnected_audi_does_not_block_export(self):
+        decision = decide_export_output(
+            enabled=True,
+            battery_percent=100,
+            pv_power_w=200,
+            current_output_w=0,
+            audi_charge_priority=False,
+        )
+
+        self.assertEqual(decision.target_w, 200)
+
     def test_waits_below_98_even_when_pv_is_available(self):
         decision = decide_export_output(
             enabled=True,
