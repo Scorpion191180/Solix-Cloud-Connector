@@ -363,17 +363,16 @@ class SolixClient:
         current = await self._read_gen4_grid_export_settings_locked(
             site_id=site_id, serial=serial
         )
-        required = {"feed_switch", "cached_power"}
+        required = {"feed_switch", "cached_power", "feed_upper_limit"}
         if not required.issubset(current):
             raise RuntimeError(
                 "Netz-Leistungsbegrenzung hat ein unbekanntes Datenformat"
             )
 
-        # Param type 28 also contains read-only/default values such as
-        # ``feed_upper_limit``.  The Anker app updates only the two mutable
-        # fields; echoing the complete read response can make AE103 accept the
-        # request without applying it.  Use the same narrow PATCH-style
-        # payload here.
+        # Gen 4 exposes both the value remembered by the app (cached_power)
+        # and the effective ceiling (feed_upper_limit). AE103 accepts the
+        # switch by itself, but ignores a cached_power-only update. Keep both
+        # limit values in sync in one transaction.
         verified = dict(current)
         # AE103 applies the switch transition but can ignore ``cached_power``
         # when both fields are changed in the same request.  Commit and verify
@@ -398,12 +397,18 @@ class SolixClient:
                     "Netz-Leistungsbegrenzung wurde nicht korrekt übernommen"
                 )
 
-        if self._optional_number(verified.get("cached_power")) != limit_w:
+        if (
+            self._optional_number(verified.get("cached_power")) != limit_w
+            or self._optional_number(verified.get("feed_upper_limit")) != limit_w
+        ):
             result = await self.api.set_device_parm(
                 siteId=site_id,
                 deviceSn=serial,
                 paramType=GEN4_GRID_EXPORT_PARAM_TYPE,
-                paramData={"cached_power": limit_w},
+                paramData={
+                    "cached_power": limit_w,
+                    "feed_upper_limit": limit_w,
+                },
             )
             if result is False:
                 raise RuntimeError(
@@ -418,13 +423,15 @@ class SolixClient:
 
         if (
             self._optional_number(verified.get("cached_power")) != limit_w
+            or self._optional_number(verified.get("feed_upper_limit")) != limit_w
             or self._as_switch_state(verified.get("feed_switch")) is not True
         ):
             _LOGGER.warning(
                 "Gen-4 grid-export verification mismatch: requested=%sW, "
-                "reported=%sW, enabled=%s",
+                "cached=%sW, upper=%sW, enabled=%s",
                 limit_w,
                 self._optional_number(verified.get("cached_power")),
+                self._optional_number(verified.get("feed_upper_limit")),
                 self._as_switch_state(verified.get("feed_switch")),
             )
             raise RuntimeError(
